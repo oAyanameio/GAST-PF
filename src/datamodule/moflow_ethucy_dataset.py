@@ -9,7 +9,7 @@
     num_peds_in_seq: 每组人数
 
 保证与 MoFlow 论文（及 SocialGAN 系）完全相同的数据划分与样本集合，
-从而 DeMo 与 MoFlow 的指标可直接对比（K=20，米制）。
+从而 GAST-PF 与 MoFlow 的指标可直接对比（K=20，米制）。
 """
 
 import pickle
@@ -104,7 +104,7 @@ class MoFlowEthUcyDataset(Dataset):
         positions = positions[perm]
         valid_mask = valid_mask[perm]
 
-        # focal 局部坐标系（与 DeMo 原始协议一致：平移+旋转，尺度保持米制）
+    # focal 局部坐标系（与 GAST-PF 协议一致：平移+旋转，尺度保持米制）
         origin = positions[0, obs_len - 1].clone()
         theta = compute_focal_rotation(
             positions[0, obs_len - 1], positions[0, obs_len - 2]

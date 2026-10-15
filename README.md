@@ -1,16 +1,16 @@
-# DeMo: 面向 ETH/UCY + SDD 的行人轨迹预测实验代码库
+# GAST-PF: 面向缺失历史轨迹的行人未来预测代码库
 
-基于 [DeMo (NeurIPS 2024)](https://arxiv.org/abs/2410.05982) 的行人轨迹预测（pedestrian trajectory prediction）研究代码库，收缩为 ETH/UCY + SDD 双数据集、DeMo actor-only（无地图/车道）模型，以及 TrajImpute 官方缺失历史数据协议。
+GAST-PF（Gap-Aware Spatio-Temporal Pedestrian Forecaster）是面向不完整历史观测的行人未来轨迹预测研究代码库，当前覆盖 ETH/UCY、SDD 和 TrajImpute 缺失历史数据协议，采用无地图/车道的 actor-only 预测设置。
 
-- 模型：`TrajectoryForecaster`（旧名 `ModelForecast`）+ `FutureDistributionDecoder`（旧名 `TimeDecoder`）；Mode Query、State Query、Hybrid Coupling 以及 UniMamba/BiMamba 术语保持原样
+- 模型：`GAST-PF` 由 `TrajectoryForecaster` 和 `FutureDistributionDecoder` 组成；Mode Query、State Query、Hybrid Coupling 以及 UniMamba/BiMamba 作为内部结构术语
 - 数据：ETH/UCY 5 折留一（LOO）+ SDD 原始协议；缺失历史主线使用 TrajImpute 官方 Easy/Hard release
-- 上游完整版本（含 AV2/自动驾驶管线）存档于 [DeMo_Origin](https://github.com/oAyanameio/DeMo_Origin)
+- 研究范围：缺失历史条件下的直接未来预测，不执行历史轨迹插补
 
 ## 环境安装
 
 ```bash
-conda create -n DeMo python=3.10
-conda activate DeMo
+conda create -n gast-pf python=3.10
+conda activate gast-pf
 pip install torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu121
 pip install -r requirements.txt
 
@@ -50,7 +50,7 @@ python eval.py checkpoint='/path/to/ckpt' test=true
 
 # TrajImpute Easy/Hard direct 缺失历史训练
 PYTHONNOUSERSITE=1 PYTHONPATH=. python scripts/训练与评估/run_trajimpute_experiments.py \
-    --protocol easy-direct --variant M0-current \
+    --protocol mixed-direct --variant GAST-PF \
     --scenes ETH-M HOTEL-M UNIV-M ZARA1-M ZARA2-M --gpu 0
 ```
 
@@ -73,15 +73,11 @@ docs/                 研究文档、实验结果、审计报告、数据集说�
 - 审计报告：`docs/audits/`
 - 完整数据基线与公开 SOTA 参考：`docs/results/完整数据基线对比.md`
 
-## 上游出处
+## 方法名称
 
-```bibtex
-@inproceedings{zhang2024demo,
- title={DeMo: Decoupling Motion Forecasting into Directional Intentions and Dynamic States},
- author={Zhang, Bozhou and Song, Nan and Zhang, Li},
- booktitle={NeurIPS},
- year={2024},
-}
+```text
+GAST-PF = Gap-Aware Spatio-Temporal Pedestrian Forecaster
+中文：缺失间隔感知时空行人轨迹预测模型
 ```
 
 致谢：[VideoMamba](https://github.com/OpenGVLab/VideoMamba)、[Forecast-MAE](https://github.com/jchengai/forecast-mae)、[StreamPETR](https://github.com/exiawsh/StreamPETR)

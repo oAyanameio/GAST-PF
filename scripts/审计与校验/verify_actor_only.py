@@ -1,6 +1,6 @@
 """收缩后验证：模型实例化（无 map/lane/stream 属性）。
 只读验证，不训练、不写数据。用法:
-    cd /home/lbh/DeMo && ~/.conda/envs/DeMo/bin/python scripts/审计与校验/verify_actor_only.py
+    cd /home/lbh/GAST-PF && ~/.conda/envs/gast-pf/bin/python scripts/审计与校验/verify_actor_only.py
 """
 import copy
 import logging

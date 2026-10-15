@@ -3,7 +3,7 @@
 # 用法（单场景 Mixed smoke）：
 #   PYTHONPATH=. python train.py --config-name=config_missing_aware_trajimpute \
 #     scene=ETH-M difficulty=Mixed train_difficulties=[Mixed] val_difficulties=[Mixed] \
-#     hydra.run.dir=outputs/trajgap_smoke/M0_ETH-M
+#     hydra.run.dir=outputs/trajgap_smoke/GAST-PF_ETH-M
 defaults:
   - datamodule: trajimpute
   - model: missing_aware_ethucy_model_forecast
@@ -20,9 +20,6 @@ train_difficulties: [Mixed]
 val_difficulties: [Mixed]
 train_sampling_scheme: natural
 train_sampling_seed: ${seed}
-# checkpoint 选点：恢复旧版正式 M0 协议（2026-10-10 裁定）——除优化器修复外
-# 全部照旧：选点=中间分支 val_minFDE20（mode-query 输出），与历史正式链同规。
-# b-minFDE/NLL 等校准诊断曲线仍并行记录，不进入选点。
 monitor: val_minFDE20
 save_top_k: 1
 
@@ -43,13 +40,14 @@ batch_size: 64
 epochs: 100
 warmup_epochs: 5
 precision: bf16
-# 主链 K=20 裁定（2026-09-12）：编码器固定原版单向（bimamba=false，旗标仅作用于
-# encoder 的 4 层 hist_embed_mamba；decoder state Mamba 原版即硬编码双向，不受影响）。
-# 后续实验无须再区分单双向；uni/bi 对照臂仅作为一次性验证保留在
-# outputs/trajimpute_retrain_uni 与 outputs/clean_ethucy_uni。
+# 主链 K=20 配置：正式模型 GAST-PF 的时序编码由内部前向/反向状态分支完成；
+# bimamba 仅在显式切换到 M0 时作用于 M0 的历史编码器。
+# 旧 uni/bi 对照产物继续保留在 outputs/ 中，不作为当前默认实验入口。
 bimamba: false
 
 # optimizer
+# GAST-PF 基础策略：AdamW 参数分组覆盖所有可训练参数；自定义 mixer/RMSNorm
+# 不在 decay 白名单时进入 no-decay 组，不允许被静默遗漏。
 lr: 0.001
 weight_decay: 0.0001
 gradient_clip_val: 5
@@ -61,12 +59,8 @@ limit_test_batches:
 log_model: all
 test: false
 
-# 模型版本标签（仅用于 output 命名）：0/1 对应 M0/M1
-model_version: '0'
-
-# M1：自然缺失证据条件化输出校准开关（方案 §6）。默认 false=M0 原路径；
-# 训练 M1 时覆盖 calibration=true。raw/calibrated 两套输出始终并存。
-calibration: false
+# 模型版本标签（仅用于 output 命名）；M0 对照运行时显式覆盖为 M0。
+model_version: 'GAST-PF'
 
 # TrajImpute 原始评估脚本使用 best-of-20；该覆盖只作用于 direct 配置，
 # 历史 ETH/UCY train_adapt 配置保持 K=6。

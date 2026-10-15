@@ -3,7 +3,7 @@
 每个 .pt 是一个样本。__getitem__:
 1. focal 移到 index 0
 2. focal 观测末帧为原点，最后一个有效位移方向为旋转角（不足则前溯，仍无则 theta=0）
-3. 生成 DeMo actor-only 字段；target_mask 反映真实有效性
+3. 生成 GAST-PF actor-only 字段；target_mask 反映真实有效性
 """
 
 from pathlib import Path

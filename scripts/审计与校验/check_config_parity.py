@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 """校正版:对比 uni vs bi 训练 run(取最新有 metrics 者)的 resolved config。
 
-2026-10 更新：主链配置检查对齐 M0/M1 双臂（monitor=val_new_b-minFDE20）（不改变原有
+2026-10 更新：主链配置检查对齐 M0（monitor=val_minFDE20）（不改变原有
 uni/bi 检查逻辑；无 outputs 历史 run 依赖，独立可运行）。
 """
 import yaml
 from pathlib import Path
-ROOT = Path("/home/lbh/DeMo")
+ROOT = Path("/home/lbh/GAST-PF")
 SUBS = ["eth","hotel","univ","zara1","zara2"]
 
 def training_run(base):

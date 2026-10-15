@@ -3,7 +3,7 @@
 正式协议固定为 `--difficulty Mixed`：
   PYTHONPATH=. python scripts/结果分析/evaluate_trajimpute_direct.py \
       --checkpoint outputs/.../checkpoints/xxx.ckpt \
-      --scene ETH-M --difficulty Mixed --split test --K 20 --variant M0
+      --scene ETH-M --difficulty Mixed --split test --K 20 --variant GAST-PF
 
 输出：outputs/trajgap_bench/<scene>_Mixed_<split>_<variant>_seed<seed>/results.json
 层级：scene/split/missing_count/variant/seed；K 显式写入 meta；
@@ -23,15 +23,23 @@ sys.path.insert(0, str(REPO))
 
 from src.datamodule.trajimpute_dataset import (  # noqa: E402
     MIXED_DIFFICULTY, TrajGapDataset, trajimpute_collate_fn,
-    inspect_clean_source, classify_evidence_bin,
+    inspect_clean_source,
 )
 from src.evaluation.trajimpute_direct import DirectEvaluator, save_results  # noqa: E402
 
 VARIANTS = {
-    "M0": {},
-    # M1：自然缺失证据条件化输出校准（方案 §6）。校准头进 checkpoint，
-    # 评估时必须以相同开关重建模型，否则校准权重被 strict=False 静默丢弃。
-    "M1": {"calibration": True},
+    "M0": {"encoder_type": "m0"},
+    "GAST-PF": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+    },
+    # Legacy label kept for evaluating historical experiment outputs.
+    "UT-ENC": {
+        "encoder_type": "utenc",
+        "utenc_depth": 4,
+        "utenc_gsm_operator": "max",
+    },
 }
 
 
@@ -56,62 +64,53 @@ def build_model(variant: str, num_modes: int, bimamba: bool = False):
 def load_checkpoint(model, ckpt_path):
     ckpt = torch.load(ckpt_path, map_location="cpu")
     model_config = ckpt.get("hyper_parameters", {}).get("model", {})
-    checkpoint_modes = model_config.get("num_modes") if isinstance(model_config, dict) else None
+    checkpoint_modes = model_config.get("num_modes") if hasattr(model_config, "get") else None
     expected_modes = model.time_decoder.num_modes
     if checkpoint_modes is not None and int(checkpoint_modes) != expected_modes:
         raise ValueError(
             f"checkpoint num_modes={checkpoint_modes} 与评估 K={expected_modes} 不一致"
         )
+    checkpoint_variant = ckpt.get("meta", {}).get("variant")
+    if checkpoint_variant and checkpoint_variant != model_config.get("model_version", checkpoint_variant):
+        raise ValueError(
+            f"checkpoint variant metadata mismatch: {checkpoint_variant} vs "
+            f"{model_config.get('model_version')}"
+        )
+    # 编码器契约：checkpoint 的 encoder_type 必须与评估 variant 一致，
+    # 且 GAST-PF checkpoint 键集须完整。
+    checkpoint_encoder = model_config.get("encoder_type", "m0") if hasattr(model_config, "get") else "m0"
+    expected_encoder = model.encoder_type
+    canonical = {"utenc": "gast"}
+    if canonical.get(checkpoint_encoder, checkpoint_encoder) != expected_encoder:
+        raise ValueError(
+            f"checkpoint encoder_type={checkpoint_encoder} does not match "
+            f"variant encoder_type={expected_encoder}"
+        )
     state = ckpt.get("state_dict", ckpt)
     cleaned = {k[len("net."):]: v for k, v in state.items() if k.startswith("net.")}
-    # 强校验：calibration 开关与 checkpoint 参数必须匹配，防止 M0/M1 静默错配
-    cal_keys = {k for k in cleaned if k.startswith("calibration_head.")}
-    expects_cal = hasattr(model, "calibration_head")
-    if expects_cal and not cal_keys:
+    # Let TrajectoryForecaster migrate legacy parameter paths first; validate
+    # the post-migration contract rather than rejecting old M0 checkpoints by
+    # their pre-migration key names.
+    incompatible = model.load_state_dict(cleaned, strict=False)
+    missing_keys = set(incompatible.missing_keys)
+    unexpected_keys = set(incompatible.unexpected_keys)
+    if missing_keys or unexpected_keys:
         raise ValueError(
-            f"variant 要求 calibration=true，但 checkpoint 无 calibration_head 参数: "
-            f"{ckpt_path}（这是 M0 checkpoint，不能标成 M1 评估）"
+            "checkpoint/model mismatch: "
+            f"missing={sorted(missing_keys)[:10]} "
+            f"unexpected={sorted(unexpected_keys)[:10]}"
         )
-    if not expects_cal and cal_keys:
-        raise ValueError(
-            f"variant=M0 要求原始模型，但 checkpoint 含 calibration_head 参数（{len(cal_keys)} 个）: "
-            f"{ckpt_path}（M1 checkpoint 必须用 --variant M1 评估）"
-        )
-    if expects_cal:
-        # 完整性：部分加载会让缺失参数留在零初始化，静默退化为 raw 语义。
-        # cleaned 键已剥 net. 前缀（如 calibration_head.tau_branch.0.weight），
-        # state_dict 键相对模块（tau_branch.0.weight），比较前补齐前缀。
-        expected_keys = {
-            f"calibration_head.{k}"
-            for k in model.calibration_head.state_dict().keys()
-        }
-        if cal_keys != expected_keys:
-            raise ValueError(
-                f"checkpoint 校准参数不完整: 缺失 {sorted(expected_keys - cal_keys)}，"
-                f"多余 {sorted(cal_keys - expected_keys)}（{ckpt_path}）"
-            )
-    missing, unexpected = model.load_state_dict(cleaned, strict=False)
-    # 主干完整性：legacy 键迁移已由 _load_from_state_dict 处理，正常
-    # checkpoint 加载后 missing/unexpected 应为空；非空说明主干结构错配
-    # （错 revision / 错模型配置），静默继续会把残缺模型的结果标成本实验。
-    if missing or unexpected:
-        raise ValueError(
-            f"checkpoint 主干参数与模型不匹配: "
-            f"missing={sorted(missing)[:10]} unexpected={sorted(unexpected)[:10]}（{ckpt_path}）"
-        )
-    return missing, unexpected
+    return incompatible.missing_keys, incompatible.unexpected_keys
 
 
 @torch.no_grad()
 def run_evaluation(model, dataset, K, scene, difficulty, split, variant, seed,
                    device="cuda:0", batch_size=64, num_workers=2, max_batches=None):
-    """返回 (results_cal, results_raw)；非 M1 校准模型两者相同。"""
     from torch.utils.data import DataLoader
     model = model.to(device).eval()
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False,
                         num_workers=num_workers, collate_fn=trajimpute_collate_fn)
     evaluator = DirectEvaluator()
-    evaluator_raw = DirectEvaluator()
     n_batches = 0
     for batch in loader:
         batch_dev = {
@@ -120,69 +119,33 @@ def run_evaluation(model, dataset, K, scene, difficulty, split, variant, seed,
         out = model(batch_dev)
         # 与 trainer.test_step 一致：最终输出 new_y_hat/new_pi 优先
         pred = out["new_y_hat"] if out.get("new_y_hat") is not None else out["y_hat"]
-        prob_raw = out["new_pi"] if out.get("new_pi") is not None else out["pi"]
-        prob_cal = out.get("new_pi_cal", prob_raw)
+        prob = out["new_pi"] if out.get("new_pi") is not None else out["pi"]
         pred = pred[..., :2]
         if pred.shape[1] != K:
             raise RuntimeError(
                 f"模型实际输出 K={pred.shape[1]}，但评估协议要求 K={K}"
             )
         target = batch_dev["target"][:, 0]  # focal [B, T, 2]
-        prob_raw = prob_raw.float()
-        prob_cal = prob_cal.float()
+        prob = prob.float()
         focal_valid = batch["x_valid_mask"][:, 0]
         valid_count = focal_valid.sum(-1)
         anchor_lag = batch["x_anchor_lag_steps"][:, 0]
         forecast_gap = batch["x_forecast_gap_steps"][:, 0]
-        # M1 机制诊断维度（方案 §6.5）：evidence bin / max_missing_run /
-        # mode entropy / calibrated scale —— 只由历史 mask 与模型输出计算
-        if "max_missing_run" in batch:
-            max_run = batch["max_missing_run"]
-        else:
-            from src.model.layers.missingness_calibration import max_missing_run_batch
-            max_run = max_missing_run_batch(focal_valid)
-        has_cal = out.get("new_pi_cal") is not None
-        ent_raw = -(torch.softmax(prob_raw, dim=-1)
-                    * torch.log_softmax(prob_raw, dim=-1)).sum(-1)  # [B]
-        ent_cal = (-(torch.softmax(prob_cal, dim=-1)
-                     * torch.log_softmax(prob_cal, dim=-1)).sum(-1)
-                   if has_cal else ent_raw)
-        scale_cal_mean = (out["scal_cal"].float().mean(dim=(1, 2, 3))
-                          if has_cal else None)
-        scale_raw_mean = (out["scal_new"].float().mean(dim=(1, 2, 3))
-                          if out.get("scal_new") is not None else None)
         # 逐样本分组（batch 内证据条件可能不同）
         for i in range(pred.shape[0]):
-            common = dict(
+            evaluator.update(
+                pred[i:i + 1].float().cpu(), prob[i:i + 1].cpu(),
+                target[i:i + 1].cpu(),
                 scene=scene, difficulty=difficulty, split=split,
                 missing_count=int(batch["missing_count"][i]),
                 valid_count=int(valid_count[i]),
                 anchor_lag=int(anchor_lag[i]),
                 forecast_gap=int(forecast_gap[i]),
-                max_missing_run=int(max_run[i]),
-                evidence_bin=classify_evidence_bin(focal_valid[i].cpu()),
-            )
-            evaluator.update(
-                pred[i:i + 1].float().cpu(), prob_cal[i:i + 1].cpu(),
-                target[i:i + 1].cpu(),
-                mode_entropy=float(ent_cal[i]),
-                scale_mean=(float(scale_cal_mean[i])
-                            if scale_cal_mean is not None else None),
-                **common,
-            )
-            # raw 概率的 entropy / raw scale 作为对照诊断
-            evaluator_raw.update(
-                pred[i:i + 1].float().cpu(), prob_raw[i:i + 1].cpu(),
-                target[i:i + 1].cpu(),
-                mode_entropy=float(ent_raw[i]),
-                scale_mean=(float(scale_raw_mean[i])
-                            if scale_raw_mean is not None else None),
-                **common,
             )
         n_batches += 1
         if max_batches is not None and n_batches >= max_batches:
             break
-    return evaluator.compute(), evaluator_raw.compute()
+    return evaluator.compute()
 
 
 def main():
@@ -192,7 +155,7 @@ def main():
     ap.add_argument("--difficulty", default="Mixed", choices=["Mixed"],
                     help="TrajGap-Bench 正式主协议固定为 Mixed")
     ap.add_argument("--split", default="test", choices=["train", "val", "test"])
-    ap.add_argument("--variant", default="M0", choices=list(VARIANTS))
+    ap.add_argument("--variant", default="GAST-PF", choices=list(VARIANTS))
     ap.add_argument("--K", type=int, default=20)
     ap.add_argument("--seed", type=int, default=2024)
     ap.add_argument("--batch-size", type=int, default=64)
@@ -233,20 +196,13 @@ def main():
         missing, unexpected = load_checkpoint(model, args.checkpoint)
         ckpt_info = {
             "path": str(args.checkpoint),
-            # 主干完整性校验已前置（load_checkpoint 内非空即抛错），
-            # 此处理论上恒为空列表；保留字段以防御性留档。
             "missing_keys": list(missing),
             "unexpected_keys": list(unexpected)[:20],
-            "calibration_enabled": bool(VARIANTS[args.variant].get("calibration")),
-            "calibration_params_loaded": (
-                not any(k.startswith("calibration_head.") for k in missing)
-                if VARIANTS[args.variant].get("calibration") else None
-            ),
         }
     elif not args.untrained:
         raise SystemExit("需要 --checkpoint 或 --untrained（冒烟）之一")
 
-    results, results_raw = run_evaluation(
+    results = run_evaluation(
         model, dataset, args.K, args.scene, args.difficulty, args.split,
         args.variant, args.seed, device=args.device,
         batch_size=args.batch_size, num_workers=args.num_workers,
@@ -284,17 +240,7 @@ def main():
         f"{args.scene}_{args.difficulty}_{args.split}_{args.variant}_seed{args.seed}_{tag}")
     if out_dir.exists():
         raise SystemExit(f"输出目录已存在，拒绝覆盖: {out_dir}")
-    # M1：raw 与 calibrated 双套结果并存（方案 §6.5/§9.2）；
-    # calibrated 写主 results.json，raw 单独落盘，禁止只保留校准结果。
-    payload = {
-        "meta": meta,
-        "results": results,
-    }
-    if args.variant in VARIANTS and VARIANTS[args.variant].get("calibration"):
-        payload["results_raw"] = results_raw
     out_path = save_results(results, meta, out_dir / "results.json")
-    if "results_raw" in payload:
-        save_results(results_raw, meta, out_dir / "results_raw.json")
     print(f"\n[results] {out_path}")
     ov = results["overall"]
     print(f"overall n={ov['n']} minADE{args.K}={ov['minADE_K']:.4f} "

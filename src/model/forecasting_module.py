@@ -61,8 +61,6 @@ class ForecastingLightningModule(pl.LightningModule):
         self.laplace_loss = LaplaceNLLLoss()
         self.val_metrics = metrics.clone(prefix="val_")
         self.val_metrics_new = metrics.clone(prefix="val_new_")
-        # M1：calibrated 最终输出的同一组指标（raw/cal 并存，方案 §6.4）
-        self.val_metrics_cal = metrics.clone(prefix="val_cal_")
 
     def get_model(self, model_type):
         model_dict = {
@@ -76,24 +74,13 @@ class ForecastingLightningModule(pl.LightningModule):
         return self.net(data)
 
     def predict(self, data):
-        """推理入口：与 trainer.test_step / direct evaluator 同一分支。
-
-        轨迹优先 new_y_hat；概率优先 calibrated new_pi_cal（M1），
-        无校准输出时回退 new_pi（M0/旧模型），再回退 mode-query pi。
-        """
         predictions = []
         probs = []
         for i in range(len(data)):
             cur_data = data[i]
             out = self(cur_data)
-            y_hat = out.get("new_y_hat")
-            if y_hat is None:
-                y_hat = out["y_hat"]
-            pi = out.get("new_pi_cal")
-            if pi is None:
-                pi = out.get("new_pi", out["pi"])
             prediction, prob = self.submission_handler.format_data(
-                cur_data, y_hat, pi, inference=True)
+                cur_data, out["y_hat"], out["pi"], inference=True)
             predictions.append(prediction)
             probs.append(prob)
 
@@ -123,7 +110,6 @@ class ForecastingLightningModule(pl.LightningModule):
         agent_cls_loss = F.cross_entropy(pi, best_mode.detach(), label_smoothing=0.2)
 
         # loss for final output
-        best_mode_new = None
         if new_y_hat is not None:
             l2_norm_new = torch.norm(new_y_hat[..., :2] - y.unsqueeze(1), dim=-1).sum(dim=-1)
             best_mode_new = torch.argmin(l2_norm_new, dim=-1)
@@ -131,14 +117,8 @@ class ForecastingLightningModule(pl.LightningModule):
             new_agent_reg_loss = F.smooth_l1_loss(new_y_hat_best[..., :2], y)
         else:
             new_agent_reg_loss = 0
-        # M1 校准（方案 §6.4）：最终分支的 CE 与 Laplace NLL 使用 calibrated
-        # 输出；mode-query raw 分支损失保持原样，校准头不单独承担全部信号。
-        new_pi_raw = out.get("new_pi", None)
-        new_pi_final = out.get("new_pi_cal", new_pi_raw)
-        scal_new_raw = out.get("scal_new", None)
-        scal_new_final = out.get("scal_cal", scal_new_raw)
-        if new_pi_final is not None and best_mode_new is not None:
-            new_pi_reg_loss = F.cross_entropy(new_pi_final, best_mode_new.detach(), label_smoothing=0.2)
+        if new_pi is not None:
+            new_pi_reg_loss = F.cross_entropy(new_pi, best_mode_new.detach(), label_smoothing=0.2)
         else:
             new_pi_reg_loss = 0
 
@@ -158,10 +138,9 @@ class ForecastingLightningModule(pl.LightningModule):
         predictions['probs'] = pi
         laplace_loss = self.laplace_loss.compute(predictions, y)
 
-        # M1：最终分支 Laplace NLL 使用 calibrated 输出（calibration 关闭时即 raw）
         predictions['traj'] = new_y_hat
-        predictions['scale'] = scal_new_final
-        predictions['probs'] = new_pi_final
+        predictions['scale'] = scal_new
+        predictions['probs'] = new_pi
         laplace_loss_new = self.laplace_loss.compute(predictions, y)
 
         # total loss
@@ -207,49 +186,11 @@ class ForecastingLightningModule(pl.LightningModule):
     def validation_step(self, data, batch_idx):
         out = self(data)
         _, loss_dict = self.cal_loss(out, data)
-        # 校准敏感验证信号（方案 §6.4）：最终分支 Laplace NLL——M1 下
-        # cal_loss 内部已用 calibrated 输出计算，M0 下即 raw final NLL。
-        for key in ("laplace_loss_new", "reg_loss_new_pi"):
-            if key in loss_dict:
-                self.log(
-                    f"val_{key}",
-                    loss_dict[key],
-                    on_step=False,
-                    on_epoch=True,
-                    batch_size=1,
-                    sync_dist=True,
-                )
         metrics = self.val_metrics(out, data['target'][:, 0])
-        metrics_cal = None
         if out['new_y_hat'] is not None:
             out['y_hat'] = out['new_y_hat']
             out['pi'] = out['new_pi']
             metrics_new = self.val_metrics_new(out, data['target'][:, 0])
-
-        # M1：calibrated 输出指标（calibration 关闭时 new_pi_cal 不存在，跳过）
-        if out.get('new_pi_cal') is not None:
-            out_cal = dict(out)
-            out_cal['y_hat'] = out['new_y_hat']
-            out_cal['pi'] = out['new_pi_cal']
-            metrics_cal = self.val_metrics_cal(out_cal, data['target'][:, 0])
-            # 诊断：mode entropy（高缺失证据下排序可靠性）
-            self.log(
-                "val_cal/mode_entropy",
-                -(torch.softmax(out['new_pi_cal'].float(), dim=-1)
-                  * torch.log_softmax(out['new_pi_cal'].float(), dim=-1)).sum(-1).mean(),
-                on_step=False, on_epoch=True, batch_size=1, sync_dist=True,
-            )
-            if out.get("calibration_log_scale") is not None:
-                self.log(
-                    "val_cal/log_scale_mean",
-                    out["calibration_log_scale"].float().mean(),
-                    on_step=False, on_epoch=True, batch_size=1, sync_dist=True,
-                )
-                self.log(
-                    "val_cal/log_tau_mean",
-                    out["calibration_log_tau"].float().mean(),
-                    on_step=False, on_epoch=True, batch_size=1, sync_dist=True,
-                )
 
         self.log_dict(
             metrics,
@@ -268,15 +209,6 @@ class ForecastingLightningModule(pl.LightningModule):
                 batch_size=1,
                 sync_dist=True,
             )
-        if out.get('new_pi_cal') is not None:
-            self.log_dict(
-                metrics_cal,
-                prog_bar=False,
-                on_step=False,
-                on_epoch=True,
-                batch_size=1,
-                sync_dist=True,
-            )
 
     def on_test_start(self) -> None:
         save_dir = Path("./submission")
@@ -284,20 +216,12 @@ class ForecastingLightningModule(pl.LightningModule):
         from src.utils.submission_ethucy import SubmissionEthUcy
         self.submission_handler = SubmissionEthUcy(save_dir=str(save_dir))
         self.test_metrics = self.val_metrics.clone(prefix="test_")
-        # M1：raw final 与 calibrated final 双套测试指标（方案 §6.5/§9.2）
-        self.test_metrics_new = self.val_metrics_new.clone(prefix="test_new_")
-        self.test_metrics_cal = self.val_metrics_cal.clone(prefix="test_cal_")
 
     def test_step(self, data, batch_idx) -> None:
         out = self(data)
         if out['new_y_hat'] is not None:
             out['y_hat'] = out['new_y_hat']
             out['pi'] = out['new_pi']
-        # M1：正式主结果使用 calibrated final output（方案 §6.5）；
-        # submission 同步使用校准概率，raw 指标作为诊断保留。
-        if out.get('new_pi_cal') is not None:
-            out['y_hat'] = out['new_y_hat']
-            out['pi'] = out['new_pi_cal']
         self.submission_handler.format_data(data, out["y_hat"], out["pi"])
         metrics = self.test_metrics(out, data['target'][:, 0])
         self.log_dict(
@@ -307,37 +231,14 @@ class ForecastingLightningModule(pl.LightningModule):
             on_epoch=True,
             batch_size=1,
         )
-        # raw final / calibrated final 双套
-        if out.get('new_y_hat') is not None:
-            out_new = dict(out)
-            out_new['y_hat'] = out['new_y_hat']
-            out_new['pi'] = out['new_pi']
-            metrics_new = self.test_metrics_new(out_new, data['target'][:, 0])
-            self.log_dict(
-                metrics_new,
-                prog_bar=False,
-                on_step=False,
-                on_epoch=True,
-                batch_size=1,
-            )
-        if out.get('new_pi_cal') is not None:
-            out_cal = dict(out)
-            out_cal['y_hat'] = out['new_y_hat']
-            out_cal['pi'] = out['new_pi_cal']
-            metrics_cal = self.test_metrics_cal(out_cal, data['target'][:, 0])
-            self.log_dict(
-                metrics_cal,
-                prog_bar=False,
-                on_step=False,
-                on_epoch=True,
-                batch_size=1,
-            )
 
     def on_test_end(self) -> None:
         self.submission_handler.generate_submission_file()
         print("TEST METRICS:", self.test_metrics.compute())
 
     def configure_optimizers(self):
+        # M0 baseline policy: enumerate module-local parameters and retain
+        # custom mixer/RMSNorm weights in the no-decay group by default.
         decay = set()
         no_decay = set()
         whitelist_weight_modules = (
@@ -351,6 +252,8 @@ class ForecastingLightningModule(pl.LightningModule):
         )
         for module_name, module in self.named_modules():
             for param_name, param in module.named_parameters(recurse=False):
+                if not param.requires_grad:
+                    continue
                 full_param_name = (
                     "%s.%s" % (module_name, param_name) if module_name else param_name
                 )
@@ -370,7 +273,19 @@ class ForecastingLightningModule(pl.LightningModule):
         }
         inter_params = decay & no_decay
         union_params = decay | no_decay
-        assert len(inter_params) == 0
+        if inter_params:
+            raise RuntimeError(
+                f"AdamW parameter groups overlap: {sorted(inter_params)}"
+            )
+        trainable_params = {
+            name for name, param in self.named_parameters() if param.requires_grad
+        }
+        if union_params != trainable_params:
+            raise RuntimeError(
+                "AdamW parameter groups must cover every trainable parameter exactly once; "
+                f"missing={sorted(trainable_params - union_params)}, "
+                f"unexpected={sorted(union_params - trainable_params)}"
+            )
 
         optim_groups = [
             {

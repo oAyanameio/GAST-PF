@@ -1,0 +1,168 @@
+% =====================================================================
+%  TrajGap-Bench leaderboard tables (Mixed-direct protocol)
+%  Requires: \usepackage{booktabs}
+%  Protocol: TrajImpute Easy+Hard merged per split (Mixed), seed 2024,
+%            K=20, 100 epochs, checkpoint selection by val_minFDE20.
+%  Test-sample counts (identical across all methods):
+%    ETH-M 1,629 | HOTEL-M 9,477 | UNIV-M 219,006 | ZARA1-M 20,277
+%    | ZARA2-M 52,497 | total 302,886
+%  "Avg" = macro average over the five scenes.
+%  Lower is better for every metric.
+% =====================================================================
+
+% ---------------------------------------------------------------------
+% Table 1: minADE20 / minFDE20
+% ---------------------------------------------------------------------
+\begin{table*}[t]
+  \centering
+  \caption{Trajectory prediction on \textbf{TrajGap-Bench} (Mixed-direct).
+  We report minADE$_{20}$\,/\,minFDE$_{20}$ (meters). ``Avg'' is the macro
+  average over the five scenes. Best per column in \textbf{bold}.}
+  \label{tab:tgbench-minade}
+  \small
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{l c c c c c c}
+    \toprule
+    Method & ETH-M & HOTEL-M & UNIV-M & ZARA1-M & ZARA2-M & Avg \\
+    \midrule
+    M0 (ours, reference)
+      & 0.6145 / \textbf{0.8532}
+      & \textbf{0.2396} / 0.3649
+      & \textbf{0.3473} / 0.5696
+      & \textbf{0.2398} / \textbf{0.3877}
+      & \textbf{0.1700} / \textbf{0.2830}
+      & \textbf{0.3222} / \textbf{0.4917} \\
+    MoFlow (CVPR'25)
+      & 0.6819 / 0.9389
+      & 0.2777 / 0.4247
+      & 0.3478 / \textbf{0.5572}
+      & 0.2566 / 0.4057
+      & 0.1839 / 0.2867
+      & 0.3496 / 0.5226 \\
+    SocialLSTM
+      & 0.8430 / 1.0456
+      & 0.2924 / 0.3871
+      & 0.4543 / 0.6512
+      & 0.4126 / 0.5650
+      & 0.2858 / 0.3907
+      & 0.4576 / 0.6079 \\
+      & 0.6525 / 0.9665
+      & 0.2403 / \textbf{0.3636}
+      & 0.3871 / 0.6551
+      & --
+      & --
+      & 0.4266 / 0.6617$^{\ddagger}$ \\
+    \bottomrule
+  \end{tabular}
+  \begin{flushleft}
+    \footnotesize
+    Partial averages are \emph{not} comparable to the five-scene average.
+    ``--'' = not yet evaluated.
+  \end{flushleft}
+\end{table*}
+
+% ---------------------------------------------------------------------
+% Table 2: ADE@1 / FDE@1  (top-1 mode selected by predicted probability)
+% ---------------------------------------------------------------------
+\begin{table*}[t]
+  \centering
+  \caption{Top-1 selection quality on \textbf{TrajGap-Bench} (Mixed-direct).
+  We report ADE@1\,/\,FDE@1 (meters) of the highest-probability mode.
+  Lower is better.}
+  \label{tab:tgbench-top1}
+  \small
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{l c c c c c c}
+    \toprule
+    Method & ETH-M & HOTEL-M & UNIV-M & ZARA1-M & ZARA2-M & Avg \\
+    \midrule
+    M0 (ours, reference)
+      & 1.4034 / 2.4877
+      & \textbf{0.5278 / 0.8983}
+      & 0.9880 / 1.8068
+      & \textbf{0.8368 / 1.5223}
+      & \textbf{0.6687 / 1.2131}
+      & \textbf{0.8849 / 1.5856} \\
+    MoFlow (CVPR'25)
+      & 1.4669 / 2.5903
+      & 0.6818 / 1.1561
+      & 1.0569 / 1.8893
+      & 0.9863 / 1.7563
+      & 0.7152 / 1.2559
+      & 0.9814 / 1.7296 \\
+    SocialLSTM
+      & 2.1039 / 3.2800
+      & 0.9876 / 1.5940
+      & 1.2964 / 2.2710
+      & 1.2546 / 2.1104
+      & 0.9964 / 1.6772
+      & 1.3278 / 2.1865 \\
+      & 1.3513 / 2.3815
+      & 0.5716 / 0.9628
+      & \textbf{0.9565 / 1.7655}
+      & --
+      & --
+      & 0.9598 / 1.7033$^{\ddagger}$ \\
+    \bottomrule
+  \end{tabular}
+  \begin{flushleft}
+    \footnotesize
+    $^{\ddagger}$ 3-scene average (ETH-M, HOTEL-M, UNIV-M).
+    ``--'' = not yet evaluated.
+  \end{flushleft}
+\end{table*}
+
+% ---------------------------------------------------------------------
+% Table 3: MR (miss rate, endpoint error > 2.0 m), reported in %
+% ---------------------------------------------------------------------
+\begin{table*}[t]
+  \centering
+  \caption{Miss rate (MR, \%) on \textbf{TrajGap-Bench} (Mixed-direct).
+  A sample counts as a miss when \emph{all} $K$ predicted endpoints
+  deviate from the ground truth by more than $2.0$\,m. Lower is better.}
+  \label{tab:tgbench-mr}
+  \small
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{l c c c c c c}
+    \toprule
+    Method & ETH-M & HOTEL-M & UNIV-M & ZARA1-M & ZARA2-M & Avg \\
+    \midrule
+    M0 (ours, reference)
+      & \textbf{11.97} & 3.85 & 4.38 & 1.63 & 1.50 & 4.67 \\
+    MoFlow (CVPR'25)
+      & 14.30 & 3.87 & \textbf{3.35} & \textbf{0.85} & \textbf{0.61} & \textbf{4.60} \\
+    SocialLSTM
+      & 15.84
+      & \textbf{3.66}
+      & 4.84
+      & 3.03
+      & 2.67
+      & 6.01 \\
+      & 15.04 & 3.99 & 6.11
+      & --
+      & --
+      & 8.38$^{\ddagger}$ \\
+    \bottomrule
+  \end{tabular}
+  \begin{flushleft}
+    \footnotesize
+    $^{\ddagger}$ 3-scene average (ETH-M, HOTEL-M, UNIV-M).
+    ``--'' = not yet evaluated.
+  \end{flushleft}
+\end{table*}
+
+% ---------------------------------------------------------------------
+% Notes for the caption / text:
+%  * All methods share the identical Mixed test split  (302,886 focal
+%    samples). M0, MoFlow and SocialLSTM cover all five scenes;
+%  * b-minFDE20 cannot be aligned: the DeMo direct evaluator does not
+%    emit it, so it is available only on the MoFlow side
+%    (macro = 1.2945). It is therefore omitted from these tables.
+%  * SocialLSTM is the missing-aware variant
+%    (config_missing_aware_sociallstm).
+%  * Source of every number:
+%      M0      : outputs/m0_baseline/M0_optimizerfix_seed2024_gpu{0,1}/
+%      MoFlow  : MoFlow/results_trajimpute_mixed/<scene>/mixed/results.json
+%      SocialLSTM: /home/lbh/SocialLSTM/trajgap_bench/artifacts/sociallstm_bench/
+%                    (code+conf archived at /home/lbh/SocialLSTM/trajgap_bench/)
+% ---------------------------------------------------------------------

@@ -1,17 +1,17 @@
 """TrajGap 缺失数据重训入口（统一 Mixed direct 协议）。
 
 协议（任务书 2026-09-07 + 方案 §1.4）：
-- 默认从 `M0 + mixed-direct` 开始；
+- 默认从 `GAST-PF + mixed-direct` 开始；
 - `mixed-direct` 将官方 Easy/Hard 的同一 split 合并为单一 Mixed 数据集；
 - 每个场景从头训练，不使用零样本 checkpoint；
 - 训练输出、验证选点和测试评估统一使用 K=20；
 - 每个实验写入独立 manifest，拒绝把不同数据源混为同一协议；
-- variant -> 选题模型开关固定映射；
+  - variant -> 模型开关固定映射；
 - 失败时保留完整 traceback 到 runner.log。
 
 用法：
   PYTHONNOUSERSITE=1 PYTHONPATH=. python scripts/训练与评估/run_trajimpute_experiments.py \
-      --protocol mixed-direct --variant M0 \
+      --protocol mixed-direct --variant GAST-PF \
       --scenes ETH-M HOTEL-M UNIV-M ZARA1-M ZARA2-M \
       --seed 2024 --gpu 3 --output-root outputs/trajgap_bench
 """
@@ -35,14 +35,25 @@ SCENES = ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
 FOLDS = ["ETH", "HOTEL", "UNIV", "ZARA1", "ZARA2"]
 DIRECT_NUM_MODES = 20
 DEFAULT_PROTOCOL = "mixed-direct"
-DEFAULT_VARIANT = "M0"
+DEFAULT_VARIANT = "GAST-PF"
+OPTIMIZER_POLICY = "adamw_complete_module_local_v1"
 
-# Formal runner: M0 baseline + M1 missingness-aware output calibration
-# (方案 §6, 2026-10-08 版). Failed historical arms are retained in the result
-# summary as diagnostics, not as entrypoints.
+# Variants: M0 reference；GAST-PF = gap-aware spatio-temporal encoder
+# replacement. The decoder, losses, and TrajGap protocol stay unchanged.
 VARIANTS = {
-    "M0": {},
-    "M1": {"calibration": True},
+    "M0": {"encoder_type": "m0"},
+    "GAST-PF": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+    },
+    # Legacy experiment label; keep it loadable without making it the current
+    # public name.
+    "UT-ENC": {
+        "encoder_type": "utenc",
+        "utenc_depth": 4,
+        "utenc_gsm_operator": "max",
+    },
 }
 
 PROTOCOLS = {
@@ -76,6 +87,26 @@ def env_info():
         "cuda_available": torch.cuda.is_available(),
         "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
     }
+
+
+def validate_paired_init(checkpoint, seed, num_modes):
+    """Validate the stage-0 initialization artifact against the run contract."""
+    import torch
+
+    checkpoint = Path(checkpoint).expanduser().resolve()
+    if not checkpoint.is_file():
+        raise ValueError(f"paired initialization checkpoint not found: {checkpoint}")
+    try:
+        payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    except TypeError:
+        payload = torch.load(checkpoint, map_location="cpu")
+    meta = payload.get("meta", {})
+    if meta.get("initialization_only") is not True:
+        raise ValueError("paired init must be a stage-0 initialization-only checkpoint")
+    if int(meta.get("seed", -1)) != seed:
+        raise ValueError("paired init seed must match --seed")
+    if int(meta.get("num_modes", -1)) != num_modes:
+        raise ValueError("paired init K must match --K")
 
 
 def select_best_checkpoint(train_dir, monitor):
@@ -158,19 +189,28 @@ def build_manifest(args, protocol_cfg):
         "python": sys.executable,
         "env": env_info(),
         "model_version": args.variant,
+        "encoder_type": VARIANTS[args.variant].get("encoder_type", "m0"),
+        "encoder_source": "GAST Encoder" if VARIANTS[args.variant].get("encoder_type") in {"gast", "utenc"} else "M0",
+        "encoder_config": {
+            key: value for key, value in VARIANTS[args.variant].items()
+            if key.startswith(("gast_", "utenc_"))
+        },
+        "scene_partition": bool(getattr(args, "allow_scene_partition", False)),
         "backbone": {"bimamba": args.bimamba},
         "seed": args.seed,
         "batch_size": args.batch_size,
         "epochs": args.epochs,
         "lr": args.lr,
         "weight_decay": args.weight_decay,
+        "optimizer_policy": OPTIMIZER_POLICY,
         "train_sampling_scheme": protocol_cfg.get("train_sampling_scheme", "natural"),
         "train_sampling_seed": args.train_sampling_seed,
         "sampling_definition": {
             "natural": "TrajGap Mixed train dataset with official Easy/Hard source samples concatenated and shuffled",
         },
-        "monitor": variant_monitor(args.variant, args.K),
+        "monitor": f"val_minFDE{args.K}",
         "K": args.K,
+        "initialization_checkpoint": args.init_checkpoint,
         "training_mode": "retrain_missing_data",
         "zero_missing_only": False,
         "gpu": args.gpu,
@@ -181,17 +221,6 @@ def build_manifest(args, protocol_cfg):
         "command": " ".join(sys.argv),
     }
 
-
-
-def variant_monitor(variant: str, K: int) -> str:
-    """checkpoint 选点 monitor：恢复旧版正式 M0 协议（2026-10-10 裁定）。
-
-    除优化器参数分组修复（c68336f）外，全部协议沿用旧版正式 M0：
-    选点 = 中间分支 val_minFDE20（mode-query 输出），与历史正式链
-    trajgap_bench_seed2024 完全同规。b-minFDE/NLL 等校准诊断曲线仍
-    并行记录，不进入选点。
-    """
-    return f"val_minFDE{K}"
 
 
 def sh(cmd, log_path, env=None):
@@ -231,11 +260,17 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
         m["files"] = {scene: manifest["files"][scene]}
         with open(_manifest, "w") as f:
             json.dump(m, f, indent=2, ensure_ascii=False)
+    elif getattr(args, "allow_scene_partition", False):
+        with open(_manifest) as f:
+            m = json.load(f)
+        m["scene_partition"] = True
+        m["gpu"] = args.gpu
+        m["scenes"] = [scene]
+        m["files"] = {scene: manifest["files"][scene]}
+        with open(_manifest, "w") as f:
+            json.dump(m, f, indent=2, ensure_ascii=False)
 
     # 训练
-    # checkpoint 选点 monitor：与最终评估分支一致（M1=calibrated final，方案 §6.4/§6.5）
-    monitor_name = variant_monitor(args.variant, args.K)
-
     train_overrides = [
         f"scene={scene}",
         f"difficulty={protocol_cfg['difficulty']}",
@@ -249,21 +284,27 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
         f"batch_size={args.batch_size}",
         f"num_workers={args.num_workers}",
         f"epochs={args.epochs}",
-        f"monitor={monitor_name}",
+        f"monitor=val_minFDE{args.K}",
         f"model.target.model.num_modes={args.K}",
         f"lr={args.lr}",
         f"weight_decay={args.weight_decay}",
         f"bimamba={str(args.bimamba).lower()}",
-        f"model_version={args.model_version_num}",
         f"clean_suffix={protocol_cfg['suffix']}",
     ]
-    # M1 等模型开关：VARIANTS 映射透传到 Hydra 配置（如 calibration=true）
+    train_overrides.append(f"model_version={args.variant}")
+    train_overrides.append(f"model.target.model.num_modes={args.K}")
     for switch, value in VARIANTS[args.variant].items():
-        train_overrides.append(f"{switch}={str(value).lower()}")
+        train_overrides.append(
+            f"model.target.model.{switch}={str(value).lower() if isinstance(value, bool) else value}"
+        )
+    if args.init_checkpoint is not None:
+        train_overrides.append(f"pretrained_weights={args.init_checkpoint}")
+        train_overrides.append("checkpoint=null")
     if args.smoke:
         train_overrides += [f"limit_train_batches={args.limit_batches}",
                             f"limit_val_batches={args.limit_batches}"]
-    train_cmd = [PY, "-u", "train.py", f"--config-name={CONFIG_NAME}"] + train_overrides + [
+    train_cmd = [PY, "-u", "train.py",
+                 f"--config-name={CONFIG_NAME}"] + train_overrides + [
         f"hydra.run.dir={run_dir / 'train'}"]
 
     # 2026-09-13：断点续训 + 被杀自动重拉（外源 SIGTERM 防御）。
@@ -285,10 +326,10 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
     if rc != 0:
         return {"scene": scene, "status": "train_failed", "dir": str(run_dir), "rc": rc}
 
-    # checkpoint：严格按 monitor（M1=val_cal_minFDE20）选点，不使用最后 epoch。
+    # checkpoint：严格按 val_minFDE20 选点，不使用最后 epoch。
     try:
         best_epoch, best_val, ckpt = select_best_checkpoint(
-            run_dir / "train", monitor_name
+            run_dir / "train", f"val_minFDE{args.K}"
         )
     except RuntimeError as error:
         return {
@@ -334,7 +375,7 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
         "ckpt": str(ckpt),
         "best_epoch": best_epoch,
         "best_val": best_val,
-        "monitor": variant_monitor(args.variant, args.K),
+        "monitor": f"val_minFDE{args.K}",
         "K": args.K,
         "test_difficulties": test_difficulties,
         "evaluations": evaluations,
@@ -364,6 +405,13 @@ def main():
     ap.add_argument("--bimamba", action=argparse.BooleanOptionalAction, default=False,
                     help="主链固定单向(2026-09-12裁定)；旗标仅作用于encoder")
     ap.add_argument("--output-root", default="outputs/trajgap_bench")
+    ap.add_argument(
+        "--init-checkpoint",
+        default=None,
+        help="optional M0 initialization checkpoint loaded before training",
+    )
+    ap.add_argument("--allow-scene-partition", action="store_true",
+                    help="allow disjoint subsets of the five scenes for coordinated GPU lanes")
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--max-train-retries", type=int, default=6,
                     help="训练被杀后自动断点续训的最大重试次数")
@@ -378,7 +426,7 @@ def main():
         raise SystemExit("TrajGap-Bench 正式重训协议固定 K=20")
 
     # model_version 标签（仅 output 命名）；模型开关由 VARIANTS 唯一映射。
-    args.model_version_num = {v: str(i) for i, v in enumerate(VARIANTS)}[args.variant]
+    args.model_version_num = {"M0": "0", "GAST-PF": "G", "UT-ENC": "U"}[args.variant]
 
     protocol_cfg = PROTOCOLS[args.protocol]
     if args.protocol != "mixed-direct":
@@ -388,6 +436,12 @@ def main():
     if protocol_cfg["zero_missing_only"]:
         raise SystemExit("TrajGap-Bench 正式重训禁止 zero_missing_only")
     args.data_root = str(Path(args.data_root).expanduser().resolve())
+    if args.init_checkpoint is not None:
+        args.init_checkpoint = str(Path(args.init_checkpoint).expanduser().resolve())
+        if not Path(args.init_checkpoint).is_file():
+            raise SystemExit(f"initialization checkpoint not found: {args.init_checkpoint}")
+    if getattr(args, "paired_init", None) is not None:
+        raise SystemExit("--paired-init was retired; use --init-checkpoint")
 
     gpu_env = dict(os.environ)
     gpu_env["CUDA_VISIBLE_DEVICES"] = str(args.gpu)

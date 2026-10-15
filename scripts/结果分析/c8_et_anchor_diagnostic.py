@@ -3,7 +3,7 @@
 按 docs/research/C8_ET输出空间Anchor实施规范.md §3-§6 实施：
   1) 每场景仅用 Mixed-train（Easy/train + Hard/train）未来 GT 建 ET/SVD 基
      （k=4 主配置 + k=8 消融）与 anchor 库（M=64 主配置 + M=32 消融，seed=2024）。
-     DeMo 环境无 sklearn -> 使用 torch Lloyd k-means++ 全批实现，算法名如实写入产物。
+     GAST-PF 环境无 sklearn -> 使用 torch Lloyd k-means++ 全批实现，算法名如实写入产物。
   2) 加载正式 best-val checkpoint（epoch=*.ckpt，禁止 last.ckpt），Mixed-test 前向一次，
      对同一批预测做纯后处理变体（pi 原样保留）：
        m0 / etproj_k4 / etproj_k8 / anchor_hard_* / interp_*（缺失样本 λ>0，
@@ -207,7 +207,7 @@ def build_or_load_basis(args, scene):
                 "inertia": inertia, "iters": iters,
                 "anchor_algorithm": (
                     "torch_lloyd_kmeanspp_fullbatch "
-                    "(sklearn unavailable in DeMo env; spec §3.3 torch fallback)"),
+                    "(sklearn unavailable in GAST-PF env; spec §3.3 torch fallback)"),
                 "anchor_seed": int(args.anchor_seed), "M": int(M),
             }
         blob[f"k{k}"] = {
