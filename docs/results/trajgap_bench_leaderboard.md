@@ -42,6 +42,20 @@
 - **b-minFDE20 无法对齐**：DeMo 的 direct evaluator 不产出该项，仅 MoFlow 侧有 test 值（宏平均 1.2945），故未入表。
 - 加粗 = 该列最优。
 
+## 5 · UT-ENC screening（旧 monitor 选点，非最终定稿）
+
+> 借用 UniTraj `Past_Encoder` 的完整 encoder replacement；实验标签仍为 `UT-ENC`，当前代码名为 GAST Encoder。协议与本表一致：Mixed-direct、seed=2024、K=20、100 epochs。**本节不作为最终主榜**：训练/runner 按初始头 `val_minFDE20` 选 checkpoint，但 test 使用最终头 `new_y_hat/new_pi`；五个场景的 `val_new_minFDE20` 最佳 epoch 均与实际 test checkpoint 不同。详见 `docs/results/实验总汇总.md` §13。
+
+### UT-ENC 原始 test 指标
+
+| Method | ETH-M | HOTEL-M | UNIV-M | ZARA1-M | ZARA2-M | Avg |
+|---|---|---|---|---|---|---|
+| UT-ENC（screening） minADE20 / minFDE20 | 0.6191 / 0.8544 | 0.2572 / 0.3877 | 0.3258 / 0.5292 | 0.2494 / 0.4014 | 0.1808 / 0.3004 | 0.3264 / 0.4946 |
+| UT-ENC（screening） ADE@1 / FDE@1 | 1.4232 / 2.4693 | 0.5079 / 0.8615 | 0.8615 / 1.6233 | 0.9072 / 1.6382 | 0.7483 / 1.3425 | 0.8896 / 1.5870 |
+| UT-ENC（screening） MR | 11.91% | 4.12% | 3.65% | 1.51% | 1.32% | 4.50% |
+
+样本加权 micro：minADE20 0.2950，minFDE20 0.4783，ADE@1 0.8369，FDE@1 1.5564，MR 3.16%。与外部模型的宏平均相对差：相对 MoFlow 为 −6.62% / −5.37% / −9.36% / −8.25% / −2.07%；相对 SocialLSTM 为 −28.67% / −18.64% / −33.00% / −27.42% / −25.06%。
+
 ## 数据来源
 
 | 方法 | 产物路径 |

@@ -55,6 +55,18 @@ def migrate(path: Path) -> None:
 
     # 1) 模型键迁移
     sd = ckpt["state_dict"]
+    old_keys = [k for k in sd if k.startswith(net) and OLD in k]
+    new_keys = [k for k in sd if k.startswith(net) and NEW in k]
+    if not old_keys:
+        if new_keys:
+            raise RuntimeError(
+                f"{path}: checkpoint is already migrated; refusing to remap its "
+                "optimizer state a second time"
+            )
+        raise RuntimeError(f"{path}: no {OLD} model keys found")
+    if new_keys:
+        raise RuntimeError(f"{path}: mixed legacy/new encoder key namespaces")
+
     migrated = 0
     for k in list(sd):
         idx = k.find(OLD)
@@ -74,11 +86,7 @@ def migrate(path: Path) -> None:
     no_decay_new &= trainable
 
     flat_new = sorted(decay_new) + sorted(no_decay_new)
-    # 旧名序列：与新序列同集合、同分组，仅名字前缀不同
-    flat_old = [n.replace(NEW, OLD) for n in flat_new]
-    # 旧 optimizer 里这个名字序列的真实键序（param_groups 展平）
-    old_seq_keys = [n.replace(NEW, OLD) for n in flat_new]
-    # 但旧 checkpoint 的实际展平顺序 = sorted(旧名) 分组排序，需按名字查位置
+    # 旧 checkpoint 的 optimizer 顺序按旧参数名排序；按名字匹配而非直接复制索引。
     sorted_old = (sorted(n.replace(NEW, OLD) for n in decay_new)
                   + sorted(n.replace(NEW, OLD) for n in no_decay_new))
     name_to_sorted_pos = {n: i for i, n in enumerate(sorted_old)}

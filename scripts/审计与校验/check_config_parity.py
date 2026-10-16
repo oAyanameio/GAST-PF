@@ -6,7 +6,7 @@ uni/bi 检查逻辑；无 outputs 历史 run 依赖，独立可运行）。
 """
 import yaml
 from pathlib import Path
-ROOT = Path("/home/lbh/GAST-PF")
+ROOT = Path(__file__).resolve().parents[2]
 SUBS = ["eth","hotel","univ","zara1","zara2"]
 
 def training_run(base):

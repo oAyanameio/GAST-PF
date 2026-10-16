@@ -152,6 +152,40 @@
 \end{table*}
 
 % ---------------------------------------------------------------------
+% Table 4: UT-ENC screening (not final main leaderboard)
+% ---------------------------------------------------------------------
+% UniTraj Past_Encoder borrowed control, current code name GAST Encoder.
+% The runner selected checkpoints by val_minFDE20, while test uses the
+% final new_y_hat/new_pi head. All five val_new_minFDE20 optima differ
+% from the selected test checkpoint; see docs/results/实验总汇总.md §13.
+\begin{table*}[t]
+  \centering
+  \caption{UT-ENC borrowed-encoder screening on TrajGap-Bench
+  (Mixed-direct). Results are reported for the checkpoints selected by the
+  legacy val-minFDE$_{20}$ monitor and are not the final-head main leaderboard.}
+  \label{tab:tgbench-utenc-screening}
+  \small
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{l c c c c c c}
+    \toprule
+    Metric & ETH-M & HOTEL-M & UNIV-M & ZARA1-M & ZARA2-M & Avg \\
+    \midrule
+    minADE$_{20}$ & 0.6191 & 0.2572 & 0.3258 & 0.2494 & 0.1808 & 0.3264 \\
+    minFDE$_{20}$ & 0.8544 & 0.3877 & 0.5292 & 0.4014 & 0.3004 & 0.4946 \\
+    ADE@1 & 1.4232 & 0.5079 & 0.8615 & 0.9072 & 0.7483 & 0.8896 \\
+    FDE@1 & 2.4693 & 0.8615 & 1.6233 & 1.6382 & 1.3425 & 1.5870 \\
+    MR (\%) & 11.91 & 4.12 & 3.65 & 1.51 & 1.32 & 4.50 \\
+    \bottomrule
+  \end{tabular}
+  \begin{flushleft}
+    \footnotesize
+    Sample-weighted micro average: minADE$_{20}$ 0.2950,
+    minFDE$_{20}$ 0.4783, ADE@1 0.8369, FDE@1 1.5564, MR 3.16\%.
+    This is a single-seed screening record, not a final SOTA claim.
+  \end{flushleft}
+\end{table*}
+
+% ---------------------------------------------------------------------
 % Notes for the caption / text:
 %  * All methods share the identical Mixed test split  (302,886 focal
 %    samples). M0, MoFlow and SocialLSTM cover all five scenes;

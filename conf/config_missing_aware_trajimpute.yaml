@@ -20,8 +20,12 @@ train_difficulties: [Mixed]
 val_difficulties: [Mixed]
 train_sampling_scheme: natural
 train_sampling_seed: ${seed}
-monitor: val_minFDE20
+# 选点指标：必须与最终评估输出头一致（new_y_hat/new_pi -> val_new_*）。
+monitor: val_new_minFDE20
 save_top_k: 1
+# runner 注入：当前实验的 manifest 路径；train.py 据此在 checkpoint 中写入
+# run contract 与 optimizer signature，供断点续训前做契约校验。
+run_manifest_path:
 
 data_root: /home/lbh/TrajImpute/dataset/TrajImpute
 # TrajGap-Bench 正式主协议：所有训练、验证和测试均使用 Mixed。

@@ -12,8 +12,11 @@ hydra:
 seed: 2024
 scene: ETH-M
 difficulty: Easy
-monitor: val_minFDE20
+# 选点指标：必须与最终评估输出头一致（new_y_hat/new_pi -> val_new_*）。
+monitor: val_new_minFDE20
 save_top_k: 1
+# runner 注入：当前实验 manifest 路径，用于 checkpoint 契约校验。
+run_manifest_path:
 
 data_root: /home/lbh/TrajImpute/dataset/TrajImpute
 zero_missing_only: false
