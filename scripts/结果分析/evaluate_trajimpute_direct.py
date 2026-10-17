@@ -34,6 +34,13 @@ VARIANTS = {
         "gast_depth": 4,
         "gast_gsm_operator": "max",
     },
+    # Stage 1 · AnchorGeo
+    "GAST-PF-AnchorGeo": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_anchor_geo": True,
+    },
     # Legacy label kept for evaluating historical experiment outputs.
     "UT-ENC": {
         "encoder_type": "utenc",
@@ -85,6 +92,17 @@ def load_checkpoint(model, ckpt_path):
         raise ValueError(
             f"checkpoint encoder_type={checkpoint_encoder} does not match "
             f"variant encoder_type={expected_encoder}"
+        )
+    # Stage 1 AnchorGeo 开关必须与 checkpoint 一致：否则几何分支会静默失效
+    # 或错配（GAST-PF checkpoint 载入 AnchorGeo 模型）。
+    ckpt_anchor_geo = bool(
+        model_config.get("gast_anchor_geo", False)
+    ) if hasattr(model_config, "get") else False
+    model_anchor_geo = bool(getattr(model, "gast_anchor_geo", False))
+    if ckpt_anchor_geo != model_anchor_geo:
+        raise ValueError(
+            f"checkpoint gast_anchor_geo={ckpt_anchor_geo} does not match "
+            f"variant gast_anchor_geo={model_anchor_geo}"
         )
     state = ckpt.get("state_dict", ckpt)
     cleaned = {k[len("net."):]: v for k, v in state.items() if k.startswith("net.")}
@@ -141,6 +159,7 @@ def run_evaluation(model, dataset, K, scene, difficulty, split, variant, seed,
                 valid_count=int(valid_count[i]),
                 anchor_lag=int(anchor_lag[i]),
                 forecast_gap=int(forecast_gap[i]),
+                max_missing_run=int(batch["max_missing_run"][i]),
             )
         n_batches += 1
         if max_batches is not None and n_batches >= max_batches:

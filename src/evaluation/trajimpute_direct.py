@@ -66,7 +66,8 @@ class DirectEvaluator:
         )
 
     def update(self, pred, prob, target, scene, difficulty, split, missing_count,
-               valid_count=None, anchor_lag=None, forecast_gap=None):
+               valid_count=None, anchor_lag=None, forecast_gap=None,
+               max_missing_run=None):
         res = evaluate_predictions(pred, prob, target, self.miss_threshold)
         key = (scene, difficulty, split, int(missing_count))
         for name, vals in res.items():
@@ -81,6 +82,8 @@ class DirectEvaluator:
             dimensions["terminal_missing"] = bool(int(anchor_lag) > 0)
         if forecast_gap is not None:
             dimensions["forecast_gap"] = int(forecast_gap)
+        if max_missing_run is not None:
+            dimensions["max_missing_run"] = int(max_missing_run)
         for dimension, value in dimensions.items():
             value_key = str(value).lower() if isinstance(value, bool) else str(value)
             for name, vals in res.items():

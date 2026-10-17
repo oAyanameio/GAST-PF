@@ -26,6 +26,8 @@ target:
     # unitraj_encoder_bench_seed2024 lanes can resume from their checkpoints.
     utenc_depth: 4
     utenc_gsm_operator: 'max'
+    # Stage 1 · AnchorGeo 开关（默认关闭：基础版本行为不变）。
+    gast_anchor_geo: false
   pretrained_weights: ${pretrained_weights}
   lr: ${lr}
   weight_decay: ${weight_decay}

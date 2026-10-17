@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .layers.transformer_blocks import Block
 from .layers.structured_future_decoder import FutureDistributionDecoder
-from .layers.gast_encoder import GASTEncoder
+from .layers.gast_encoder import GASTEncoder, AnchorGeoProjection, anchor_lag_norm
 from .layers.mamba.vim_mamba import init_weights, create_block
 from functools import partial
 from timm.models.layers import DropPath, to_2tuple
@@ -32,6 +32,7 @@ class TrajectoryForecaster(nn.Module):
         encoder_type: str = "m0",
         gast_depth: int = 4,
         gast_gsm_operator: str = "max",
+        gast_anchor_geo: bool = False,
         utenc_depth: int = None,
         utenc_gsm_operator: str = None,
     ) -> None:
@@ -44,6 +45,12 @@ class TrajectoryForecaster(nn.Module):
         if encoder_type not in {"m0", "gast", "utenc"}:
             raise ValueError(f"unsupported encoder_type={encoder_type!r}")
         self.encoder_type = encoder_aliases.get(encoder_type, encoder_type)
+
+        # Stage 1 AnchorGeo（默认关闭）：把 anchor 空间与末端方向证据接入
+        # GAST-PF 的 actor 输出端。关闭时模块不注册，基础版本行为与 state_dict
+        # 完全不变。
+        self.gast_anchor_geo = bool(gast_anchor_geo)
+        self.anchor_geo_projection = None
 
         # Keep old configuration keys loadable while making GAST-PF the
         # public/current name.
@@ -128,6 +135,14 @@ class TrajectoryForecaster(nn.Module):
                 drop_path=drop_path,
             )
             torch.random.set_rng_state(rng_state)
+            if self.gast_anchor_geo:
+                # Stage 1 AnchorGeo：与 gast_encoder 同处 RNG save/restore 内构造，
+                # 保证开启/关闭两臂的其余参数逐位一致（配对初始化纪律）。
+                rng_state = torch.random.get_rng_state()
+                self.anchor_geo_projection = AnchorGeoProjection(
+                    embed_dim=embed_dim, geo_dim=5, p_dropout=0.2
+                )
+                torch.random.set_rng_state(rng_state)
 
     def initialize_weights(self):
         if hasattr(self, "actor_type_embed"):
@@ -224,6 +239,23 @@ class TrajectoryForecaster(nn.Module):
         """Legacy attribute alias for the pre-GAST-PF encoder name."""
         return self.gast_encoder
 
+    @staticmethod
+    def _anchor_geo_features(data, valid_mask):
+        """Stage 1 AnchorGeo 几何输入 [B, N, 5]。
+
+        [x_centers(2), cos(last_valid_angle), sin(last_valid_angle),
+         anchor_lag_norm(1)]。anchor_lag 由 x_valid_mask 在模型侧计算，
+        全部量只来自可见历史，不含 future target / future validity。
+        """
+        centers = data["x_centers"]
+        if "x_last_valid_angle" in data:
+            angles = data["x_last_valid_angle"]
+        else:
+            angles = data["x_angles"][:, :, -1]
+        trig = torch.stack([torch.cos(angles), torch.sin(angles)], dim=-1)
+        lag = anchor_lag_norm(valid_mask).to(centers.dtype)
+        return torch.cat([centers.to(centers.dtype), trig.to(centers.dtype), lag], dim=-1)
+
     def forward(self, data):
         ###### Scene context encoding ###### 
         # agent encoding
@@ -248,6 +280,13 @@ class TrajectoryForecaster(nn.Module):
             actor_feat = self.gast_encoder(
                 hist_feat, hist_valid_mask, ~hist_key_valid_mask
             )
+            if self.anchor_geo_projection is not None:
+                # Stage 1 AnchorGeo：只在 actor 输出端叠加几何证据，
+                # 不改 GSM attention，不改 decoder 输入维度。
+                geo = self._anchor_geo_features(data, hist_valid_mask)
+                actor_feat = actor_feat + self.anchor_geo_projection(
+                    geo, ~hist_key_valid_mask
+                )
             x_encoder = actor_feat
         else:
             # unidirectional mamba（M0 原版路径）

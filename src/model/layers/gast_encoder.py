@@ -237,6 +237,74 @@ class TemporalDecay(nn.Module):
         return torch.exp(-x)
 
 
+def anchor_lag_norm(valid_mask: torch.Tensor) -> torch.Tensor:
+    """anchor lag（距最后有效观测的步数）归一化到 [0, 1]。
+
+    Input : valid_mask [B, N, T] bool，True=该帧有效观测。
+    Output: [B, N, 1] float。last_valid_index = max{t | m[t]=1}；
+            anchor_lag = (T - 1) - last_valid_index；除以 max(T - 1, 1)。
+            全无效行取 1.0（最大不确定），保证有限且恒落在 [0, 1]。
+    """
+    T = valid_mask.shape[-1]
+    idx = torch.arange(T, device=valid_mask.device)
+    last = (valid_mask.long() * idx).max(dim=-1).values
+    last = torch.where(
+        valid_mask.any(dim=-1), last, torch.full_like(last, -1)
+    )
+    denom = max(T - 1, 1)
+    lag = ((T - 1) - last).clamp(min=0, max=denom)
+    return (lag.float() / denom).unsqueeze(-1)
+
+
+class AnchorGeoProjection(nn.Module):
+    """Stage 1 AnchorGeo：把 anchor 空间与末端方向证据投影到 actor token 空间。
+
+    输入几何 [B, N, 5] = [x_centers(2), cos(last_valid_angle), sin(...),
+    anchor_lag_norm(1)]，只来自可见历史（不得使用 future）。
+
+    纪律：
+    - 输出层零初始化 → 训练起点与基础版本（无 AnchorGeo）严格等价，可归因；
+    - padding actor 的几何输入与输出显式置零；
+    - 不改变 GSM attention，也不改变 decoder 输入维度。
+    """
+
+    def __init__(self, embed_dim: int = 128, geo_dim: int = 5,
+                 hidden_dim: int | None = None, p_dropout: float = 0.2):
+        super().__init__()
+        self.geo_dim = geo_dim
+        hidden = hidden_dim or embed_dim
+        self.mlp = nn.Sequential(
+            nn.Linear(geo_dim, hidden),
+            nn.LayerNorm(hidden),
+            nn.LeakyReLU(),
+            nn.Dropout(p_dropout),
+            nn.Linear(hidden, embed_dim, bias=False),
+        )
+        self._init_weights()
+
+    def _init_weights(self):
+        for m in self.mlp.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.trunc_normal_(m.weight, std=0.02)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.LayerNorm):
+                nn.init.constant_(m.bias, 0)
+                nn.init.constant_(m.weight, 1.0)
+        # 残差式零初始化：初始时刻本模块贡献恒为 0。
+        nn.init.zeros_(self.mlp[-1].weight)
+
+    def forward(self, geo: torch.Tensor, key_padding: torch.Tensor) -> torch.Tensor:
+        """geo [B,N,5]，key_padding [B,N]（True=padding）-> [B,N,embed_dim]。"""
+        if geo.shape[-1] != self.geo_dim:
+            raise ValueError(
+                f"expected geo_dim={self.geo_dim}, got {geo.shape[-1]}"
+            )
+        keep = (~key_padding).unsqueeze(-1).to(geo.dtype)
+        y = self.mlp(geo * keep)
+        return y * keep
+
+
 class GASTEncoder(nn.Module):
     """GAST-PF 的缺失间隔感知时空编码器。
 

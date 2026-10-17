@@ -50,6 +50,14 @@ VARIANTS = {
         "gast_depth": 4,
         "gast_gsm_operator": "max",
     },
+    # Stage 1 · AnchorGeo：在 GAST-PF actor 输出端叠加 anchor 空间 +
+    # 末端方向 + anchor lag 几何证据；GSM attention 与 decoder 输入维度不变。
+    "GAST-PF-AnchorGeo": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_anchor_geo": True,
+    },
     # Legacy experiment label; keep it loadable without making it the current
     # public name.
     "UT-ENC": {
@@ -795,7 +803,9 @@ def main():
         raise SystemExit("TrajGap-Bench 正式重训协议固定 K=20")
 
     # model_version 标签（仅 output 命名）；模型开关由 VARIANTS 唯一映射。
-    args.model_version_num = {"M0": "0", "GAST-PF": "G", "UT-ENC": "U"}[args.variant]
+    args.model_version_num = {
+        "M0": "0", "GAST-PF": "G", "GAST-PF-AnchorGeo": "GA", "UT-ENC": "U",
+    }[args.variant]
 
     protocol_cfg = PROTOCOLS[args.protocol]
     if args.protocol != "mixed-direct":
