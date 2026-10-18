@@ -337,3 +337,47 @@ def test_ecsr_encoder_gpu_forward_backward_with_missing_and_padding():
     gradients = [parameter.grad for parameter in encoder.parameters() if parameter.grad is not None]
     assert gradients
     assert all(torch.isfinite(gradient).all() for gradient in gradients)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="需要 GPU（Mamba CUDA）")
+def test_ecsr_forecaster_real_mixed_batch_forward_backward():
+    from src.datamodule.trajimpute_dataset import (
+        TRAJIMPUTE_ROOT,
+        TrajGapDataset,
+        trajimpute_collate_fn,
+    )
+    from src.model.trajectory_forecaster import TrajectoryForecaster
+
+    dataset = TrajGapDataset(TRAJIMPUTE_ROOT, "ETH-M", "train")
+    batch = trajimpute_collate_fn([dataset[index] for index in (0, 100, 1000)])
+    batch = {
+        key: value.cuda() if torch.is_tensor(value) else value
+        for key, value in batch.items()
+    }
+    torch.manual_seed(2024)
+    model = TrajectoryForecaster(
+        num_modes=20,
+        encoder_type="gast",
+        gast_ecsr=True,
+    ).cuda()
+
+    model.eval()
+    with torch.no_grad():
+        output = model(batch)
+    assert output["new_y_hat"].shape == (3, 20, 12, 2)
+    assert output["new_pi"].shape == (3, 20)
+    assert torch.isfinite(output["new_y_hat"]).all()
+    assert torch.isfinite(output["new_pi"]).all()
+
+    model.train()
+    output = model(batch)
+    loss = output["new_y_hat"].square().mean() + output["new_pi"].square().mean()
+    loss.backward()
+    gradients = [
+        parameter.grad
+        for parameter in model.gast_encoder.parameters()
+        if parameter.grad is not None
+    ]
+    assert gradients
+    assert all(torch.isfinite(gradient).all() for gradient in gradients)
+    assert model.gast_encoder.evidence_tau_logit.grad is not None

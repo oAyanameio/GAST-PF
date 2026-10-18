@@ -83,7 +83,7 @@ CUDA_VISIBLE_DEVICES=1 PYTHONNOUSERSITE=1 PYTHONPATH=. \
 
 `--smoke` 端到端 ETH-M：训练 → checkpoint（`monitor=val_new_minFDE20`）→ 评估 `status=complete rc=0`；manifest `encoder_config` 含 `gast_frame_geo: True`；评估输出六维分层齐备。产物已清理。
 
-## 5. 正式训练（2026-10-17 18:20 → 10-18 完成）
+## 5. 正式训练（2026-10-17 18:20 → 2026-10-18 完成）
 
 实际运行的队列（由 `LANES` 覆盖，脚本默认四卡布局未改）：
 
@@ -222,3 +222,45 @@ bash scripts/训练与评估/launch_watcher.sh    # 默认 Stage 2 / GAST-PF-Fra
 - [ ] 噪声通道对照臂（`GAST-PF-FrameGeo-Noise`）——判定"几何 vs 容量"归属的唯一缺口，未运行
 - [ ] `GAST-PF` 同口径配对基线（消融阶段补）
 
+## 8. ECSR 实现 checkpoint（代码完成，实验未启动）
+
+Stage 8 的完整候选实现已作为 `GAST-PF-ECSR` 接入，但本节只记录代码和验证状态，不能把它表述为已经取得实验收益。
+
+### 8.1 统一证据状态
+
+对每个 actor 和历史时间步维护同一组状态：
+
+- `s`：直接观测资格；只有真实有效、非 padding 帧可以作为空间 attention 的 source/key；
+- `r`：软可靠度；有效帧为 1，缺失帧按缺失年龄指数衰减；
+- `a`：缺失年龄；用于构造 `r`，并保留前缀全缺的有限值语义。
+
+该状态沿同一条信息流依次控制空间 source 资格、时序输入强度、前后向路径融合和历史读出，不能拆解为互不关联的五个模块。
+
+### 8.2 已实现接口
+
+| 层 | 实现 |
+| --- | --- |
+| 空间关系 | 逐帧 7 维相对位置/距离/速度/朝向差 attention bias；缺失 actor 不能作为 source，缺失 query 仍可接收有效邻居与 ghost token |
+| 时序状态 | `r` 分别门控前向和反向 Mamba 输入；方向融合按累计缺失负担加权 |
+| 读出 | 可靠度加权历史 evidence readout；末端有效时保留末端状态，末端缺失时融合历史证据 |
+| 变体 | `TrajectoryForecaster(gast_ecsr=True)` / `GAST-PF-ECSR` |
+| 兼容性 | ECSR 与旧 `gast_anchor_geo`、`gast_frame_geo` 互斥；默认配置关闭，旧 GAST-PF 行为不变 |
+
+### 8.3 验证状态
+
+- `tests/test_ecsr.py`：CPU 行为、source/query 资格、几何屏蔽、padding 隔离、 permutation 等价性、checkpoint 契约、AdamW 参数闭包均通过；
+- CUDA 编码器前向/反向冒烟通过；真实 ETH-M Mixed batch 的完整 forecaster 前向/反向冒烟通过；
+- runner 闭环 smoke（ETH-M、1 epoch、训练/验证/评估各 1 batch）返回 `status=complete`、checkpoint 选择成功、evaluator `rc=0`；临时产物未纳入仓库；
+- 旧回归：`tests/test_gast_encoder.py tests/test_stage2_frame_geo.py` 为 `22 passed, 2 skipped`；
+- 代码提交 checkpoint：`564cc0d`；后续新增真实 batch 测试尚未提交；
+- 尚未启动五场景正式训练，因此目前不能判断 ECSR 是 Go 还是 No-Go。
+
+正式实验前仍需比较 `GAST-PF`、最近一个通过验收的几何版本和 `GAST-PF-ECSR`，并至少检查 `missing_count=0`、高缺失组、末端缺失组和全场景均值；若没有稳定收益，应收缩方法主张，而不是继续无条件叠加模块。
+
+正式实验启动器：
+
+```bash
+bash scripts/训练与评估/launch_stage8_ecsr.sh
+```
+
+默认输出根为 `outputs/stage8_ecsr_seed2024`，与 Stage 1/2 结果隔离；可通过 `ROOT` 和 `LANES` 覆盖输出目录与 GPU/场景分配。
