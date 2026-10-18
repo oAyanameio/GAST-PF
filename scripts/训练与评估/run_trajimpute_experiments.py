@@ -58,6 +58,19 @@ VARIANTS = {
         "gast_gsm_operator": "max",
         "gast_anchor_geo": True,
     },
+    # Stage 2 · FrameGeo：把逐帧相对位置显式送入 GSM（历史输入 4 -> 6 维）。
+    "GAST-PF-FrameGeo": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_frame_geo": True,
+    },
+    "GAST-PF-ECSR": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_ecsr": True,
+    },
     # Legacy experiment label; keep it loadable without making it the current
     # public name.
     "UT-ENC": {
@@ -87,7 +100,7 @@ RESUME_CONTRACT_FIELDS = (
     "epochs", "precision", "lr", "weight_decay", "optimizer_policy",
     "train_sampling_scheme", "train_sampling_seed", "monitor", "K",
     "backbone", "initialization_checkpoint", "git_revision",
-    "runner_contract_version", "optimizer_signature",
+    "laplace_loss_impl", "runner_contract_version", "optimizer_signature",
 )
 
 
@@ -463,6 +476,8 @@ def select_best_checkpoint(train_dir, monitor):
 
 
 def build_manifest(args, protocol_cfg):
+    from src.utils.LaplaceNLLLoss import LAPLACE_LOSS_IMPL
+
     data_root = Path(args.data_root)
     train_difficulties = protocol_cfg.get("train_difficulties", [protocol_cfg["difficulty"]])
     val_difficulties = protocol_cfg.get("val_difficulties", [protocol_cfg["difficulty"]])
@@ -505,6 +520,7 @@ def build_manifest(args, protocol_cfg):
         "scenes": args.scenes,
         "files": files,
         "git_revision": get_git_revision(),
+        "laplace_loss_impl": LAPLACE_LOSS_IMPL,
         "python": sys.executable,
         "env": env_info(),
         "model_version": args.variant,
@@ -804,7 +820,8 @@ def main():
 
     # model_version 标签（仅 output 命名）；模型开关由 VARIANTS 唯一映射。
     args.model_version_num = {
-        "M0": "0", "GAST-PF": "G", "GAST-PF-AnchorGeo": "GA", "UT-ENC": "U",
+        "M0": "0", "GAST-PF": "G", "GAST-PF-AnchorGeo": "GA",
+        "GAST-PF-FrameGeo": "GF", "GAST-PF-ECSR": "GE", "UT-ENC": "U",
     }[args.variant]
 
     protocol_cfg = PROTOCOLS[args.protocol]

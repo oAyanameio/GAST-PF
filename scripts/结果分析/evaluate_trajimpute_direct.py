@@ -41,6 +41,19 @@ VARIANTS = {
         "gast_gsm_operator": "max",
         "gast_anchor_geo": True,
     },
+    # Stage 2 · FrameGeo
+    "GAST-PF-FrameGeo": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_frame_geo": True,
+    },
+    "GAST-PF-ECSR": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_ecsr": True,
+    },
     # Legacy label kept for evaluating historical experiment outputs.
     "UT-ENC": {
         "encoder_type": "utenc",
@@ -93,17 +106,17 @@ def load_checkpoint(model, ckpt_path):
             f"checkpoint encoder_type={checkpoint_encoder} does not match "
             f"variant encoder_type={expected_encoder}"
         )
-    # Stage 1 AnchorGeo 开关必须与 checkpoint 一致：否则几何分支会静默失效
-    # 或错配（GAST-PF checkpoint 载入 AnchorGeo 模型）。
-    ckpt_anchor_geo = bool(
-        model_config.get("gast_anchor_geo", False)
-    ) if hasattr(model_config, "get") else False
-    model_anchor_geo = bool(getattr(model, "gast_anchor_geo", False))
-    if ckpt_anchor_geo != model_anchor_geo:
-        raise ValueError(
-            f"checkpoint gast_anchor_geo={ckpt_anchor_geo} does not match "
-            f"variant gast_anchor_geo={model_anchor_geo}"
-        )
+    # 分阶段开关必须与 checkpoint 一致：否则对应分支会静默失效或错配。
+    for switch in ("gast_anchor_geo", "gast_frame_geo", "gast_ecsr"):
+        ckpt_switch = bool(
+            model_config.get(switch, False)
+        ) if hasattr(model_config, "get") else False
+        model_switch = bool(getattr(model, switch, False))
+        if ckpt_switch != model_switch:
+            raise ValueError(
+                f"checkpoint {switch}={ckpt_switch} does not match "
+                f"variant {switch}={model_switch}"
+            )
     state = ckpt.get("state_dict", ckpt)
     cleaned = {k[len("net."):]: v for k, v in state.items() if k.startswith("net.")}
     # Let TrajectoryForecaster migrate legacy parameter paths first; validate

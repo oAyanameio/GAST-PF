@@ -34,11 +34,13 @@ launch 2 HOTEL-M
 launch 3 ZARA1-M
 
 # watcher 同样脱离会话；已在跑则不重复启动。
-if pgrep -f 'watch_stage1_anchor_geo[.]py' > /dev/null; then
+WATCHER_PATTERN="[w]atch_stage_variant[.]py --variant ${VARIANT} --root ${ROOT}"
+if pgrep -f "$WATCHER_PATTERN" > /dev/null; then
   echo "  watcher 已在运行，跳过"
 else
   setsid nohup env PYTHONNOUSERSITE=1 PYTHONPATH=. "$PY" -u \
-    scripts/训练与评估/watch_stage1_anchor_geo.py \
+    scripts/训练与评估/watch_stage_variant.py \
+    --variant "$VARIANT" --root "$ROOT" \
     >> "$ROOT/watcher_stage1.log" 2>&1 < /dev/null &
   echo "  launched watcher pid=$!"
 fi

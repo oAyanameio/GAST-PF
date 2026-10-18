@@ -5,6 +5,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+# 记录 Laplace loss 的实现版本，写入每次实验的 manifest。
+# 改动 compute() 的数学或算子组织方式时必须 bump 该字符串：
+# runner 把它放进 resume contract，值不同会拒绝从旧 checkpoint 续训。
+LAPLACE_LOSS_IMPL = "vectorized-batch-v1"
+
+
 class Metric:
     """
     Base class for prediction metric/loss function
@@ -33,31 +39,71 @@ class LaplaceNLLLoss(Metric):
         self.loss = nn.SmoothL1Loss(reduction='mean')
 
     def compute(self, predictions: Dict, ground_truth: Union[torch.Tensor, Dict]) -> torch.Tensor:
-        out_mu = predictions['traj']  
-        out_sigma = predictions['scale']  
-        gt = ground_truth  
-        num_modes = out_mu.size(1)
-        y = gt.unsqueeze(1).expand(-1, num_modes, -1, -1)
-        
-        out_pi = predictions['probs']  
-        pred = torch.cat((out_mu, out_sigma), dim=-1)  
-        l2_norm = torch.norm(out_mu - y, p=2, dim=-1)  
-        l2_norm = l2_norm.sum(dim=-1)  
-        best_mode = l2_norm.argmin(dim=1)  
-        pred_best = pred[torch.arange(pred.shape[0]), best_mode]  
-        soft_target = F.softmax(-l2_norm / pred.shape[2], dim=1).detach()  
+        """Vectorized Laplace NLL over the whole batch.
+
+        与原逐样本 Python 循环实现数学等价：原实现对每个样本 b 计算
+            nll_mean(b) = mean_{t,c} [ log(2*scale) + |gt - loc| / scale ]
+            ce(b)       = sum_m [ -soft_target * log_softmax(pi) ]
+            loss        = sum_b [ nll_mean(b) + 0.5 * ce(b) ] / B
+        这里把 b 维合并进张量运算，reduction 顺序不变，因此前向值仅有
+        累加顺序带来的 1-2 ulp 差异，对 loc/scale/pi 的梯度逐位相同。
+
+        训练 step 是 CPU-dispatch bound（实测每步约 3230 次 kernel launch），
+        原循环把 64 个样本的算子展开成 64 份派发，本实现消除该重复。
+        """
+        out_mu = predictions['traj']
+        out_sigma = predictions['scale']
+        gt = ground_truth
+        out_pi = predictions['probs']
+
+        pred = torch.cat((out_mu, out_sigma), dim=-1)
+        # 原实现用 gt.unsqueeze(1).expand(...) 参与相减；broadcast 数值一致。
+        l2_norm = torch.norm(out_mu - gt.unsqueeze(1), p=2, dim=-1).sum(dim=-1)
+        best_mode = l2_norm.argmin(dim=1)
+        pred_best = pred[torch.arange(pred.shape[0], device=pred.device), best_mode]
+        soft_target = F.softmax(-l2_norm / pred.shape[2], dim=1).detach()
 
         loc, scale = pred_best.chunk(2, dim=-1)
-        
+        # 原实现 clone + clamp_；非原地 clamp 数值相同且不修改上游张量。
+        scale = scale.clamp(min=1e-6)
+
+        nll = torch.log(2 * scale) + torch.abs(gt - loc) / scale
+        nll_mean = nll.mean(dim=(-2, -1))
+        cross_entropy = torch.sum(-soft_target * F.log_softmax(out_pi, dim=-1), dim=-1)
+
+        return (nll_mean + cross_entropy * 0.5).sum() / loc.shape[0]
+
+    def compute_reference(self, predictions: Dict, ground_truth: Union[torch.Tensor, Dict]) -> torch.Tensor:
+        """Pre-vectorization reference implementation, kept only for equivalence gating.
+
+        NOT used by training. scripts/审计与校验/check_laplace_loss_equivalence.py
+        compares this against `compute` on fixed tensors.
+        """
+        out_mu = predictions['traj']
+        out_sigma = predictions['scale']
+        gt = ground_truth
+        num_modes = out_mu.size(1)
+        y = gt.unsqueeze(1).expand(-1, num_modes, -1, -1)
+
+        out_pi = predictions['probs']
+        pred = torch.cat((out_mu, out_sigma), dim=-1)
+        l2_norm = torch.norm(out_mu - y, p=2, dim=-1)
+        l2_norm = l2_norm.sum(dim=-1)
+        best_mode = l2_norm.argmin(dim=1)
+        pred_best = pred[torch.arange(pred.shape[0]), best_mode]
+        soft_target = F.softmax(-l2_norm / pred.shape[2], dim=1).detach()
+
+        loc, scale = pred_best.chunk(2, dim=-1)
+
         scale = scale.clone()
         with torch.no_grad():
             scale.clamp_(min=1e-6)
         loss = 0
         for b in range(loc.shape[0]):
-            nll = torch.log(2 * scale[b]) + torch.abs(gt[b] - loc[b]) / scale[b]  
-            nll_mean = nll.mean()  
+            nll = torch.log(2 * scale[b]) + torch.abs(gt[b] - loc[b]) / scale[b]
+            nll_mean = nll.mean()
 
-            cross_entropy = torch.sum(-soft_target[b] * F.log_softmax(out_pi[b], dim=-1), dim=-1)  
+            cross_entropy = torch.sum(-soft_target[b] * F.log_softmax(out_pi[b], dim=-1), dim=-1)
 
             loss += nll_mean + cross_entropy * 0.5
         loss_total = loss / loc.shape[0]

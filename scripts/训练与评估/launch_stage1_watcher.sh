@@ -11,12 +11,14 @@ ROOT=outputs/stage1_anchor_geo_seed2024
 cd "$REPO" || exit 1
 mkdir -p "$ROOT"
 
-for p in $(pgrep -f 'watch_stage1_anchor_geo[.]py'); do
+WATCHER_PATTERN='[w]atch_stage_variant[.]py --variant GAST-PF-AnchorGeo --root outputs/stage1_anchor_geo_seed2024'
+for p in $(pgrep -f "$WATCHER_PATTERN"); do
   kill "$p" 2>/dev/null && echo "  stopped old watcher $p"
 done
 sleep 2
 
 setsid nohup env PYTHONNOUSERSITE=1 PYTHONPATH=. "$PY" -u \
-  scripts/训练与评估/watch_stage1_anchor_geo.py \
+  scripts/训练与评估/watch_stage_variant.py \
+  --variant GAST-PF-AnchorGeo --root "$ROOT" \
   >> "$ROOT/watcher_stage1.log" 2>&1 < /dev/null &
 echo "  launched watcher pid=$!"

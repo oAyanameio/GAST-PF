@@ -1,9 +1,15 @@
-"""Stage 1 · AnchorGeo：等待五场景复跑完成后输出指标、对照与分层表。
+"""通用 Stage watcher：等待五场景跑完后输出指标、对照与分层表。
 
 只读：轮询 results.json，不写入实验目录。
 口径：新选点 `val_new_minFDE20`；主对照 MoFlow / SocialLSTM（外部模型）。
+
+用法：
+    python watch_stage_variant.py                       # 默认 Stage 1 · AnchorGeo
+    python watch_stage_variant.py --variant GAST-PF-FrameGeo \
+        --root outputs/stage2_frame_geo_seed2024
 """
 
+import argparse
 import json
 import sys
 import time
@@ -12,6 +18,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 ROOT = REPO / "outputs/stage1_anchor_geo_seed2024"
 VARIANT = "GAST-PF-AnchorGeo"
+STAGE_LABELS = {
+    "GAST-PF-AnchorGeo": "Stage 1 · AnchorGeo",
+    "GAST-PF-FrameGeo": "Stage 2 · FrameGeo",
+}
 SCENES = ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
 METRICS = ["minADE_K", "minFDE_K", "ADE@1", "FDE@1", "MR"]
 DIMS = ["missing_count", "valid_count", "anchor_lag", "forecast_gap",
@@ -55,7 +65,8 @@ def macro(rows):
 
 
 def report():
-    out = ["=== Stage 1 · AnchorGeo 五场景（Mixed-test, K=20, val_new_minFDE20）==="]
+    stage_label = STAGE_LABELS.get(VARIANT, VARIANT)
+    out = [f"=== {stage_label} 五场景（Mixed-test, K=20, val_new_minFDE20）==="]
     mine, mo, so = {}, {}, {}
     for s in SCENES:
         d = load_arm(s)
@@ -96,7 +107,7 @@ def report():
             out.append("  相对 SocialLSTM: " + "  ".join(
                 f"{k}={100*(A[k]-C[k])/C[k]:+.1f}%" for k in METRICS))
         out.append("")
-        out.append("=== 分层（by_dimension，GAST-PF-AnchorGeo 宏平均）===")
+        out.append(f"=== 分层（by_dimension，{VARIANT} 样本加权）===")
         for dim in DIMS:
             agg = {}
             for s in SCENES:
@@ -121,11 +132,24 @@ def report():
 
 
 def main():
+    global ROOT, VARIANT
+    ap = argparse.ArgumentParser(description="通用 Stage watcher（只读轮询）")
+    ap.add_argument("--variant", default=VARIANT,
+                    help=f"模型变体名（默认 {VARIANT}）")
+    ap.add_argument("--root", default=str(ROOT.relative_to(REPO)),
+                    help="输出根目录（相对仓库根，默认 Stage 1 根）")
+    args = ap.parse_args()
+    VARIANT = args.variant
+    ROOT = Path(args.root)
+    if not ROOT.is_absolute():
+        ROOT = REPO / ROOT
+    print(f"[watch] variant={VARIANT} root={ROOT}", flush=True)
+
     deadline = time.time() + MAX_HOURS * 3600
     while time.time() < deadline:
         pending = [s for s in SCENES if load_arm(s) is None]
         if not pending:
-            print("STAGE1_ANCHORGEO_DONE")
+            print(f"STAGE_DONE variant={VARIANT}")
             print(report())
             return 0
         print(f"[waiting] pending={pending}", flush=True)

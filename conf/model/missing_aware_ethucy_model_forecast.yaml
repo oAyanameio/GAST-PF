@@ -28,6 +28,9 @@ target:
     utenc_gsm_operator: 'max'
     # Stage 1 · AnchorGeo 开关（默认关闭：基础版本行为不变）。
     gast_anchor_geo: false
+    # Stage 2 · FrameGeo 开关（默认关闭：历史输入 4 维不变）。
+    gast_frame_geo: false
+    gast_ecsr: false
   pretrained_weights: ${pretrained_weights}
   lr: ${lr}
   weight_decay: ${weight_decay}

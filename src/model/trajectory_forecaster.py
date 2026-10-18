@@ -33,6 +33,8 @@ class TrajectoryForecaster(nn.Module):
         gast_depth: int = 4,
         gast_gsm_operator: str = "max",
         gast_anchor_geo: bool = False,
+        gast_frame_geo: bool = False,
+        gast_ecsr: bool = False,
         utenc_depth: int = None,
         utenc_gsm_operator: str = None,
     ) -> None:
@@ -52,6 +54,13 @@ class TrajectoryForecaster(nn.Module):
         self.gast_anchor_geo = bool(gast_anchor_geo)
         self.anchor_geo_projection = None
 
+        # Stage 2 FrameGeo（默认关闭）：把逐帧相对位置显式送入 GSM。
+        # 只在 GAST-PF 路径生效；M0 历史投影保持 4 维。
+        self.gast_frame_geo = bool(gast_frame_geo) and self.encoder_type == "gast"
+        self.gast_ecsr = bool(gast_ecsr) and self.encoder_type == "gast"
+        if self.gast_ecsr and (self.gast_anchor_geo or self.gast_frame_geo):
+            raise ValueError("gast_ecsr is mutually exclusive with legacy geometry variants")
+
         # Keep old configuration keys loadable while making GAST-PF the
         # public/current name.
         if utenc_depth is not None:
@@ -60,6 +69,9 @@ class TrajectoryForecaster(nn.Module):
             gast_gsm_operator = utenc_gsm_operator
 
         hist_input_dim = 4
+        # Stage 2：FrameGeo 把历史输入从 4 维扩到 6 维
+        # [x_positions_diff(2), x_velocity_diff(1), valid_mask(1), relative_position(2)]。
+        gast_input_dim = 6 if self.gast_frame_geo else hist_input_dim
 
         if self.encoder_type == "m0":
             # M0 history encoder. These modules are deliberately absent from
@@ -126,13 +138,14 @@ class TrajectoryForecaster(nn.Module):
             # RNG 流起步，不污染主链。GAST-PF 前向中不使用 M0 历史栈参数。
             rng_state = torch.random.get_rng_state()
             self.gast_encoder = GASTEncoder(
-                input_dim=hist_input_dim,
+                input_dim=gast_input_dim,
                 embed_dim=embed_dim,
                 num_heads=num_heads,
                 depth=gast_depth,
                 operator=gast_gsm_operator,
                 p_dropout=0.2,
                 drop_path=drop_path,
+                ecsr=self.gast_ecsr,
             )
             torch.random.set_rng_state(rng_state)
             if self.gast_anchor_geo:
@@ -256,6 +269,21 @@ class TrajectoryForecaster(nn.Module):
         lag = anchor_lag_norm(valid_mask).to(centers.dtype)
         return torch.cat([centers.to(centers.dtype), trig.to(centers.dtype), lag], dim=-1)
 
+    @staticmethod
+    def _frame_geo_features(data, valid_mask):
+        """Stage 2 FrameGeo：逐帧相对位置 [B, N, T, 2]。
+
+        `relative_position_i,t = x_positions_i,t - x_centers_i`
+        （x_centers 为该 actor 最后有效位置，即 anchor）。
+
+        **缺失帧必须置零**：数据层把缺失历史的 x_positions 填成 0 占位，
+        直接相减会得到 `-x_centers` 的伪几何，因此按 valid_mask 归零；
+        有效性本身仍由 hist_feat 里的 valid_mask 通道表达。
+        """
+        rel = data["x_positions"] - data["x_centers"].unsqueeze(2)
+        keep = valid_mask.unsqueeze(-1).to(rel.dtype)
+        return rel * keep
+
     def forward(self, data):
         ###### Scene context encoding ###### 
         # agent encoding
@@ -268,6 +296,14 @@ class TrajectoryForecaster(nn.Module):
             hist_valid_mask[..., None],
         ], dim=-1)
 
+        if self.gast_frame_geo:
+            # Stage 2 FrameGeo：把逐帧相对位置追加为第 5-6 通道，
+            # 让 GSM 在每一帧就看到显式几何，而不是只在末端 token 上补位置。
+            hist_feat = torch.cat(
+                [hist_feat, self._frame_geo_features(data, hist_valid_mask)],
+                dim=-1,
+            )
+
         B, N, L, D = hist_feat.shape
         hist_key_valid_flat = hist_key_valid_mask.view(B * N)
         key_valid_mask = data["x_key_valid_mask"]
@@ -278,7 +314,10 @@ class TrajectoryForecaster(nn.Module):
             # 替换 M0 的 history_input_projection + hist_embed_mamba + 取末态 +
             # scene_interaction_blocks；输出 [B, N, embed_dim]（padding 置零）。
             actor_feat = self.gast_encoder(
-                hist_feat, hist_valid_mask, ~hist_key_valid_mask
+                hist_feat,
+                hist_valid_mask,
+                ~hist_key_valid_mask,
+                positions=data["x_positions"] if self.gast_ecsr else None,
             )
             if self.anchor_geo_projection is not None:
                 # Stage 1 AnchorGeo：只在 actor 输出端叠加几何证据，

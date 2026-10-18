@@ -176,7 +176,7 @@ scripts/训练与评估/run_trajimpute_experiments.py --protocol mixed-direct \
 | `missing_count` | 0 | 33,654 | +1.6% | +20.6% |
 | `missing_count` | 7 | 33,654 | −1.2% | −9.4% |
 
-完整六维分层（`missing_count` / `valid_count` / `anchor_lag` / `forecast_gap` / `terminal_missing` / `max_missing_run`）由 `scripts/训练与评估/watch_stage1_anchor_geo.py` 现算输出，结果见 `outputs/stage1_anchor_geo_seed2024/watcher_stage1.log`。
+完整六维分层（`missing_count` / `valid_count` / `anchor_lag` / `forecast_gap` / `terminal_missing` / `max_missing_run`）由 `scripts/训练与评估/watch_stage_variant.py` 现算输出，结果见 `outputs/stage1_anchor_geo_seed2024/watcher_stage1.log`。
 
 ## 7. 判定（Stage 1 Go/No-Go）
 
