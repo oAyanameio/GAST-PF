@@ -48,6 +48,19 @@ VARIANTS = {
         "gast_gsm_operator": "max",
         "gast_frame_geo": True,
     },
+    "GAST-PF-DAP": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_directional_readout": True,
+    },
+    "GAST-PF-Tail": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_directional_readout": True,
+        "gast_m0_scene_tail": True,
+    },
     "GAST-PF-ECSR": {
         "encoder_type": "gast",
         "gast_depth": 4,
@@ -107,7 +120,10 @@ def load_checkpoint(model, ckpt_path):
             f"variant encoder_type={expected_encoder}"
         )
     # 分阶段开关必须与 checkpoint 一致：否则对应分支会静默失效或错配。
-    for switch in ("gast_anchor_geo", "gast_frame_geo", "gast_ecsr"):
+    for switch in (
+        "gast_anchor_geo", "gast_frame_geo", "gast_ecsr",
+        "gast_directional_readout", "gast_m0_scene_tail",
+    ):
         ckpt_switch = bool(
             model_config.get(switch, False)
         ) if hasattr(model_config, "get") else False

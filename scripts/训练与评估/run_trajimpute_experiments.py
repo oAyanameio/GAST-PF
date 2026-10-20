@@ -65,6 +65,21 @@ VARIANTS = {
         "gast_gsm_operator": "max",
         "gast_frame_geo": True,
     },
+    "GAST-PF-DAP": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_directional_readout": True,
+    },
+    # M0SceneTail：在 DAP 后恢复 M0 的 actor context 与 5 层场景交互，
+    # 以零初始化残差系数接入；不恢复 M0 历史 Mamba。
+    "GAST-PF-Tail": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_directional_readout": True,
+        "gast_m0_scene_tail": True,
+    },
     "GAST-PF-ECSR": {
         "encoder_type": "gast",
         "gast_depth": 4,
@@ -821,7 +836,9 @@ def main():
     # model_version 标签（仅 output 命名）；模型开关由 VARIANTS 唯一映射。
     args.model_version_num = {
         "M0": "0", "GAST-PF": "G", "GAST-PF-AnchorGeo": "GA",
-        "GAST-PF-FrameGeo": "GF", "GAST-PF-ECSR": "GE", "UT-ENC": "U",
+        "GAST-PF-FrameGeo": "GF", "GAST-PF-DAP": "GD",
+        "GAST-PF-Tail": "GT",
+        "GAST-PF-ECSR": "GE", "UT-ENC": "U",
     }[args.variant]
 
     protocol_cfg = PROTOCOLS[args.protocol]

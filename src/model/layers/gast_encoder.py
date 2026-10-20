@@ -359,8 +359,9 @@ class TemporalEncoder(nn.Module):
                      prenorm=False, residual_in_fp32=True)
 
     def forward(self, x_b_t_n_c: torch.Tensor, gamma_forw=None, gamma_back=None,
-                reliability: torch.Tensor | None = None):
-        """x [B,T,N,C]；gamma_* [B,N,T,C]（衰减门）。返回 [B*N,T,C]。"""
+                reliability: torch.Tensor | None = None,
+                return_directions: bool = False):
+        """x [B,T,N,C]；可选返回两个方向的 [B,N,T,C] 状态。"""
         B, T, N, C = x_b_t_n_c.shape
         x_forw = self.mlp(x_b_t_n_c).permute(0, 2, 1, 3).reshape(B * N, T, C)
         x_flip = torch.flip(x_b_t_n_c, dims=[1])
@@ -378,12 +379,111 @@ class TemporalEncoder(nn.Module):
         y_back = self._run(x_back, self.ssm_back, self.norm_f_back)
         y_back = torch.flip(y_back, dims=[1])
         if reliability is None:
-            return y_forw + y_back
+            fused = y_forw + y_back
+            if return_directions:
+                forward_states = y_forw.reshape(B, N, T, C)
+                backward_states = y_back.reshape(B, N, T, C)
+                return fused, forward_states, backward_states
+            return fused
         forward_states = y_forw.reshape(B, N, T, C)
         backward_states = y_back.reshape(B, N, T, C)
         return route_bidirectional_paths(
             forward_states, backward_states, reliability
         )[0]
+
+
+class DirectionalAttentionReadout(nn.Module):
+    """Pool both temporal directions into one gated actor token."""
+
+    def __init__(self, embed_dim: int, max_steps: int = 8,
+                 hidden_dim: int = 32, gate_hidden_dim: int = 16):
+        super().__init__()
+        self.max_steps = int(max_steps)
+        self.state_projection = nn.Linear(embed_dim, hidden_dim)
+        self.reliability_projection = nn.Linear(2, hidden_dim, bias=False)
+        self.time_embedding = nn.Parameter(torch.empty(1, 1, self.max_steps, hidden_dim))
+        self.direction_embedding = nn.Parameter(torch.empty(2, hidden_dim))
+        self.attention_score = nn.Linear(hidden_dim, 1)
+        self.gate = nn.Sequential(
+            nn.Linear(4, gate_hidden_dim),
+            nn.SiLU(),
+            nn.Linear(gate_hidden_dim, 1),
+        )
+        self.beta = nn.Parameter(torch.zeros(()))
+        nn.init.normal_(self.time_embedding, std=0.02)
+        nn.init.normal_(self.direction_embedding, std=0.02)
+
+    @staticmethod
+    def _gate_features(valid_mask: torch.Tensor) -> torch.Tensor:
+        steps = valid_mask.shape[-1]
+        split = steps // 2
+        left_ratio = (
+            valid_mask[..., :split].float().mean(dim=-1)
+            if split > 0 else torch.zeros_like(valid_mask[..., 0], dtype=torch.float32)
+        )
+        right_ratio = (
+            valid_mask[..., split:].float().mean(dim=-1)
+            if steps - split > 0 else torch.zeros_like(left_ratio)
+        )
+        terminal_missing = (~valid_mask[..., -1]).float()
+
+        missing = ~valid_mask
+        run = torch.zeros_like(terminal_missing)
+        max_run = torch.zeros_like(terminal_missing)
+        for index in range(steps):
+            run = torch.where(missing[..., index], run + 1.0, torch.zeros_like(run))
+            max_run = torch.maximum(max_run, run)
+        max_run = max_run / max(steps, 1)
+        return torch.stack(
+            [left_ratio, right_ratio, terminal_missing, max_run], dim=-1
+        )
+
+    def _pool_direction(self, states: torch.Tensor, valid_mask: torch.Tensor,
+                        age: torch.Tensor, direction: int,
+                        pool_mask: torch.Tensor) -> torch.Tensor:
+        _, _, steps, _ = states.shape
+        reliability = torch.stack(
+            [valid_mask.float(), age.float().clamp(min=0) / max(steps, 1)], dim=-1
+        )
+        features = (
+            self.state_projection(states)
+            + self.reliability_projection(reliability)
+            + self.time_embedding[:, :, :steps]
+            + self.direction_embedding[direction].view(1, 1, 1, -1)
+        )
+        scores = self.attention_score(torch.tanh(features)).squeeze(-1)
+        scores = scores.masked_fill(~pool_mask, torch.finfo(scores.dtype).min)
+        weights = torch.softmax(scores, dim=-1)
+        return torch.sum(weights.unsqueeze(-1) * states, dim=2)
+
+    def forward(self, forward_states: torch.Tensor, backward_states: torch.Tensor,
+                valid_mask: torch.Tensor, key_padding: torch.Tensor,
+                age_forward: torch.Tensor, age_backward: torch.Tensor) -> torch.Tensor:
+        """Inputs are [B,N,T,C] states and [B,N,T] masks/ages."""
+        steps = forward_states.shape[2]
+        if steps > self.max_steps:
+            raise ValueError(
+                f"directional readout supports at most {self.max_steps} steps, got {steps}"
+            )
+        observed = valid_mask.bool() & ~key_padding.bool().unsqueeze(-1)
+        has_observation = observed.any(dim=-1, keepdim=True)
+        fallback = torch.zeros_like(observed)
+        fallback[..., -1] = ~has_observation.squeeze(-1)
+        pool_mask = observed | fallback
+
+        pooled_forward = self._pool_direction(
+            forward_states, observed, age_forward, 0, pool_mask
+        )
+        pooled_backward = self._pool_direction(
+            backward_states, observed, age_backward, 1, pool_mask
+        )
+        evidence = pooled_forward + pooled_backward
+        base = (forward_states + backward_states)[:, :, -1]
+
+        gate_features = self._gate_features(observed)
+        gate = torch.sigmoid(self.gate(gate_features))
+        output = base + torch.tanh(self.beta) * gate * (evidence - base)
+        return output * (~key_padding).unsqueeze(-1).to(output.dtype)
 
 
 class TemporalDecay(nn.Module):
@@ -480,21 +580,29 @@ class GASTEncoder(nn.Module):
         hist_feat [B, N, T, D_in]（GAST-PF 当前 4 维历史特征）
         valid_mask [B, N, T] bool（True=有效观测）
         key_padding [B, N] bool（True=padding actor）
-    输出：[B, N, C=embed_dim] —— 内部保留完整 T 序列，末尾按当前模型语义取固定
-    最后时间步（非 last-valid；TrajGap 末端缺失语义由 decay 门承担）。
+    输出：[B, N, C=embed_dim] —— 默认读取固定最后时间步；可选 directional
+    attention readout 汇聚完整双向状态序列。
     """
 
     def __init__(self, input_dim: int = 4, embed_dim: int = 128, num_heads: int = 8,
                  depth: int = 4, operator: str = "max",
                  p_dropout: float = 0.2, drop_path: float = 0.2,
-                 ecsr: bool = False):
+                 ecsr: bool = False, directional_readout: bool = False,
+                 max_steps: int = 8):
         super().__init__()
         self.ecsr = bool(ecsr)
+        self.use_directional_readout = bool(directional_readout)
+        if self.ecsr and self.use_directional_readout:
+            raise ValueError("directional_readout is not supported with ECSR")
         self.spatial = GSMAttnBlock(input_dim, embed_dim, num_heads,
                                     operator=operator, p_dropout=p_dropout,
                                     ecsr=self.ecsr)
         self.temporal = TemporalEncoder(embed_dim, depth=depth,
                                         p_dropout=p_dropout, drop_path=drop_path)
+        if self.use_directional_readout:
+            self.directional_readout = DirectionalAttentionReadout(
+                embed_dim=embed_dim, max_steps=max_steps
+            )
         if self.ecsr:
             self.evidence_tau_logit = nn.Parameter(torch.tensor(-2.2521685))
             self.readout_score = nn.Linear(embed_dim, 1)
@@ -546,8 +654,25 @@ class GASTEncoder(nn.Module):
             delta_back = d_back.unsqueeze(-1).expand(*d_back.shape, 2)
             g_forw = self.temporal_decay(delta_forw)
             g_back = self.temporal_decay(delta_back)
-            y = self.temporal(x_spa, g_forw, g_back)
-            output = y[:, -1].reshape(B, N, -1)
+            if self.use_directional_readout:
+                _, forward_states, backward_states = self.temporal(
+                    x_spa,
+                    g_forw,
+                    g_back,
+                    return_directions=True,
+                )
+                age_back_aligned = torch.flip(d_back, dims=[-1])
+                output = self.directional_readout(
+                    forward_states,
+                    backward_states,
+                    valid_mask,
+                    kp,
+                    d_forw,
+                    age_back_aligned,
+                )
+            else:
+                y = self.temporal(x_spa, g_forw, g_back)
+                output = y[:, -1].reshape(B, N, -1)
 
         return output * (~kp).unsqueeze(-1).to(output.dtype)
 

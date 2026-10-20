@@ -14,6 +14,78 @@ except ImportError:
     RMSNorm, layer_norm_fn, rms_norm_fn = None, None, None
 
 
+class M0SceneInteractionTail(nn.Module):
+    """M0 的 actor context 与场景交互尾部。
+
+    GAST-PF 已经负责历史时空编码；该模块只恢复 M0 在编码后的场景推理，
+    不恢复 M0 的历史投影和历史 Mamba。残差系数从零开始，使开启该尾部时
+    的初始前向行为严格退化为 DAP actor token。
+    """
+
+    def __init__(self, embed_dim, num_heads, mlp_ratio, qkv_bias,
+                 num_actor_types, drop_path):
+        super().__init__()
+        self.actor_context_projection = nn.Sequential(
+            nn.Linear(4, embed_dim),
+            nn.GELU(),
+            nn.Linear(embed_dim, embed_dim),
+        )
+        self.scene_interaction_blocks = nn.ModuleList(
+            Block(
+                dim=embed_dim,
+                num_heads=num_heads,
+                mlp_ratio=mlp_ratio,
+                qkv_bias=qkv_bias,
+                drop_path=drop_path,
+            )
+            for _ in range(5)
+        )
+        self.norm = nn.LayerNorm(embed_dim)
+        self.actor_type_embed = nn.Parameter(
+            torch.empty(num_actor_types, embed_dim)
+        )
+        self.residual_scale = nn.Parameter(torch.zeros(()))
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        nn.init.normal_(self.actor_type_embed, std=0.02)
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight)
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0)
+            elif isinstance(module, nn.LayerNorm):
+                nn.init.constant_(module.bias, 0)
+                nn.init.constant_(module.weight, 1.0)
+
+    @staticmethod
+    def _context_features(data, dtype):
+        centers = data["x_centers"].to(dtype)
+        if "x_last_valid_angle" in data:
+            angles = data["x_last_valid_angle"]
+        else:
+            angles = data["x_angles"][:, :, -1]
+        angles = angles.to(dtype)
+        direction = torch.stack([torch.cos(angles), torch.sin(angles)], dim=-1)
+        return torch.cat([centers, direction], dim=-1)
+
+    def forward(self, actor_feat, data, key_padding_mask):
+        valid = (~key_padding_mask).unsqueeze(-1).to(actor_feat.dtype)
+        context = self.actor_context_projection(
+            self._context_features(data, actor_feat.dtype)
+        )
+        actor_type = self.actor_type_embed[data["x_attr"][..., 2].long()]
+        scene_feat = (actor_feat + context + actor_type) * valid
+        for block in self.scene_interaction_blocks:
+            scene_feat = block(
+                scene_feat,
+                key_padding_mask=key_padding_mask,
+            )
+            scene_feat = scene_feat * valid
+        scene_feat = self.norm(scene_feat) * valid
+        return actor_feat + self.residual_scale * (scene_feat - actor_feat)
+
+
 # Actor-centric trajectory forecaster. The legacy class name was ModelForecast.
 class TrajectoryForecaster(nn.Module):
     def __init__(
@@ -35,6 +107,8 @@ class TrajectoryForecaster(nn.Module):
         gast_anchor_geo: bool = False,
         gast_frame_geo: bool = False,
         gast_ecsr: bool = False,
+        gast_directional_readout: bool = False,
+        gast_m0_scene_tail: bool = False,
         utenc_depth: int = None,
         utenc_gsm_operator: str = None,
     ) -> None:
@@ -58,8 +132,20 @@ class TrajectoryForecaster(nn.Module):
         # 只在 GAST-PF 路径生效；M0 历史投影保持 4 维。
         self.gast_frame_geo = bool(gast_frame_geo) and self.encoder_type == "gast"
         self.gast_ecsr = bool(gast_ecsr) and self.encoder_type == "gast"
-        if self.gast_ecsr and (self.gast_anchor_geo or self.gast_frame_geo):
-            raise ValueError("gast_ecsr is mutually exclusive with legacy geometry variants")
+        self.gast_directional_readout = (
+            bool(gast_directional_readout) and self.encoder_type == "gast"
+        )
+        self.gast_m0_scene_tail = (
+            bool(gast_m0_scene_tail) and self.encoder_type == "gast"
+        )
+        if self.gast_m0_scene_tail and not self.gast_directional_readout:
+            raise ValueError("gast_m0_scene_tail requires gast_directional_readout")
+        if self.gast_ecsr and (
+            self.gast_anchor_geo or self.gast_frame_geo or self.gast_directional_readout
+        ):
+            raise ValueError(
+                "gast_ecsr is mutually exclusive with geometry and directional-readout variants"
+            )
 
         # Keep old configuration keys loadable while making GAST-PF the
         # public/current name.
@@ -146,6 +232,8 @@ class TrajectoryForecaster(nn.Module):
                 p_dropout=0.2,
                 drop_path=drop_path,
                 ecsr=self.gast_ecsr,
+                directional_readout=self.gast_directional_readout,
+                max_steps=obs_len,
             )
             torch.random.set_rng_state(rng_state)
             if self.gast_anchor_geo:
@@ -154,6 +242,19 @@ class TrajectoryForecaster(nn.Module):
                 rng_state = torch.random.get_rng_state()
                 self.anchor_geo_projection = AnchorGeoProjection(
                     embed_dim=embed_dim, geo_dim=5, p_dropout=0.2
+                )
+                torch.random.set_rng_state(rng_state)
+            if self.gast_m0_scene_tail:
+                # The tail is an independent branch. Restore the RNG state so
+                # adding it cannot alter any shared GAST initialization.
+                rng_state = torch.random.get_rng_state()
+                self.gast_scene_tail = M0SceneInteractionTail(
+                    embed_dim=embed_dim,
+                    num_heads=num_heads,
+                    mlp_ratio=mlp_ratio,
+                    qkv_bias=qkv_bias,
+                    num_actor_types=num_actor_types,
+                    drop_path=drop_path,
                 )
                 torch.random.set_rng_state(rng_state)
 
@@ -325,6 +426,12 @@ class TrajectoryForecaster(nn.Module):
                 geo = self._anchor_geo_features(data, hist_valid_mask)
                 actor_feat = actor_feat + self.anchor_geo_projection(
                     geo, ~hist_key_valid_mask
+                )
+            if self.gast_m0_scene_tail:
+                actor_feat = self.gast_scene_tail(
+                    actor_feat,
+                    data,
+                    ~hist_key_valid_mask,
                 )
             x_encoder = actor_feat
         else:

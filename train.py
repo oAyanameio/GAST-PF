@@ -95,6 +95,13 @@ def main(conf):
     if run_manifest_path:
         callbacks.append(RunContractCallback(run_manifest_path))
 
+    # 梯度范数监控：默认每 50 个 step 采样一次，按 epoch 平均写入 metrics.csv。
+    # GRAD_LOG_EVERY_N_STEPS=0 可完全关闭（零开销）。
+    grad_every = int(os.environ.get("GRAD_LOG_EVERY_N_STEPS", "50"))
+    if grad_every > 0:
+        from src.utils.grad_monitor import GradientNormMonitor
+        callbacks.append(GradientNormMonitor(every_n_steps=grad_every))
+
     trainer = pl.Trainer(
         logger=logger,
         gradient_clip_val=conf.gradient_clip_val,

@@ -264,3 +264,30 @@ bash scripts/训练与评估/launch_stage8_ecsr.sh
 ```
 
 默认输出根为 `outputs/stage8_ecsr_seed2024`，与 Stage 1/2 结果隔离；可通过 `ROOT` 和 `LANES` 覆盖输出目录与 GPU/场景分配。
+
+### 8.4 与 Sports-Traj BTS 的借用边界（不可作为创新点主张）
+
+BTS（Bidirectional Temporal Scaled）不是数据集，而是 Sports-Traj / UniTraj 的时间缩放模块；论文三个数据集为 Basketball-U / Football-U / Soccer-U。
+
+**基础版 GAST-PF 已完整移植 BTS**，逐行对照官方代码 `~/UniTraj-pytorch/models/{unitraj,encoder_decoder,modules}.py`：
+
+| BTS 构成 | 官方实现 | GAST-PF 实现 |
+| --- | --- | --- |
+| 前向距最近观测步数 `d_forw` | `unitraj.py::get_delta` 递归 `d[t]=1+(1-m[t])·d[t-1]` | `gast_encoder.py::missing_run_deltas._scan`（向量化，逐位一致，`tests/test_gast_encoder.py` 覆盖） |
+| 反向 `d_back` | 对翻转 mask 同递推 | 同，保留翻转布局不翻回 |
+| delta 升维 `delta_dim=2` | `repeat_interleave` | `unsqueeze(-1).expand(...,2)` |
+| 缩放 `gamma = exp(-ReLU(Linear(delta)))` | `modules.py::Temporal_Decay`（`bias=False`） | `gast_encoder.py::TemporalDecay`（同式、同无 bias） |
+| 正/反栈前分别乘 `gamma[0]`/`gamma[1]` | `Temporal_Encoder.forward` | `TemporalEncoder.forward` |
+| 两条独立 Mamba 栈、反向 `flip` 后相加 | `ssm_forw`/`ssm_back` | 同 |
+
+未引入的是 UniTraj 的**生成式框架**：`Future_Encoder`、CVAE 后验/先验（`qz_layer`/`pz_layer`）、WTA/diverse loss、MLP decoder、三类 agent one-hot、固定槽位 `pos_embed`。这些会改训练目标或 decoder，破坏单变量对照，故不引入。论文 Eq.(8) 所述"仅训练期使用的 GT 卷积核"对应 `Future_Encoder` 分支，不属于 BTS 本身。
+
+**因此 ECSR 的时间落点与 BTS 同族，不能作为创新点。** 两者都是"按缺失年龄衰减特征后送入时间栈"，差异仅在参数化与恒等性：
+
+| 项 | BTS | ECSR 状态路由 |
+| --- | --- | --- |
+| 衰减形式 | 逐通道 MLP：`exp(-ReLU(Linear(delta)))` | 共享标量：`r = m + (1-m)·exp(-τa)`，`τ = softplus(θ)` |
+| 有效帧取值 | `delta=1` → `gamma<1`，有效观测也被衰减 | 严格 `r=1`，全有效输入恒等 |
+| 作用位置 | block 前缩放输入特征 | 同（`TemporalEncoder.forward` 内 `x_forw *= reliability`） |
+
+ECSR 可主张的部分限定为另外三个落点：逐帧空间 source 资格（官方 GSM 只有 `[B,N]` padding mask，无法表达逐帧缺失 source）、有效行人对之间的几何 attention bias、按前/后向缺失负担加权的路径融合、以及末端可靠度加权读出。若正式实验只有时间落点带来收益，则方法主张应收缩为"BTS 式衰减的恒等性修正"，而非新的证据路由机制。

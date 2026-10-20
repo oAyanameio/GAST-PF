@@ -30,6 +30,10 @@ target:
     gast_anchor_geo: false
     # Stage 2 · FrameGeo 开关（默认关闭：历史输入 4 维不变）。
     gast_frame_geo: false
+    # Directional attention readout：双向完整状态池化，默认关闭以保持基线行为。
+    gast_directional_readout: false
+    # M0SceneTail：仅恢复 M0 编码后的 actor context 与场景交互尾部。
+    gast_m0_scene_tail: false
     gast_ecsr: false
   pretrained_weights: ${pretrained_weights}
   lr: ${lr}

@@ -21,6 +21,8 @@ VARIANT = "GAST-PF-AnchorGeo"
 STAGE_LABELS = {
     "GAST-PF-AnchorGeo": "Stage 1 · AnchorGeo",
     "GAST-PF-FrameGeo": "Stage 2 · FrameGeo",
+    "GAST-PF-DAP": "Directional Attention Pooling",
+    "GAST-PF-Tail": "GAST-PF + M0 scene interaction tail",
 }
 SCENES = ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
 METRICS = ["minADE_K", "minFDE_K", "ADE@1", "FDE@1", "MR"]

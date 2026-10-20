@@ -5,8 +5,10 @@
 2. M0 默认路径完全不变（encoder_type 默认 'm0'，state_dict 逐位一致）；
 3. GAST-PF 真实 TrajGap Mixed batch 前向/反向（GPU）；
 4. padding actor 隔离（固定 batch 内扰动 padding 数据不改有效 actor 输出）；
-5. evaluator 编码器契约（GAST-PF ckpt 拒载 M0、M0 拒载 GAST-PF、缺键拒绝）；
-6. GAST-PF 可训练参数全部进入 AdamW 参数组（优化器闭包纪律）。
+5. 双向注意力读出屏蔽缺失帧、零门控退化为基线且不扩展时间轴；
+6. M0SceneTail 零初始化时严格退化为 DAP actor token；
+7. evaluator 编码器契约（GAST-PF ckpt 拒载 M0、M0 拒载 GAST-PF、缺键拒绝）；
+8. GAST-PF 可训练参数全部进入 AdamW 参数组（优化器闭包纪律）。
 """
 
 import sys
@@ -19,6 +21,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from src.model.layers.gast_encoder import (  # noqa: E402
+    DirectionalAttentionReadout,
     GASTEncoder,
     missing_run_deltas,
 )
@@ -74,6 +77,232 @@ def test_gast_does_not_register_m0_encoder_modules():
     assert not any(key.startswith(m0_prefixes) for key in gast.state_dict())
     assert any(key.startswith("gast_encoder.") for key in gast.state_dict())
     assert gast.gast_encoder.temporal_decay.mlp.in_features == 2
+
+
+def test_directional_attention_readout_starts_at_baseline():
+    torch.manual_seed(17)
+    readout = DirectionalAttentionReadout(embed_dim=4, max_steps=4)
+    forward_states = torch.randn(2, 3, 4, 4)
+    backward_states = torch.randn(2, 3, 4, 4)
+    valid_mask = torch.tensor(
+        [[[1, 1, 0, 0], [1, 0, 0, 0], [0, 0, 0, 0]],
+         [[1, 1, 1, 1], [1, 1, 0, 0], [1, 0, 0, 0]]],
+        dtype=torch.bool,
+    )
+    key_padding = torch.tensor([[False, False, True], [False, False, False]])
+    age_forward = torch.zeros_like(valid_mask, dtype=torch.float32)
+    age_backward = torch.zeros_like(age_forward)
+
+    output = readout(
+        forward_states,
+        backward_states,
+        valid_mask,
+        key_padding,
+        age_forward,
+        age_backward,
+    )
+
+    expected = (forward_states + backward_states)[:, :, -1]
+    expected = expected * (~key_padding).unsqueeze(-1)
+    assert output.shape == (2, 3, 4)
+    assert torch.equal(output, expected)
+
+
+def test_directional_attention_readout_masks_missing_frames():
+    readout = DirectionalAttentionReadout(embed_dim=2, max_steps=4)
+    with torch.no_grad():
+        for parameter in readout.parameters():
+            parameter.zero_()
+        readout.gate[-1].bias.fill_(1000.0)
+        readout.beta.fill_(1000.0)
+
+    forward_states = torch.tensor([[[[1.0, 1.0], [1000.0, 1000.0],
+                                    [3.0, 3.0], [1000.0, 1000.0]]]])
+    backward_states = torch.tensor([[[[10.0, 10.0], [1000.0, 1000.0],
+                                      [30.0, 30.0], [1000.0, 1000.0]]]])
+    valid_mask = torch.tensor([[[True, False, True, False]]])
+    key_padding = torch.tensor([[False]])
+    ages = torch.zeros(1, 1, 4)
+
+    output = readout(
+        forward_states,
+        backward_states,
+        valid_mask,
+        key_padding,
+        ages,
+        ages,
+    )
+
+    assert torch.equal(output, torch.full((1, 1, 2), 22.0))
+
+
+def test_directional_attention_readout_is_finite_for_empty_and_padding_rows():
+    readout = DirectionalAttentionReadout(embed_dim=4, max_steps=4)
+    states = torch.randn(1, 2, 4, 4)
+    valid_mask = torch.zeros(1, 2, 4, dtype=torch.bool)
+    key_padding = torch.tensor([[False, True]])
+    ages = torch.zeros(1, 2, 4)
+
+    output = readout(states, states, valid_mask, key_padding, ages, ages)
+
+    assert torch.isfinite(output).all()
+    assert torch.count_nonzero(output[:, 1]) == 0
+
+
+def test_directional_readout_keeps_original_temporal_length(monkeypatch):
+    from src.model.layers import gast_encoder as gast_encoder_module
+
+    class SpatialIdentity(torch.nn.Module):
+        def forward(self, x, mask, key_padding):
+            return x
+
+    class TemporalCapture(torch.nn.Module):
+        def forward(self, x, gamma_forw=None, gamma_back=None,
+                    return_directions=False):
+            self.sequence = x.detach().clone()
+            self.gamma_forw = gamma_forw.detach().clone()
+            self.gamma_back = gamma_back.detach().clone()
+            batch, steps, actors, channels = x.shape
+            forward = x.permute(0, 2, 1, 3)
+            backward = forward * 2
+            fused = (forward + backward).reshape(batch * actors, steps, channels)
+            if return_directions:
+                return fused, forward, backward
+            return fused
+
+    temporal = TemporalCapture()
+    monkeypatch.setattr(
+        gast_encoder_module, "TemporalEncoder", lambda *args, **kwargs: temporal
+    )
+    encoder = GASTEncoder(
+        input_dim=4, embed_dim=4, num_heads=1, depth=1,
+        p_dropout=0.0, drop_path=0.0, directional_readout=True,
+    )
+    encoder.spatial = SpatialIdentity()
+
+    hist_feat = torch.arange(2 * 3 * 8 * 4, dtype=torch.float32).reshape(2, 3, 8, 4)
+    valid_mask = torch.ones(2, 3, 8, dtype=torch.bool)
+    key_padding = torch.tensor([[False, False, True], [False, False, False]])
+    output = encoder(hist_feat, valid_mask, key_padding)
+
+    assert temporal.sequence.shape == (2, 8, 3, 4)
+    assert torch.equal(temporal.sequence, hist_feat.permute(0, 2, 1, 3))
+    expected = temporal.sequence[:, -1] * 3
+    expected = expected * (~key_padding).unsqueeze(-1)
+    assert output.shape == (2, 3, 4)
+    assert torch.equal(output, expected)
+    assert torch.count_nonzero(output[0, 2]) == 0
+
+
+def test_directional_readout_is_variant_and_checkpoint_contract(tmp_path):
+    from scripts.训练与评估.run_trajimpute_experiments import VARIANTS as TRAIN_VARIANTS
+    from scripts.结果分析.evaluate_trajimpute_direct import build_model, load_checkpoint
+
+    assert TRAIN_VARIANTS["GAST-PF-DAP"]["gast_directional_readout"] is True
+    model = build_model("GAST-PF-DAP", num_modes=20)
+    assert model.gast_directional_readout is True
+    assert model.gast_encoder.directional_readout.beta.item() == 0.0
+
+    path = tmp_path / "gast_dap.ckpt"
+    torch.save({
+        "state_dict": {f"net.{key}": value for key, value in model.state_dict().items()},
+        "hyper_parameters": {"model": {
+            "num_modes": 20,
+            "encoder_type": "gast",
+            "gast_directional_readout": True,
+        }},
+    }, path)
+    missing, unexpected = load_checkpoint(build_model("GAST-PF-DAP", 20), path)
+    assert not missing
+    assert not unexpected
+
+    baseline_path = tmp_path / "gast_without_dap.ckpt"
+    baseline = build_model("GAST-PF", num_modes=20)
+    torch.save({
+        "state_dict": {f"net.{key}": value for key, value in baseline.state_dict().items()},
+        "hyper_parameters": {"model": {
+            "num_modes": 20,
+            "encoder_type": "gast",
+            "gast_directional_readout": False,
+        }},
+    }, baseline_path)
+    with pytest.raises(ValueError, match="gast_directional_readout"):
+        load_checkpoint(build_model("GAST-PF-DAP", 20), baseline_path)
+
+
+def test_m0_scene_tail_starts_as_exact_dap_identity():
+    from src.model.trajectory_forecaster import TrajectoryForecaster
+
+    model = TrajectoryForecaster(
+        embed_dim=8,
+        num_heads=2,
+        future_steps=4,
+        num_modes=3,
+        obs_len=4,
+        encoder_type="gast",
+        gast_directional_readout=True,
+        gast_m0_scene_tail=True,
+    )
+    model.gast_scene_tail.eval()
+    actor_feat = torch.randn(1, 3, 8)
+    data = {
+        "x_centers": torch.randn(1, 3, 2),
+        "x_last_valid_angle": torch.randn(1, 3),
+        "x_attr": torch.zeros(1, 3, 3, dtype=torch.long),
+    }
+    key_padding = torch.tensor([[False, False, True]])
+
+    output = model.gast_scene_tail(actor_feat, data, key_padding)
+
+    assert model.gast_scene_tail.residual_scale.item() == 0.0
+    assert torch.equal(output, actor_feat)
+    assert not any(
+        key.startswith((
+            "history_input_projection.", "hist_embed_mamba.", "norm_f.",
+        ))
+        for key in model.state_dict()
+    )
+
+
+def test_m0_scene_tail_requires_dap_readout():
+    from src.model.trajectory_forecaster import TrajectoryForecaster
+
+    with pytest.raises(ValueError, match="requires gast_directional_readout"):
+        TrajectoryForecaster(
+            num_modes=6,
+            encoder_type="gast",
+            gast_m0_scene_tail=True,
+        )
+
+
+def test_m0_scene_tail_variant_and_checkpoint_contract(tmp_path):
+    from scripts.训练与评估.run_trajimpute_experiments import VARIANTS as TRAIN_VARIANTS
+    from scripts.结果分析.evaluate_trajimpute_direct import build_model, load_checkpoint
+
+    assert TRAIN_VARIANTS["GAST-PF-Tail"]["gast_m0_scene_tail"] is True
+    model = build_model("GAST-PF-Tail", num_modes=20)
+    assert model.gast_directional_readout is True
+    assert model.gast_m0_scene_tail is True
+    assert model.gast_scene_tail.residual_scale.item() == 0.0
+
+    path = tmp_path / "gast_dap_m0_tail.ckpt"
+    torch.save({
+        "state_dict": {f"net.{key}": value for key, value in model.state_dict().items()},
+        "hyper_parameters": {"model": {
+            "num_modes": 20,
+            "encoder_type": "gast",
+            "gast_directional_readout": True,
+            "gast_m0_scene_tail": True,
+        }},
+    }, path)
+    missing, unexpected = load_checkpoint(
+        build_model("GAST-PF-Tail", 20), path
+    )
+    assert not missing
+    assert not unexpected
+
+    with pytest.raises(ValueError, match="gast_m0_scene_tail"):
+        load_checkpoint(build_model("GAST-PF-DAP", 20), path)
 
 
 def test_gast_rejects_unknown_encoder_type():
@@ -245,3 +474,46 @@ def test_gast_parameters_covered_by_adamw_groups():
                 if name.startswith("net.gast_encoder.") and p.requires_grad}
     assert gast_ids
     assert gast_ids.issubset({id(p) for p in grouped})
+
+
+def test_directional_readout_parameters_are_covered_by_adamw_groups():
+    from src.model.forecasting_module import ForecastingLightningModule
+
+    module = ForecastingLightningModule(
+        model={
+            "type": "TrajectoryForecaster",
+            "embed_dim": 128, "future_steps": 12, "num_heads": 8,
+            "mlp_ratio": 4.0, "qkv_bias": False, "drop_path": 0.2,
+            "num_actor_types": 1, "num_modes": 20, "dt": 0.4, "obs_len": 8,
+            "bimamba": False, "encoder_type": "gast",
+            "gast_directional_readout": True,
+        },
+        lr=1e-3, warmup_epochs=5, epochs=100, weight_decay=1e-4,
+    )
+    optimizer = module.configure_optimizers()[0][0]
+    grouped = {id(parameter) for group in optimizer.param_groups
+               for parameter in group["params"]}
+    beta = module.net.gast_encoder.directional_readout.beta
+    assert id(beta) in grouped
+
+
+def test_m0_scene_tail_parameters_are_covered_by_adamw_groups():
+    from src.model.forecasting_module import ForecastingLightningModule
+
+    module = ForecastingLightningModule(
+        model={
+            "type": "TrajectoryForecaster",
+            "embed_dim": 128, "future_steps": 12, "num_heads": 8,
+            "mlp_ratio": 4.0, "qkv_bias": False, "drop_path": 0.2,
+            "num_actor_types": 1, "num_modes": 20, "dt": 0.4, "obs_len": 8,
+            "bimamba": False, "encoder_type": "gast",
+            "gast_directional_readout": True,
+            "gast_m0_scene_tail": True,
+        },
+        lr=1e-3, warmup_epochs=5, epochs=100, weight_decay=1e-4,
+    )
+    optimizer = module.configure_optimizers()[0][0]
+    grouped = {id(parameter) for group in optimizer.param_groups
+               for parameter in group["params"]}
+    scale = module.net.gast_scene_tail.residual_scale
+    assert id(scale) in grouped
