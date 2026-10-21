@@ -17,4 +17,4 @@
 
 - direct（缺失直接输入）与 impute（先插补后预测）口径不并表；两种输入信息量不同。
 - train_adapt（同条件训练测试）与 zero-shot（完整数据训练→缺失测试）分开报告。
-- 阶段定义与验收门槛见《[选题](../research/选题.md)》§八。
+- 协议定义、指标口径与对照设计见《[选题](../research/选题.md)》§5–§6（论文描述版）；数据来源与审计见《[TrajImpute release 审计](../audits/trajimpute_release_审计.md)》。
