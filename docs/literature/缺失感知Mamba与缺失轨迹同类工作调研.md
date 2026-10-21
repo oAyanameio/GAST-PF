@@ -3,6 +3,8 @@
 日期：2026-10-08 | 前置文档：`docs/literature/不插补轨迹预测调研.md`（2026-09-14，免插补顶会核查）
 本轮两个问题：①与选题（缺失/部分观测历史下的 evidence-aware 多模态轨迹预测，TrajImpute Mixed 口径）类似的研究；②能处理缺失时间序列输入（missing-aware / irregular-sampling-aware）的 Mamba/SSM 模型，作为缝合候选机制来源。
 
+> 参考文献统一收口：`docs/literature/参考文献总表_缺失观测与不确定性.md`（2026-10-21，唯一权威版；本文档 Sources 编号保持原样，交叉引用以总表为准）。
+
 覆盖方式：web_search 扇出（8+ 组查询）+ arXiv API/S2 citations（TrajImpute 全部 16 篇施引逐条核对）+ 关键候选 abs 页验证。未查 Zotero 本地库（本轮主题为 2024-2026 新方向，本地库预计覆盖有限）。
 
 ## 一、TL;DR
