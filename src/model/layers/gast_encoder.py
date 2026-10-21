@@ -257,7 +257,8 @@ class GSMAttnBlock(nn.Module):
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor,
                 key_padding: torch.Tensor, positions: torch.Tensor | None = None,
-                source_eligibility: torch.Tensor | None = None) -> torch.Tensor:
+                source_eligibility: torch.Tensor | None = None,
+                query_reliability: torch.Tensor | None = None) -> torch.Tensor:
         """x [B,T,N,C_in]，mask [B,T,N]（有效=1），key_padding [B,N]（True=padding）。
 
         返回 [B,T,N,C]。
@@ -322,6 +323,8 @@ class GSMAttnBlock(nn.Module):
         x_attn = attn_out  # 源实现：Try no Res
         x_attn = self.ffn(self.norm2(x_attn)) + x_attn
         y = self.norm3(x_attn)[:, 1:, :].reshape(B, T, N, -1)
+        if query_reliability is not None:
+            y = y * query_reliability.unsqueeze(-1).to(y.dtype)
         return y
 
 
@@ -623,6 +626,7 @@ class GASTEncoder(nn.Module):
                  depth: int = 4, operator: str = "max",
                  p_dropout: float = 0.2, drop_path: float = 0.2,
                  ecsr: bool = False, directional_readout: bool = False,
+                 hierarchical_evidence: bool = False,
                  max_steps: int = 8,
                  temporal_direction: str = "bidirectional"):
         super().__init__()
@@ -641,6 +645,9 @@ class GASTEncoder(nn.Module):
                 f"got {temporal_direction!r}"
             )
         self.ecsr = bool(ecsr)
+        self.hierarchical_evidence = bool(hierarchical_evidence)
+        if self.hierarchical_evidence and not self.ecsr:
+            raise ValueError("hierarchical_evidence requires ecsr=True")
         self.use_directional_readout = bool(directional_readout)
         self.temporal_direction = temporal_direction
         if self.use_directional_readout and temporal_direction != "bidirectional":
@@ -675,25 +682,36 @@ class GASTEncoder(nn.Module):
         return torch.nn.functional.softplus(self.evidence_tau_logit)
 
     def forward(self, hist_feat: torch.Tensor, valid_mask: torch.Tensor,
-                key_padding: torch.Tensor, positions: torch.Tensor | None = None) -> torch.Tensor:
+                key_padding: torch.Tensor, positions: torch.Tensor | None = None,
+                return_evidence: bool = False):
         B, N, T, _ = hist_feat.shape
         # GAST-PF [B,N,T,*] -> internal [B,T,N,*]
         x = hist_feat.permute(0, 2, 1, 3)
         m = valid_mask.permute(0, 2, 1).float()
         kp = key_padding
 
+        evidence_state = None
         if self.ecsr:
             if positions is None:
                 raise ValueError("ECSR encoder requires observed positions")
-            source_eligibility, reliability, _ = compute_evidence_state(
+            source_eligibility, reliability, age = compute_evidence_state(
                 valid_mask, self.evidence_tau, kp
             )
+            evidence_state = {
+                "source_eligibility": source_eligibility,
+                "reliability": reliability,
+                "age": age,
+            }
             x_spa = self.spatial(
                 x,
                 m,
                 kp,
                 positions=positions,
                 source_eligibility=source_eligibility,
+                query_reliability=(
+                    reliability.permute(0, 2, 1)
+                    if self.hierarchical_evidence else None
+                ),
             )
             y = self.temporal(
                 x_spa,
@@ -734,7 +752,10 @@ class GASTEncoder(nn.Module):
                     y = self.temporal(x_spa, g_forw, g_back)
                     output = y[:, -1].reshape(B, N, -1)
 
-        return output * (~kp).unsqueeze(-1).to(output.dtype)
+        output = output * (~kp).unsqueeze(-1).to(output.dtype)
+        if return_evidence:
+            return output, evidence_state
+        return output
 
 
 # Compatibility alias for checkpoints and external research scripts that still

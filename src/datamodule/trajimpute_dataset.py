@@ -1,6 +1,6 @@
 """TrajImpute 官方 release -> GAST-PF actor-centric 直接缺失预测适配器。
 
-官方字段语义（2026-09-07 release 审计 30/30，见 docs/research/选题.md §八.0.2）：
+官方字段语义（2026-09-07 release 审计 30/30，见 docs/audits/trajimpute_release_审计.md）：
     obs_traj     [N, 8, 2] float32，缺失位置为 NaN
     pred_traj    [N, 12, 2] float32，完整（未来监督，永不做缺失填充）
     missing_mask [N, 8, 2] bool，True=缺失，与 obs_traj 的 NaN 严格一致

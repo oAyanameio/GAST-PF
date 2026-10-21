@@ -389,9 +389,120 @@ def test_m0_scene_tail_variant_and_checkpoint_contract(tmp_path):
     )
     assert not missing
     assert not unexpected
-
     with pytest.raises(ValueError, match="gast_m0_scene_tail"):
         load_checkpoint(build_model("GAST-PF-DAP", 20), path)
+
+
+def test_ecsr_exposes_shared_evidence_state_for_scene_tail(monkeypatch):
+    class SpatialIdentity(torch.nn.Module):
+        def forward(self, x, mask, key_padding, query_reliability=None,
+                    **kwargs):
+            self.query_reliability = query_reliability
+            return x
+
+    class TemporalIdentity(torch.nn.Module):
+        def forward(self, x, gamma_forw=None, gamma_back=None,
+                    reliability=None, return_directions=False):
+            return x.permute(0, 2, 1, 3)
+
+    encoder = GASTEncoder(
+        input_dim=4, embed_dim=4, num_heads=1, depth=1,
+        p_dropout=0.0, drop_path=0.0, ecsr=True,
+        hierarchical_evidence=True,
+        temporal_direction="unidirectional",
+    )
+    spatial = SpatialIdentity()
+    encoder.spatial = spatial
+    encoder.temporal = TemporalIdentity()
+    encoder.readout_score = torch.nn.Linear(4, 1)
+    torch.nn.init.zeros_(encoder.readout_score.weight)
+    torch.nn.init.zeros_(encoder.readout_score.bias)
+
+    hist_feat = torch.zeros(1, 2, 4, 4)
+    valid_mask = torch.tensor([
+        [[True, True, False, False], [True, False, False, True]],
+    ])
+    key_padding = torch.zeros(1, 2, dtype=torch.bool)
+    positions = torch.zeros(1, 2, 4, 2)
+    _, evidence = encoder(
+        hist_feat, valid_mask, key_padding, positions=positions,
+        return_evidence=True,
+    )
+
+    assert set(evidence) == {"source_eligibility", "reliability", "age"}
+    assert evidence["reliability"].shape == (1, 2, 4)
+    assert evidence["source_eligibility"].shape == (1, 2, 4)
+    assert evidence["reliability"][0, 0, 0].item() == 1.0
+    assert evidence["source_eligibility"][0, 0, 2].item() == 0.0
+    assert torch.equal(
+        spatial.query_reliability,
+        evidence["reliability"].permute(0, 2, 1),
+    )
+
+
+def test_evidence_scene_tail_builds_actor_key_bias():
+    from src.model.trajectory_forecaster import M0SceneInteractionTail
+
+    tail = M0SceneInteractionTail(
+        embed_dim=4, num_heads=2, mlp_ratio=2.0, qkv_bias=False,
+        num_actor_types=1, drop_path=0.0, max_steps=4,
+        evidence_conditioned=True,
+    )
+    reliability = torch.tensor([[0.9, 0.1, 0.0]])
+    key_padding = torch.tensor([[False, False, True]])
+    bias = tail._build_evidence_attention_mask(reliability, key_padding)
+
+    assert bias.shape == (2, 3, 3)
+    assert torch.isfinite(bias[:, :, :2]).all()
+    assert torch.isneginf(bias[:, :, 2]).all()
+    assert bias[0, 0, 0] > bias[0, 0, 1]
+
+    data = {
+        "x_centers": torch.zeros(1, 3, 2),
+        "x_last_valid_angle": torch.zeros(1, 3),
+        "x_attr": torch.zeros(1, 3, 3),
+    }
+    actor_feat = torch.randn(1, 3, 4)
+    output = tail(
+        actor_feat,
+        data,
+        key_padding,
+        evidence_state={
+            "reliability": reliability.unsqueeze(-1).expand(-1, -1, 4),
+            "age": torch.tensor([[
+                [0.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 2.0, 2.0],
+                [0.0, 1.0, 2.0, 4.0],
+            ]]),
+        },
+    )
+    assert output.shape == actor_feat.shape
+    assert torch.isfinite(output).all()
+    assert torch.count_nonzero(output[:, 2]) == 0
+
+
+def test_echsr_variant_wires_shared_evidence_tail():
+    from scripts.训练与评估.run_trajimpute_experiments import VARIANTS as TRAIN_VARIANTS
+    from scripts.结果分析.evaluate_trajimpute_direct import VARIANTS as EVAL_VARIANTS, build_model
+
+    for variants in (TRAIN_VARIANTS, EVAL_VARIANTS):
+        config = variants["GAST-PF-ECHSR"]
+        assert config["gast_ecsr"] is True
+        assert config["gast_m0_scene_tail"] is True
+        assert config["gast_hierarchical_evidence"] is True
+
+    model = build_model("GAST-PF-ECHSR", num_modes=6)
+    assert model.gast_ecsr is True
+    assert model.gast_m0_scene_tail is True
+    assert model.gast_hierarchical_evidence is True
+    assert model.gast_scene_tail.evidence_conditioned is True
+
+    from src.model.trajectory_forecaster import TrajectoryForecaster
+    with pytest.raises(ValueError, match="unidirectional"):
+        TrajectoryForecaster(
+            encoder_type="gast", gast_ecsr=True,
+            gast_m0_scene_tail=True, gast_hierarchical_evidence=True,
+        )
 
 
 def test_gast_rejects_unknown_encoder_type():

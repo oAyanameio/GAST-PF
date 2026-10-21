@@ -76,11 +76,35 @@ VARIANTS = {
         "gast_temporal_direction": "unidirectional",
         "gast_m0_scene_tail": True,
     },
+    "GAST-PF-UniECSR": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
+        "gast_ecsr": True,
+    },
+    "GAST-PF-UniECSR-Tail": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
+        "gast_ecsr": True,
+        "gast_m0_scene_tail": True,
+    },
     "GAST-PF-ECSR": {
         "encoder_type": "gast",
         "gast_depth": 4,
         "gast_gsm_operator": "max",
         "gast_ecsr": True,
+    },
+    "GAST-PF-ECHSR": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
+        "gast_ecsr": True,
+        "gast_m0_scene_tail": True,
+        "gast_hierarchical_evidence": True,
     },
     # Legacy label kept for evaluating historical experiment outputs.
     "UT-ENC": {
@@ -138,6 +162,7 @@ def load_checkpoint(model, ckpt_path):
     for switch in (
         "gast_anchor_geo", "gast_frame_geo", "gast_ecsr",
         "gast_directional_readout", "gast_m0_scene_tail",
+        "gast_hierarchical_evidence",
     ):
         ckpt_switch = bool(
             model_config.get(switch, False)

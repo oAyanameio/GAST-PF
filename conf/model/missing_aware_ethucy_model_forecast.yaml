@@ -37,6 +37,8 @@ target:
     # M0SceneTail：仅恢复 M0 编码后的 actor context 与场景交互尾部。
     gast_m0_scene_tail: false
     gast_ecsr: false
+    # ECHSR：共享证据状态贯穿空间资格、时间路由和场景尾部。
+    gast_hierarchical_evidence: false
   pretrained_weights: ${pretrained_weights}
   lr: ${lr}
   weight_decay: ${weight_decay}

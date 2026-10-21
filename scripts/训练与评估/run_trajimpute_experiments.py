@@ -97,11 +97,36 @@ VARIANTS = {
         "gast_temporal_direction": "unidirectional",
         "gast_m0_scene_tail": True,
     },
+    "GAST-PF-UniECSR": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
+        "gast_ecsr": True,
+    },
+    "GAST-PF-UniECSR-Tail": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
+        "gast_ecsr": True,
+        "gast_m0_scene_tail": True,
+    },
     "GAST-PF-ECSR": {
         "encoder_type": "gast",
         "gast_depth": 4,
         "gast_gsm_operator": "max",
         "gast_ecsr": True,
+    },
+    # ECHSR：共享 evidence state 贯穿逐帧关系、时间聚合和场景尾部。
+    "GAST-PF-ECHSR": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
+        "gast_ecsr": True,
+        "gast_m0_scene_tail": True,
+        "gast_hierarchical_evidence": True,
     },
     # Legacy experiment label; keep it loadable without making it the current
     # public name.
@@ -850,15 +875,6 @@ def main():
 
     if args.K != DIRECT_NUM_MODES:
         raise SystemExit("TrajGap-Bench 正式重训协议固定 K=20")
-
-    # model_version 标签（仅 output 命名）；模型开关由 VARIANTS 唯一映射。
-    args.model_version_num = {
-        "M0": "0", "GAST-PF": "G", "GAST-PF-AnchorGeo": "GA",
-        "GAST-PF-FrameGeo": "GF", "GAST-PF-DAP": "GD",
-        "GAST-PF-Tail": "GT",
-        "GAST-PF-Uni": "GU", "GAST-PF-UniTail": "GUT",
-        "GAST-PF-ECSR": "GE", "UT-ENC": "U",
-    }[args.variant]
 
     protocol_cfg = PROTOCOLS[args.protocol]
     if args.protocol != "mixed-direct":

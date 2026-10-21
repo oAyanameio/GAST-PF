@@ -24,8 +24,12 @@ class M0SceneInteractionTail(nn.Module):
     """
 
     def __init__(self, embed_dim, num_heads, mlp_ratio, qkv_bias,
-                 num_actor_types, drop_path):
+                 num_actor_types, drop_path, max_steps=8,
+                 evidence_conditioned=False):
         super().__init__()
+        self.max_steps = max_steps
+        self.num_heads = num_heads
+        self.evidence_conditioned = bool(evidence_conditioned)
         self.actor_context_projection = nn.Sequential(
             nn.Linear(4, embed_dim),
             nn.GELU(),
@@ -46,7 +50,17 @@ class M0SceneInteractionTail(nn.Module):
             torch.empty(num_actor_types, embed_dim)
         )
         self.residual_scale = nn.Parameter(torch.zeros(()))
+        if self.evidence_conditioned:
+            gate_hidden = max(embed_dim // 4, 16)
+            self.evidence_gate = nn.Sequential(
+                nn.Linear(2, gate_hidden),
+                nn.GELU(),
+                nn.Linear(gate_hidden, 1),
+            )
         self._initialize_weights()
+        if self.evidence_conditioned:
+            nn.init.zeros_(self.evidence_gate[-1].weight)
+            nn.init.constant_(self.evidence_gate[-1].bias, 2.0)
 
     def _initialize_weights(self):
         nn.init.normal_(self.actor_type_embed, std=0.02)
@@ -70,21 +84,62 @@ class M0SceneInteractionTail(nn.Module):
         direction = torch.stack([torch.cos(angles), torch.sin(angles)], dim=-1)
         return torch.cat([centers, direction], dim=-1)
 
-    def forward(self, actor_feat, data, key_padding_mask):
+    def _build_evidence_attention_mask(self, reliability, key_padding_mask):
+        key_reliability = reliability.clamp(min=1e-4, max=1.0)
+        key_bias = torch.log(key_reliability)
+        key_bias = key_bias.unsqueeze(1).expand(-1, key_bias.shape[-1], -1)
+        key_bias = key_bias.masked_fill(
+            key_padding_mask.unsqueeze(1), float("-inf")
+        )
+        return key_bias.repeat_interleave(self.num_heads, dim=0)
+
+    def _evidence_fusion_gate(self, reliability, age):
+        age_scale = max(self.max_steps - 1, 1)
+        features = torch.stack(
+            [reliability, (age / age_scale).clamp(min=0.0, max=1.0)],
+            dim=-1,
+        )
+        return torch.sigmoid(self.evidence_gate(features)).squeeze(-1)
+
+    def forward(self, actor_feat, data, key_padding_mask,
+                evidence_state=None):
         valid = (~key_padding_mask).unsqueeze(-1).to(actor_feat.dtype)
         context = self.actor_context_projection(
             self._context_features(data, actor_feat.dtype)
         )
         actor_type = self.actor_type_embed[data["x_attr"][..., 2].long()]
         scene_feat = (actor_feat + context + actor_type) * valid
+        attention_mask = None
+        fusion_gate = torch.ones(
+            actor_feat.shape[:2], dtype=actor_feat.dtype, device=actor_feat.device
+        )
+        if self.evidence_conditioned:
+            if evidence_state is None:
+                raise ValueError(
+                    "evidence-conditioned scene tail requires evidence_state"
+                )
+            reliability = evidence_state["reliability"][..., -1].to(actor_feat.dtype)
+            age = evidence_state["age"][..., -1].to(actor_feat.dtype)
+            attention_mask = self._build_evidence_attention_mask(
+                reliability, key_padding_mask
+            ).to(actor_feat.dtype)
+            fusion_gate = self._evidence_fusion_gate(reliability, age)
         for block in self.scene_interaction_blocks:
             scene_feat = block(
                 scene_feat,
-                key_padding_mask=key_padding_mask,
+                mask=attention_mask,
+                key_padding_mask=(
+                    None if self.evidence_conditioned else key_padding_mask
+                ),
             )
             scene_feat = scene_feat * valid
         scene_feat = self.norm(scene_feat) * valid
-        return actor_feat + self.residual_scale * (scene_feat - actor_feat)
+        output = actor_feat + self.residual_scale * fusion_gate.unsqueeze(-1) * (
+            scene_feat - actor_feat
+        )
+        if self.evidence_conditioned:
+            return output * valid
+        return output
 
 
 # Actor-centric trajectory forecaster. The legacy class name was ModelForecast.
@@ -110,6 +165,7 @@ class TrajectoryForecaster(nn.Module):
         gast_ecsr: bool = False,
         gast_directional_readout: bool = False,
         gast_m0_scene_tail: bool = False,
+        gast_hierarchical_evidence: bool = False,
         gast_temporal_direction: str = "bidirectional",
         utenc_depth: int = None,
         utenc_gsm_operator: str = None,
@@ -140,6 +196,9 @@ class TrajectoryForecaster(nn.Module):
         self.gast_m0_scene_tail = (
             bool(gast_m0_scene_tail) and self.encoder_type == "gast"
         )
+        self.gast_hierarchical_evidence = (
+            bool(gast_hierarchical_evidence) and self.encoder_type == "gast"
+        )
         temporal_direction_aliases = {
             "bi": "bidirectional",
             "bidir": "bidirectional",
@@ -169,6 +228,21 @@ class TrajectoryForecaster(nn.Module):
         ):
             raise ValueError(
                 "gast_ecsr is mutually exclusive with geometry and directional-readout variants"
+            )
+        if self.gast_hierarchical_evidence and not self.gast_ecsr:
+            raise ValueError(
+                "gast_hierarchical_evidence requires gast_ecsr=True"
+            )
+        if self.gast_hierarchical_evidence and not self.gast_m0_scene_tail:
+            raise ValueError(
+                "gast_hierarchical_evidence requires gast_m0_scene_tail=True"
+            )
+        if (
+            self.gast_hierarchical_evidence
+            and self.gast_temporal_direction != "unidirectional"
+        ):
+            raise ValueError(
+                "gast_hierarchical_evidence requires unidirectional temporal encoding"
             )
 
         # Keep old configuration keys loadable while making GAST-PF the
@@ -256,6 +330,7 @@ class TrajectoryForecaster(nn.Module):
                 p_dropout=0.2,
                 drop_path=drop_path,
                 ecsr=self.gast_ecsr,
+                hierarchical_evidence=self.gast_hierarchical_evidence,
                 directional_readout=self.gast_directional_readout,
                 max_steps=obs_len,
                 temporal_direction=self.gast_temporal_direction,
@@ -280,6 +355,8 @@ class TrajectoryForecaster(nn.Module):
                     qkv_bias=qkv_bias,
                     num_actor_types=num_actor_types,
                     drop_path=drop_path,
+                    max_steps=obs_len,
+                    evidence_conditioned=self.gast_hierarchical_evidence,
                 )
                 torch.random.set_rng_state(rng_state)
 
@@ -439,12 +516,18 @@ class TrajectoryForecaster(nn.Module):
             # temporal direction, followed by its matching actor readout.
             # 替换 M0 的 history_input_projection + hist_embed_mamba + 取末态 +
             # scene_interaction_blocks；输出 [B, N, embed_dim]（padding 置零）。
-            actor_feat = self.gast_encoder(
+            encoder_result = self.gast_encoder(
                 hist_feat,
                 hist_valid_mask,
                 ~hist_key_valid_mask,
                 positions=data["x_positions"] if self.gast_ecsr else None,
+                return_evidence=self.gast_hierarchical_evidence,
             )
+            if self.gast_hierarchical_evidence:
+                actor_feat, evidence_state = encoder_result
+            else:
+                actor_feat = encoder_result
+                evidence_state = None
             if self.anchor_geo_projection is not None:
                 # Stage 1 AnchorGeo：只在 actor 输出端叠加几何证据，
                 # 不改 GSM attention，不改 decoder 输入维度。
@@ -457,6 +540,7 @@ class TrajectoryForecaster(nn.Module):
                     actor_feat,
                     data,
                     ~hist_key_valid_mask,
+                    evidence_state=evidence_state,
                 )
             x_encoder = actor_feat
         else:
