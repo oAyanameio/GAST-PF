@@ -3,9 +3,6 @@
 评估口径（任务书 §十）：
     minADE_K / minFDE_K  K 条预测同一组取 min（与 src/metrics 同语义）
     ADE@1 / FDE@1        最高概率模式的单模态误差（sort by pi, top-1）
-    MR                   全部 K 条预测终点误差均 > threshold 才算 miss
-                         （与 src/metrics.MR 的 all(-1) 语义一致）
-
 层级：scene / difficulty / split / missing_count / variant / seed。
 整体聚合 = 按样本 micro-average（每组报告样本数，整体均值不隐藏分组差异）。
 官方插补后预测 ADE/FDE 只能作 external_reference，禁止混入本文 direct 指标。
@@ -25,8 +22,7 @@ def _ade_fde(pred: torch.Tensor, target: torch.Tensor):
     return d.mean(-1), d[..., -1]
 
 
-def evaluate_predictions(pred: torch.Tensor, prob: torch.Tensor, target: torch.Tensor,
-                         miss_threshold: float = 2.0):
+def evaluate_predictions(pred: torch.Tensor, prob: torch.Tensor, target: torch.Tensor):
     """一组预测的 direct 指标（纯函数，无状态，便于测试）。
 
     Args:
@@ -34,7 +30,7 @@ def evaluate_predictions(pred: torch.Tensor, prob: torch.Tensor, target: torch.T
         prob:   [B, K] 模态概率（未归一化 logit 或概率均可，仅用于排序）
         target: [B, T, 2]
     Returns:
-        dict: minADE_K/minFDE_K/ADE@1/FDE@1/MR（每样本一个值的均值前的张量）
+        dict: minADE_K/minFDE_K/ADE@1/FDE@1（每样本一个值的均值前的张量）
     """
     B, K, T, _ = pred.shape
     ade, fde = _ade_fde(pred, target)
@@ -48,7 +44,6 @@ def evaluate_predictions(pred: torch.Tensor, prob: torch.Tensor, target: torch.T
         "minFDE_K": fde.min(-1).values,
         "ADE@1": ade1,
         "FDE@1": fde1,
-        "MR": (fde > miss_threshold).all(-1).float(),
         "_K": K,
     }
 
@@ -56,8 +51,7 @@ def evaluate_predictions(pred: torch.Tensor, prob: torch.Tensor, target: torch.T
 class DirectEvaluator:
     """按 missing_count 分组累积指标；compute() 输出层级化结果。"""
 
-    def __init__(self, miss_threshold: float = 2.0):
-        self.miss_threshold = miss_threshold
+    def __init__(self):
         # (scene, difficulty, split, missing_count) -> {metric: [values]}
         self.groups = defaultdict(lambda: defaultdict(list))
         # dimension -> value -> {metric: [values]}
@@ -68,7 +62,7 @@ class DirectEvaluator:
     def update(self, pred, prob, target, scene, difficulty, split, missing_count,
                valid_count=None, anchor_lag=None, forecast_gap=None,
                max_missing_run=None):
-        res = evaluate_predictions(pred, prob, target, self.miss_threshold)
+        res = evaluate_predictions(pred, prob, target)
         key = (scene, difficulty, split, int(missing_count))
         for name, vals in res.items():
             if name.startswith("_"):

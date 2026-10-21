@@ -13,7 +13,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-METRICS = ["minADE_K", "minFDE_K", "ADE@1", "FDE@1", "MR"]
+METRICS = ["minADE_K", "minFDE_K", "ADE@1", "FDE@1"]
 SCENES = ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
 FORMAL_K = 20
 
@@ -145,16 +145,16 @@ def main():
     # comparison.md：配对比较 + 聚合表
     md = ["# TrajGap-Bench Mixed 模型重训结果汇总\n"]
     md.append("数据来源：`" + str(root) + "`；训练与评估均为 direct 重训，K=20；")
-    md.append("训练、验证和测试均为 TrajGap Mixed；MR=全部 K 模态终点误差>2.0。\n")
+    md.append("训练、验证和测试均为 TrajGap Mixed；所有误差指标越低越好。\n")
 
     md.append("## 各版本×场景×seed 明细\n")
-    md.append("| variant | scene | protocol | seed | n | minADE20 | minFDE20 | ADE@1 | FDE@1 | MR |")
-    md.append("|---|---|---|---|---:|---:|---:|---:|---:|---:|")
+    md.append("| variant | scene | protocol | seed | n | minADE20 | minFDE20 | ADE@1 | FDE@1 |")
+    md.append("|---|---|---|---|---:|---:|---:|---:|---:|")
     for r in sorted(rows, key=lambda x: (x["protocol"], x["variant"], x["seed"], SCENES.index(x["scene"]))):
         md.append(
             f"| {r['variant']} | {r['scene']} | {r['protocol']} | {r['seed']} | {r['n']} "
             f"| {r['minADE_K']:.4f} | {r['minFDE_K']:.4f} | {r['ADE@1']:.4f} "
-            f"| {r['FDE@1']:.4f} | {r['MR']:.4f} |")
+            f"| {r['FDE@1']:.4f} |")
 
     # 对每个候选 variant 与 M0 做同协议配对差。
     seeds = sorted({r["seed"] for r in rows})
@@ -166,11 +166,11 @@ def main():
                 if not diffs:
                     continue
                 md.append(f"\n## 配对差 {comp} − M0（{proto}，seed={seed}，负值={comp} 更好）\n")
-                md.append("| scene | ΔminADE | ΔminFDE | ΔminFDE% | ΔMR |")
-                md.append("|---|---:|---:|---:|---:|")
+                md.append("| scene | ΔminADE | ΔminFDE | ΔminFDE% |")
+                md.append("|---|---:|---:|---:|")
                 for d in diffs:
                     md.append(f"| {d['scene']} | {d['minADE_K']:+.4f} | {d['minFDE_K']:+.4f} "
-                              f"| {d['rel_minFDE_pct']:+.1f}% | {d['MR']:+.4f} |")
+                              f"| {d['rel_minFDE_pct']:+.1f}% |")
                 n_better = sum(1 for d in diffs if d["minFDE_K"] < 0)
                 md.append(f"\nminFDE 改善场景数：{n_better}/{len(diffs)}")
 

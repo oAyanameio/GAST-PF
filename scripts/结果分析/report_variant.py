@@ -20,8 +20,12 @@ REPO = Path(__file__).resolve().parents[2]
 SCENES = ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
 N = {"ETH-M": 1629, "HOTEL-M": 9477, "UNIV-M": 219006,
      "ZARA1-M": 20277, "ZARA2-M": 52497}
-KEYS = ["minADE_K", "minFDE_K", "ADE@1", "FDE@1", "MR"]
-NAMES = ["minADE20", "minFDE20", "ADE@1", "FDE@1", "MR"]
+# MR 已于 2026-10-20 废弃（见 docs/results/MR废弃决策.md）。
+# 新结果只有四项；历史结果仍含 MR，仅作存档展示。
+BASE_KEYS = ["minADE_K", "minFDE_K", "ADE@1", "FDE@1"]
+BASE_NAMES = ["minADE20", "minFDE20", "ADE@1", "FDE@1"]
+KEYS = BASE_KEYS + ["MR"]
+NAMES = BASE_NAMES + ["MR"]
 
 # 外部/内部对照的逐场景数值（来源见 docs/results/trajgap_bench_leaderboard.md，
 # 由 gen_leaderboard_tables.py 从各自 results.json 现算）
@@ -76,7 +80,7 @@ def load_variant(root, variant):
         if scene is None:
             continue
         overall = json.loads(Path(f).read_text())["results"]["overall"]
-        out[scene] = [overall[k] for k in KEYS]
+        out[scene] = [overall.get(k, float("nan")) for k in KEYS]
     return out
 
 
@@ -96,12 +100,12 @@ def load_dims(roots, variant):
 
 
 def macro(data, scenes):
-    return [sum(data[s][i] for s in scenes) / len(scenes) for i in range(5)]
+    return [sum(data[s][i] for s in scenes) / len(scenes) for i in range(len(KEYS))]
 
 
 def micro(data, scenes):
     total = sum(N[s] for s in scenes)
-    return [sum(data[s][i] * N[s] for s in scenes) / total for i in range(5)]
+    return [sum(data[s][i] * N[s] for s in scenes) / total for i in range(len(KEYS))]
 
 
 def fmt(values, mr_is_pct=True):
@@ -116,6 +120,7 @@ def binomial_se(p, n):
 
 
 def main():
+    global KEYS, NAMES
     ap = argparse.ArgumentParser()
     ap.add_argument("--variant", required=True, help="产物里的 model_version，如 GAST-PF-DAP")
     ap.add_argument("--root", required=True)
@@ -126,6 +131,11 @@ def main():
 
     mine = load_variant(args.root, args.variant)
     scenes = [s for s in SCENES if s in mine]
+    # 缺 MR（新口径）时整体降级为四指标
+    keep = len(BASE_KEYS) if any(
+        mine[s][KEYS.index("MR")] != mine[s][KEYS.index("MR")] for s in scenes
+    ) else len(KEYS)
+    KEYS, NAMES = KEYS[:keep], NAMES[:keep]
     if not scenes:
         raise SystemExit("没有可用结果")
     missing = [s for s in SCENES if s not in mine]
@@ -138,7 +148,7 @@ def main():
     print("| 场景 | n | " + " | ".join(NAMES) + " |")
     print("|---|---:|" + "---:|" * 5)
     for s in scenes:
-        print(f"| {s} | {N[s]:,} | " + " | ".join(fmt(mine[s])) + " |")
+        print(f"| {s} | {N[s]:,} | " + " | ".join(fmt(mine[s][:len(NAMES)])) + " |")
     mac = macro(mine, scenes)
     mic = micro(mine, scenes)
     print("| **宏平均** | — | " + " | ".join(fmt(mac)) + " |")

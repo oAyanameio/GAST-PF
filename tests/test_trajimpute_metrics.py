@@ -38,17 +38,7 @@ def test_minade_minfde_on_manual_predictions():
     # ADE@1 = 最高概率模式（mode1）= sqrt(2)
     assert torch.isclose(res["ADE@1"][0], torch.tensor(2 ** 0.5), atol=1e-6)
     assert torch.isclose(res["FDE@1"][0], torch.tensor(2 ** 0.5), atol=1e-6)
-    # MR：K 条中 mode0 FDE=0 <= 2.0 -> 不 miss
-    assert res["MR"][0] == 0.0
-
-
-def test_mr_all_modes_miss():
-    B, K, T = 1, 2, 4
-    target = torch.zeros(B, T, 2)
-    pred = torch.full((B, K, T, 2), 10.0)  # 全部模式终点距离 sqrt(200)>2
-    prob = torch.ones(B, K)
-    res = evaluate_predictions(pred, prob, target, miss_threshold=2.0)
-    assert res["MR"][0] == 1.0
+    assert "MR" not in res
 
 
 def test_min_over_same_k_set():

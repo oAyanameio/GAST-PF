@@ -271,9 +271,9 @@ def main():
         "checkpoint": ckpt_info,
         "metric_semantics": {
             "minADE_K": f"min over K={args.K} predicted modes, same set for minFDE_K",
+            "minFDE_K": f"min final displacement over K={args.K} predicted modes",
             "ADE@1": "top-1 by predicted probability (highest-pi mode)",
             "FDE@1": "top-1 by predicted probability (highest-pi mode)",
-            "MR": f"miss if ALL K modes' final displacement > {2.0}",
         },
         "external_reference": None,
         "release_subset": inspect_clean_source(args.data_root),
@@ -292,7 +292,7 @@ def main():
     print(f"\n[results] {out_path}")
     ov = results["overall"]
     print(f"overall n={ov['n']} minADE{args.K}={ov['minADE_K']:.4f} "
-          f"minFDE{args.K}={ov['minFDE_K']:.4f} MR={ov['MR']:.4f} "
+          f"minFDE{args.K}={ov['minFDE_K']:.4f} "
           f"ADE@1={ov['ADE@1']:.4f} FDE@1={ov['FDE@1']:.4f}")
     print("[groups]")
     for g, entry in sorted(results["by_group"].items()):

@@ -80,7 +80,6 @@ METRICS = [
     ("minFDE_K", "minFDE_K", "minFDE$_{20}$"),
     ("ADE_1", "ADE_1", "ADE@1"),
     ("FDE_1", "FDE_1", "FDE@1"),
-    ("MR", "MR", "MR (\\%)"),
 ]
 
 
@@ -95,8 +94,7 @@ def load(path):
     for k, alts in [("minADE_K", ["minADE_K", "minADE20"]),
                     ("minFDE_K", ["minFDE_K", "minFDE20"]),
                     ("ADE_1", ["ADE_1", "ADE@1"]),
-                    ("FDE_1", ["FDE_1", "FDE@1"]),
-                    ("MR", ["MR"])]:
+                    ("FDE_1", ["FDE_1", "FDE@1"])]:
         out[k] = None
         for a in alts:
             if ov.get(a) is not None:
@@ -226,35 +224,10 @@ def emit_md(data):
             L.append("".join(row))
         L.append("")
 
-    # ---- 表 3：MR
-    L.append("## 表 3 · 缺失率（MR，%，末帧误差全部 > 2.0 m 才计一次 miss）\n")
-    L.append("| Method | " + " | ".join(SCENES) + " | Avg |")
-    L.append("|---|" + "---|" * (len(SCENES) + 1))
-    for m in methods:
-        per = data[m]["per"]
-        row = [f"| {m} "]
-        for s in SCENES:
-            rec = per.get(s)
-            if rec is None or rec["MR"] is None:
-                row.append("| -- ")
-                continue
-            b = best_in_col(data, "MR", s, methods)
-            v = f"**{rec['MR']*100:.2f}**" if abs(rec["MR"] - b) < 1e-12 else f"{rec['MR']*100:.2f}"
-            row.append(f"| {v} ")
-        mac, _ = agg(data, m)
-        if mac["MR"] is not None:
-            b = best_in_col_macro(data, "MR", methods)
-            v = f"**{mac['MR']*100:.2f}**" if abs(mac["MR"] - b) < 1e-12 else f"{mac['MR']*100:.2f}"
-            row.append(f"| {v} |")
-        else:
-            row.append("| -- |")
-        L.append("".join(row))
-    L.append("")
-
-    # ---- 表 4：micro
-    L.append("## 表 4 · 样本加权（micro）平均\n")
-    L.append("| Method | minADE20 | minFDE20 | ADE@1 | FDE@1 | MR |")
-    L.append("|---|---|---|---|---|---|")
+    # ---- 表 3：micro
+    L.append("## 表 3 · 样本加权（micro）平均\n")
+    L.append("| Method | minADE20 | minFDE20 | ADE@1 | FDE@1 |")
+    L.append("|---|---|---|---|---|")
     for m in methods:
         _, mic = agg(data, m)
         cells = []
@@ -262,15 +235,15 @@ def emit_md(data):
             if mic[k] is None:
                 cells.append("--")
             else:
-                cells.append(f"{mic[k]*100:.2f}" if k == "MR" else f"{mic[k]:.4f}")
+                cells.append(f"{mic[k]:.4f}")
         L.append(f"| {m} | " + " | ".join(cells) + " |")
     L.append("")
 
-    # ---- 表 5：缺失分层
-    L.append("## 表 5 · 缺失程度分层（宏平均）\n")
+    # ---- 表 4：缺失分层
+    L.append("## 表 4 · 缺失程度分层（宏平均 minFDE20）\n")
     L.append("| missing | " + " | ".join(
-        f"{m} minFDE20 | {m} MR%" for m in ["GAST-PF", "M0", "MoFlow", "SocialLSTM"]) + " |")
-    L.append("|---|" + "---|" * 8)
+        f"{m} minFDE20" for m in ["GAST-PF", "M0", "MoFlow", "SocialLSTM"]) + " |")
+    L.append("|---|" + "---|" * 4)
     strat = {}
     for m in ["GAST-PF", "M0", "MoFlow", "SocialLSTM"]:
         per = data[m]["per"]
@@ -285,13 +258,11 @@ def emit_md(data):
         for m in ["GAST-PF", "M0", "MoFlow", "SocialLSTM"]:
             sm = strat[m]
             if miss not in sm:
-                cells += ["--", "--"]
+                cells.append("--")
                 continue
             fv = [sm[miss][s]["minFDE_K"] for s in SCENES if s in sm[miss]]
-            mv = [sm[miss][s]["MR"] for s in SCENES if s in sm[miss]]
             tag = "" if len(fv) == 5 else f" (n={len(fv)})"
             cells.append(f"{sum(fv)/len(fv):.4f}{tag}")
-            cells.append(f"{sum(mv)/len(mv)*100:.2f}{tag}")
         L.append(f"| {miss} | " + " | ".join(cells) + " |")
     L.append("")
     return "\n".join(L)
@@ -361,7 +332,7 @@ def emit_tex(data):
 
 MD_HEADER = """# TrajGap-Bench 对比实验表（Mixed-direct）
 
-> 协议：TrajImpute 官方 Easy+Hard 同一 split 合并（Mixed），seed 2024，K=20，100 epochs，`val_minFDE20` 选点。
+> 协议：TrajImpute 官方 Easy+Hard 同一 split 合并（Mixed），seed 2024，K=20，100 epochs，按最终预测头 `val_new_minFDE20` 选点。
 > 测试样本数（所有方法完全一致）：ETH-M 1,629 / HOTEL-M 9,477 / UNIV-M 219,006 / ZARA1-M 20,277 / ZARA2-M 52,497，合计 302,886。
 > `Avg` = 五场景宏平均；`micro` = 按样本数加权。所有指标**越低越好**。加粗 = 该列最优。
 > **术语统一**：全文「本文方法」均指 **GAST-PF**（`encoder_type=gast`，`conf` 默认）；历史实验产物标签为 `UT-ENC`，2026-10-15 起代码更名为 `gast_encoder`，本文一律写作 GAST-PF。
@@ -375,10 +346,9 @@ MD_NOTES = """
 ## 表注
 
 - **`--` = 该场景/指标不可用**。AgentFormer 仅完成 UNIV-M 一场景，故其 `Avg` 与 `micro` 均为 `--`——**单场景值不得当宏平均报**；其 ADE@1/FDE@1 不适用（采样器无模态概率）。
-- **GAST-PF 行需重跑后才可定稿**：其 checkpoint 由初始头 `val_minFDE20` 选出，而 test 使用最终头 `new_y_hat/new_pi`；五场景最佳 epoch 全部对不上（ETH-M e94 vs e85、HOTEL-M e90 vs e52、UNIV-M e94 vs e83、ZARA1-M e91 vs e79、ZARA2-M e81 vs e71）。该选点口径已作废（`b60100a` 起统一为 `val_new_minFDE20`）。
-- **GAST-PF 相对 M0 为持平，不是提升**：宏平均 M0 全面略优（差 1.3% / 0.6% / 0.5% / 0.09%），GAST-PF 仅拿下宏平均 MR（4.50 vs 4.67）与全部 micro 几何指标。换掉整个编码器只换来微幅变化，说明编码器不是当前瓶颈。
-- **micro 口径下 MoFlow 在 minFDE20 与 MR 上反超**（0.4981 vs M0 0.5029；2.78 vs M0 3.72）。主因 UNIV-M 占 72% 样本量。**不得只报宏平均就宣称全面最优**；两个口径必须并列给出。
-- **M1 已判负撤回**（2026-10-11），仅作负结果证据，不进主表。宏平均 minADE20/minFDE20/MR 分别恶化 +5.2% / +7.7% / +0.53 pp；微平均恶化 +21.2% / +23.6% / +2.46 pp。ADE@1/FDE@1 宏平均小幅改善（−1.42% / −1.34%）不足以抵消 best-of-20 与 MR 的退化。
+- **本表当前数值仅为历史结果，不是 TrajGap-Bench v1.1 正式成绩**：GAST-PF 的 checkpoint 来自旧选点口径，尚须按最终预测头 `val_new_minFDE20` 重新训练、评估后才能定稿。
+- 正式指标为 `minADE20` 和 `minFDE20`；ADE@1/FDE@1 仅作辅助诊断。不计算 MR 或综合分数。
+- **M1 已判负撤回**（2026-10-11），仅作负结果证据，不进主表。
 - **M0-pre-fix 不混入**：旧 revision `a4f1803` 的宏平均为 0.3249 / 0.5039，与本表 M0（0.3223 / 0.4917）不同定义，论文中只能有一个 M0。
 - **b-minFDE20 无法对齐**：本工作 direct evaluator 不产出该项，仅 MoFlow 侧有 test 值（宏平均 1.2945），故未入表。
 - 部分场景的平均值与五场景宏平均**不可直接比较**。
@@ -410,13 +380,13 @@ TEX_HEADER = """% ==============================================================
 %  do not hand-edit; re-run the generator instead.
 %  Requires: \\usepackage{booktabs}
 %  Protocol: TrajImpute Easy+Hard merged per split (Mixed), seed 2024,
-%            K=20, 100 epochs, checkpoint selection by val_minFDE20.
+%            K=20, 100 epochs, checkpoint selection by val_new_minFDE20.
 %  Test-sample counts (identical across all methods):
 %    ETH-M 1,629 | HOTEL-M 9,477 | UNIV-M 219,006 | ZARA1-M 20,277
 %    | ZARA2-M 52,497 | total 302,886
 %  "Avg" = macro average over the five scenes. Lower is better.
-%  NOTE: the GAST-PF row uses the retired val_minFDE20 checkpoint-selection
-%        rule and must be re-run under val_new_minFDE20 before publication.
+%  NOTE: current values are historical, not v1.1 results. GAST-PF must be
+%        re-run under the final-head val_new_minFDE20 rule before publication.
 % =====================================================================
 
 """
@@ -482,22 +452,12 @@ TEX_FOOTER = """
 % Notes for the caption / text:
 %  * All methods share the identical Mixed test split (302,886 focal
 %    samples).
-%  * The GAST-PF row uses the retired val_minFDE20 checkpoint-selection
-%    rule while test uses the final new_y_hat/new_pi head; the five best
-%    epochs all disagree (ETH-M e94 vs e85, HOTEL-M e90 vs e52,
-%    UNIV-M e94 vs e83, ZARA1-M e91 vs e79, ZARA2-M e81 vs e71). It must
-%    be re-run under val_new_minFDE20 before publication.
-%  * GAST-PF is on par with M0, not better: M0 leads all four macro
-%    geometry metrics by 1.3%/0.6%/0.5%/0.09%, while GAST-PF leads macro
-%    MR (4.50 vs 4.67) and all micro geometry metrics. Replacing the whole
-%    encoder moved the numbers only marginally.
-%  * Under the micro (sample-weighted) average MoFlow overtakes on
-%    minFDE20 and MR, driven by UNIV-M holding 72% of the samples. Report
-%    both aggregations; do not claim across-the-board superiority from the
-%    macro average alone.
+%  * Current values are historical, not TrajGap-Bench v1.1 results.
+%    GAST-PF must be re-run using final-head val_new_minFDE20 before
+%    publication.
+%  * The formal primary metrics are minADE20 and minFDE20. ADE@1/FDE@1
+%    are auxiliary diagnostics; no MR or composite score is computed.
 %  * M1 is withdrawn (negative result, excluded from the main tables).
-%  * M0-pre-fix (revision a4f1803, macro 0.3249/0.5039) must not be mixed
-%    with the M0 reported here (0.3223/0.4917).
 %  * b-minFDE20 cannot be aligned: this work's direct evaluator does not
 %    emit it, so it exists only on the MoFlow side (macro 1.2945).
 %  * BibTeX keys used above:
@@ -532,20 +492,19 @@ TEX_FOOTER = """
 
 
 def emit_tex_extra(data):
-    """micro 表 + 缺失分层表（paper 版：分层表用 'minFDE20 / MR%' 单格，
-    避免 9 列过宽）。"""
+    """Emit micro-average and missingness-stratified minFDE tables."""
     L = []
     # ---- micro
     L.append("\\begin{table}[t]")
     L.append("  \\centering")
     L.append("  \\caption{TrajGap-Bench (Mixed-direct), sample-weighted (micro)"
-             " average over the 302,886 test samples. MR in \\%. Lower is better.}")
+             " average over the 302,886 test samples. Lower is better.}")
     L.append("  \\label{tab:tgbench-micro}")
     L.append("  \\small")
     L.append("  \\setlength{\\tabcolsep}{4pt}")
-    L.append("  \\begin{tabular}{l c c c c c}")
+    L.append("  \\begin{tabular}{l c c c c}")
     L.append("    \\toprule")
-    L.append("    Method & minADE$_{20}$ & minFDE$_{20}$ & ADE@1 & FDE@1 & MR \\\\")
+    L.append("    Method & minADE$_{20}$ & minFDE$_{20}$ & ADE@1 & FDE@1 \\\\")
     L.append("    \\midrule")
     for m in ["GAST-PF", "M0", "MoFlow", "SocialLSTM", "AgentFormer"]:
         _, mic = agg(data, m)
@@ -554,14 +513,13 @@ def emit_tex_extra(data):
             if mic[k] is None:
                 cells.append("--")
             else:
-                cells.append(f"{mic[k]*100:.2f}" if k == "MR" else f"{mic[k]:.4f}")
+                cells.append(f"{mic[k]:.4f}")
         L.append(f"    {m} & " + " & ".join(cells) + " \\\\")
     L.append("    \\bottomrule")
     L.append("  \\end{tabular}")
     L.append("  \\begin{flushleft}")
     L.append("    \\footnotesize")
-    L.append("    Under this aggregation MoFlow overtakes on minFDE$_{20}$ and MR,"
-             " because UNIV-M holds 72\\% of the samples. Report both aggregations.")
+    L.append("    Macro and micro averages answer different questions; report both.")
     L.append("  \\end{flushleft}")
     L.append("\\end{table}")
     L.append("")
@@ -577,11 +535,7 @@ def emit_tex_extra(data):
         strat[m] = smap
     L.append("\\begin{table}[t]")
     L.append("  \\centering")
-    L.append("  \\caption{Robustness to the number of missing history frames"
-             " (macro average over scenes), reported as minFDE$_{20}$\\,/\\,MR(\\%)."
-             " Regular missingness (0--6) separates the methods; at 7 missing frames"
-             " all methods degrade and MoFlow leads, which is scene-dependent rather"
-             " than evidence of a structural defect.}")
+    L.append("  \\caption{Macro-average minFDE$_{20}$ by the number of missing history frames.}")
     L.append("  \\label{tab:tgbench-missing}")
     L.append("  \\small")
     L.append("  \\setlength{\\tabcolsep}{4pt}")
@@ -597,9 +551,8 @@ def emit_tex_extra(data):
                 cells.append("--")
                 continue
             fv = [sm[miss][s]["minFDE_K"] for s in SCENES if s in sm[miss]]
-            mv = [sm[miss][s]["MR"] for s in SCENES if s in sm[miss]]
             tag = "" if len(fv) == 5 else f"$^{{({len(fv)})}}$"
-            cells.append(f"{sum(fv)/len(fv):.4f} / {sum(mv)/len(mv)*100:.2f}{tag}")
+            cells.append(f"{sum(fv)/len(fv):.4f}{tag}")
         L.append(f"    {miss} & " + " & ".join(cells) + " \\\\")
     L.append("    \\bottomrule")
     L.append("  \\end{tabular}")
@@ -628,14 +581,13 @@ def main():
             print(f"      [缺失] {miss}")
 
     print("\n=== 宏平均 / 微平均（现算） ===")
-    print(f"  {'method':12} {'macro minADE20':>14} {'macro minFDE20':>14} {'macro MR%':>10}"
-          f" {'micro minADE20':>15} {'micro minFDE20':>15} {'micro MR%':>10}")
+    print(f"  {'method':12} {'macro minADE20':>14} {'macro minFDE20':>14}"
+          f" {'micro minADE20':>15} {'micro minFDE20':>15}")
     for m in METHODS:
         mac, mic = agg(data, m)
         f = lambda v: "--" if v is None else f"{v:.4f}"
-        fm = lambda v: "--" if v is None else f"{v*100:.2f}"
-        print(f"  {m:12} {f(mac['minADE_K']):>14} {f(mac['minFDE_K']):>14} {fm(mac['MR']):>10}"
-              f" {f(mic['minADE_K']):>15} {f(mic['minFDE_K']):>15} {fm(mic['MR']):>10}")
+        print(f"  {m:12} {f(mac['minADE_K']):>14} {f(mac['minFDE_K']):>14}"
+              f" {f(mic['minADE_K']):>15} {f(mic['minFDE_K']):>15}")
 
     out_md = os.path.join(REPO, "docs", "results", "trajgap_bench_leaderboard.md")
     out_tex = os.path.join(REPO, "docs", "results", "trajgap_bench_leaderboard.tex")

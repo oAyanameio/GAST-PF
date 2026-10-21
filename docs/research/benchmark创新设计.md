@@ -21,7 +21,7 @@ TrajGap-Bench 对外不再区分 Easy、Hard 或 Clean。TrajImpute 仍是底层
 1. 将官方 Easy/Hard 的同一 split 合并为 Mixed；
 2. 训练、验证和测试均使用 Mixed 口径；
 3. 验证集只使用一个 Mixed 验证集进行 checkpoint 选点；
-4. 主评估只报告一个 Mixed 结果和一个综合总榜分数；
+4. 主评估只报告一个 Mixed 结果，使用 `minADE20` 和 `minFDE20` 两个主指标，不计算综合总榜分数；
 5. 暂不加入 unseen-pattern、额外数据轨道、Clean 主分支或额外评价指标。
 
 TrajGap 不修改官方 pkl，不重新切窗，也不重新生成未来目标；只在适配层进行样本级合并。官方 impute-then-predict 数字不进入 TrajGap-Bench direct 总榜。
@@ -52,7 +52,7 @@ Mixed-train = Easy/train + Hard/train
 Mixed-val = Easy/val + Hard/val
 ```
 
-验证集不再拆成 Easy-val 和 Hard-val，也不对两部分分别选 checkpoint。训练期间只计算一个 `val_minFDE20`，根据合并后的 Mixed-val 选择最佳 checkpoint。
+验证集不再拆成 Easy-val 和 Hard-val，也不对两部分分别选 checkpoint。训练期间只计算一个最终预测头 `val_new_minFDE20`，根据合并后的 Mixed-val 选择最佳 checkpoint。
 
 这样可以保证：
 
@@ -101,7 +101,7 @@ Hard/data_train.pkl ─┘                       │
 Easy/data_val.pkl   ─┐                       │
                      ├─> TrajGap Mixed-val ──┘
 Hard/data_val.pkl   ─┘                       │
-                                             └─> val_minFDE20 选 checkpoint
+                                             └─> val_new_minFDE20 选 checkpoint
 
 Easy/data_test.pkl  ─┐
                      ├─> TrajGap Mixed-test ─> 单一主结果 / 单一总榜
@@ -110,49 +110,29 @@ Hard/data_test.pkl  ─┘
 
 训练、验证和测试使用相同的 8 帧历史、12 帧未来、direct 输入和 `K=20` 设置。测试集不参与 checkpoint 选择。
 
-## 4. 评估指标与单一总榜
+## 4. 评估指标与结果汇报
 
-当前主榜只纳入三个指标：
+当前主榜只纳入两个指标：
 
 ```text
-minFDE20
 minADE20
-MR
+minFDE20
 ```
 
 三者均为越低越好：
 
 | 指标 | 含义 |
 |---|---|
-| `minFDE20` | 20 条候选未来中最接近 GT 的终点误差 |
-| `minADE20` | 20 条候选未来中最接近 GT 的平均位移误差 |
-| `MR` | 20 条候选均未达到终点阈值的比例 |
+| `minFDE20` | 20 条候选轨迹中最小的终点位移误差 |
+| `minADE20` | 20 条候选轨迹中最小的平均位移误差 |
 
-Benchmark 采用一个综合总榜（single composite leaderboard），不拆分多个排行榜。总榜规则：
+minADE 与 minFDE 分别在各自误差上取最优候选，该候选可以不同。结果汇报规则：
 
-1. 三个指标来自同一 Mixed-test、同一 checkpoint、同一场景划分和同一 `K=20`；
-2. 总榜同时展示三个原始指标，综合分数不能替代原始结果；
-3. 至少报告五场景 macro average、micro average、场景明细和 worst-scene；
-4. 若不同方法综合分数接近，检查三项指标是否分裂，不把微小差异解释为稳定优势。
+1. 两个指标来自同一 Mixed-test、同一 checkpoint、同一场景协议和同一 `K=20`；
+2. 报告五场景明细、macro average、按样本数加权的 micro average 和 worst-scene；
+3. 不定义综合分数或单一总排名，避免引入未冻结的归一化边界与指标权重。
 
-在正式发布综合分数前，必须冻结归一化参考范围，不能根据测试结果临时选择上下界。对方法 `m` 和指标 `j`，建议使用预先冻结的 min-max 归一化：
-
-\[
-z_{m,j}=\frac{x_{m,j}-x^{best}_{j}}
-              {x^{worst}_{j}-x^{best}_{j}},
-\qquad j\in\{\text{minFDE20},\text{minADE20},\text{MR}\}.
-\]
-
-综合分数为：
-
-\[
-S_m=\frac{1}{3}\left(z_{m,\text{minFDE20}}+
-z_{m,\text{minADE20}}+z_{m,\text{MR}}\right).
-\]
-
-`S_m` 越低越好，排行榜按 `S_m` 升序排列。
-
-`ADE@1`、`FDE@1`、`b-minFDE20`、Energy Score、coverage、calibration 等暂不进入当前总榜，也不作为本阶段新增协议要求。
+`ADE@1`、`FDE@1`、`b-minFDE20`、Energy Score、coverage、calibration 等不进入当前主榜，可按辅助分析另行报告。MR 不属于 TrajGap-Bench 正式指标。
 
 ## 5. 当前代码对应关系
 
@@ -163,7 +143,7 @@ z_{m,\text{minADE20}}+z_{m,\text{MR}}\right).
 | Mixed 测试 | `TrajGapDataset(..., split="test")` |
 | 统一训练入口 | `scripts/训练与评估/run_trajimpute_experiments.py --protocol mixed-direct` |
 | 统一 direct 评估 | `scripts/结果分析/evaluate_trajimpute_direct.py --difficulty Mixed` |
-| checkpoint 选点 | 合并后的 Mixed-val 上的 `val_minFDE20` |
+| checkpoint 选点 | 合并后的 Mixed-val 上，按最终预测头的 `val_new_minFDE20` 选点 |
 
 推荐入口：
 
@@ -188,8 +168,8 @@ scripts/训练与评估/run_trajimpute_experiments.py \
 - unseen-pattern 数据扩展；
 - severity-balanced 或 evidence-balanced 主训练；
 - 额外 direct/impute 双轨排行榜；
-- 除 `minFDE20`、`minADE20`、`MR` 外的总榜指标。
+- 除 `minFDE20`、`minADE20` 外的主榜指标。
 
 当前最准确的定位是：
 
-> **TrajGap 将 TrajImpute 官方 Easy/Hard 的同一 train/val/test split 在适配层统一合并为 Mixed，并以 Mixed-val 的单一 `val_minFDE20` 选点、以 Mixed-test 的 `minFDE20`、`minADE20`、`MR` 进行单一总榜评估。**
+> **TrajGap 将 TrajImpute 官方 Easy/Hard 的同一 train/val/test split 在适配层统一合并为 Mixed，并以 Mixed-val 最终预测头的单一 `val_new_minFDE20` 选点，在 Mixed-test 上并列报告 `minFDE20` 与 `minADE20`，不计算 MR 或综合总分。**

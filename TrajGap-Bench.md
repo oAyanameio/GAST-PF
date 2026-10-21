@@ -2,7 +2,7 @@
 
 # TrajGap-Bench：面向缺失历史直接预测的行人轨迹预测基准
 
-**Version 1.0 — 2026-10-12 · Bilingual 中英对照**
+**Version 1.1 — 2026-10-20 · Bilingual 中英对照**
 
 > **Dataset / 数据集：** TrajGap (TrajImpute-derived Missing-History Trajectory Dataset / 基于 TrajImpute 的缺失历史轨迹数据集)
 > **Benchmark / 基准：** TrajGap-Bench (Missing-History Direct Forecasting Benchmark / 缺失历史直接预测基准)
@@ -27,8 +27,8 @@ TrajGap-Bench does not re-invent missing-history data. It re-uses the audited of
 TrajGap-Bench 不重新发明缺失历史数据，而是原样复用已审计的 TrajImpute 官方发布，消除碎片化：
 
 1. **Unified protocol 统一协议**：Easy and Hard are merged sample-wise per split into one Mixed dataset; training, validation, and testing all follow the same Mixed calibre / Easy 与 Hard 按样本级合并为单一 Mixed 数据集，训练、验证、测试统一为 Mixed 口径；
-2. **Single validation 单一验证**：one Mixed validation set with a single `val_minFDE20` selects the checkpoint — no per-difficulty selection, no test-set tuning / 一个 Mixed 验证集、单一 `val_minFDE20` 选择 checkpoint——不按难度分别选点，不用测试集调参；
-3. **Single leaderboard 单一榜单**：one Mixed test set, one metric family (`minFDE20`, `minADE20`, `MR` at K=20), one composite ranking / 一个 Mixed 测试集、一套指标族（K=20 的 `minFDE20`/`minADE20`/`MR`）、一个综合排名。
+2. **Single validation 单一验证**：one Mixed validation set with a single final-head `val_new_minFDE20` selects the checkpoint — no per-difficulty selection, no test-set tuning / 一个 Mixed 验证集、按最终预测头的单一 `val_new_minFDE20` 选择 checkpoint——不按难度分别选点，不用测试集调参；
+3. **Single leaderboard 单一榜单**：one Mixed test set and two primary metrics (`minFDE20`, `minADE20`) at K=20, reported without a composite score / 一个 Mixed 测试集，K=20 下报告两个主指标（`minFDE20`、`minADE20`），不计算综合分数。
 
 ## 2. Relationship to Prior Benchmarks 与既有基准的关系
 
@@ -37,12 +37,12 @@ TrajGap-Bench 不重新发明缺失历史数据，而是原样复用已审计的
 Task 任务 | Complete-history prediction 完整历史预测 | Missing-coordinate imputation **and** imputed prediction 缺失坐标插补 **及** 插补后预测 | Direct (no-imputation) missing-history prediction 直接（无插补）缺失历史预测
 Data 数据 | Raw trajectories, LOO/LOSO predefined splits 原始轨迹，LOO/LOSO 预定义划分 | 5 scenes × Easy/Hard × train/val/test | Same official release, Easy+Hard merged per split into Mixed 同一官方发布，每个 split 合并 Easy+Hard 为 Mixed
 Missing levels 缺失程度 | None 无 | Easy: 0–4 missing points; Hard: 4–7 缺 0–4 点；缺 4–7 点 | 0–7, in a single Mixed distribution 0–7，单一 Mixed 缺失分布
-Evaluation 评估 | ADE/FDE (K=20) | Impute metrics + prediction metrics, per difficulty 按难度分开 | `minFDE20`, `minADE20`, `MR`, single Mixed test 单一 Mixed 测试
-Checkpoint selection 选点 | Full val set 完整验证集 | Per difficulty 按难度分别选择 | Single Mixed val, `val_minFDE20` 单一 Mixed 验证集
+Evaluation 评估 | ADE/FDE (K=20) | Impute metrics + prediction metrics, per difficulty 按难度分开 | `minFDE20`, `minADE20`, single Mixed test 单一 Mixed 测试
+Checkpoint selection 选点 | Full val set 完整验证集 | Per difficulty 按难度分别选择 | Single Mixed val, final-head `val_new_minFDE20` 单一 Mixed 验证集
 
-**Positioning statement 定位声明.** TrajImpute established the missing-history data resource and the impute-then-predict protocol. TrajGap-Bench contributes the missing piece for the direct-prediction community: a fixed, leakage-free protocol with a reproducible 8→12-frame task, a single validation rule, and a single composite leaderboard. Official impute-then-predict numbers from TrajImpute are **not** co-ranked with direct predictions — the two calibres differ in input information and are reported separately.
+**Positioning statement 定位声明.** TrajImpute established the missing-history data resource and the impute-then-predict protocol. TrajGap-Bench contributes the missing piece for the direct-prediction community: a fixed, leakage-free protocol with a reproducible 8→12-frame task, a single validation rule, and a transparent multi-metric leaderboard. Official impute-then-predict numbers from TrajImpute are **not** co-ranked with direct predictions — the two calibres differ in input information and are reported separately.
 
-TrajImpute 建立了缺失历史数据资源和先插补后预测协议。TrajGap-Bench 为直接预测社区补上缺失的一环：固定且无泄漏的协议、可复现的 8→12 帧任务、单一验证规则、单一综合榜单。TrajImpute 官方的先插补后预测数字**不**与直接预测结果同榜比较——两种口径的输入信息不同，须分开报告。
+TrajImpute 建立了缺失历史数据资源和先插补后预测协议。TrajGap-Bench 为直接预测社区补上缺失的一环：固定且无泄漏的协议、可复现的 8→12 帧任务、单一验证规则，以及并列呈现原始指标的透明榜单（不设综合分数）。TrajImpute 官方的先插补后预测数字**不**与直接预测结果同榜比较——两种口径的输入信息不同，须分开报告。
 
 **Clean setting Clean 设置.** Clean refers to the original ETH/UCY complete-history benchmark (8 observed frames, no missing injection, no imputation). It is not a subset of the TrajImpute Easy test; missing-0 copies there are only an artefact of the test construction. Clean results are quoted from the original papers (e.g., MoFlow CVPR 2025).
 
@@ -115,40 +115,30 @@ Mixed 训练集的缺失程度覆盖完整区间 m = 0…7（Easy 提供 0–4�
 ### 5.1 Splits and checkpoint selection 划分与 checkpoint 选择
 
 - **Train 训练**：Mixed-train (Easy+Hard train).
-- **Validation 验证**：Mixed-val (Easy+Hard val). A single `val_minFDE20` on the merged set selects the checkpoint. Per-difficulty validation and per-difficulty checkpoint selection are **not** part of the protocol / 在合并集上以单一 `val_minFDE20` 选择 checkpoint。按难度分别验证、分别选点**不是**本协议的一部分。
+- **Validation 验证**：Mixed-val (Easy+Hard val). A single `val_new_minFDE20` from the final prediction head on the merged set selects the checkpoint. Per-difficulty validation and per-difficulty checkpoint selection are **not** part of the protocol / 在合并集上以最终预测头的单一 `val_new_minFDE20` 选择 checkpoint。按难度分别验证、分别选点**不是**本协议的一部分。
 - **Test 测试**：Mixed-test (Easy+Hard test). The test set never influences sampling, hyper-parameters, or checkpoint selection / 测试集不影响采样、超参数或 checkpoint 选择。
 - All splits share the same 8-frame history, 12-frame future, direct input format, and K=20 / 所有划分共用相同的 8 帧历史、12 帧未来、直接输入格式与 K=20。
 
 ### 5.2 Metrics 指标
 
-All metrics are computed on the K=20 candidate sets; **lower is better** for all three; 所有指标基于 K=20 候选集计算；三个指标**均越低越好**：
+The two primary metrics are computed on the same K=20 candidate set; **lower is better** for both; 两个主指标基于同一组 K=20 候选轨迹计算，均为**越低越好**：
 
 **Metric 指标** | **Definition 定义**
 --- | ---
-`minFDE20` | Final-displacement error of the candidate closest to the ground-truth endpoint 20 条候选中最接近真值终点者的终点位移误差
-`minADE20` | Average-displacement error of the candidate closest to the ground truth 20 条候选中最接近真值者的平均位移误差
-`MR` | Miss rate: fraction of samples where no candidate is within 2.0 m of the true endpoint 漏检率：20 条候选均未达到真值终点 2.0 m 阈值的样本比例
+`minFDE20` | Minimum final-displacement error among the 20 candidates 20 条候选轨迹中最小的终点位移误差
+`minADE20` | Minimum average-displacement error among the 20 candidates 20 条候选轨迹中最小的平均位移误差
 
-`ADE@1` / `FDE@1` (top-probability mode) and distribution-quality metrics (energy score, coverage, calibration) are **not** part of the current leaderboard and may be reported as auxiliary diagnostics.
+The candidate minimizing ADE need not be the candidate minimizing FDE. `ADE@1` / `FDE@1` (top-probability mode) and distribution-quality metrics (energy score, coverage, calibration) are **not** primary leaderboard metrics and may be reported as auxiliary diagnostics. MR is not part of the TrajGap-Bench protocol or leaderboard.
 
-`ADE@1`/`FDE@1`（最高概率模态）与分布质量指标（能量分数、覆盖率、校准度）**不**进入当前榜单，可作为辅助诊断另行报告。
+minADE 的最优候选不一定也是 minFDE 的最优候选。`ADE@1`/`FDE@1`（最高概率模态）与分布质量指标（能量分数、覆盖率、校准度）**不**属于主榜指标，可作为辅助诊断另行报告。MR 不属于 TrajGap-Bench 协议或榜单指标。
 
 ### 5.3 Leaderboard 榜单
 
-TrajGap-Bench uses a single composite leaderboard; TrajGap-Bench 采用单一综合榜单：
+TrajGap-Bench reports one consistent leaderboard without a composite score; TrajGap-Bench 使用统一口径的榜单，不计算综合分数：
 
-1. All three raw metrics come from the same Mixed test, the same checkpoint, the same scene protocol, and the same K=20 — mixing calibres or protocols in one ranking is disallowed / 三个原始指标必须来自同一 Mixed 测试、同一 checkpoint、同一场景协议、同一 K=20——不允许混口径或混协议排名；
-2. Reports must include per-scene results, macro average, micro average, and worst-scene in addition to the composite score / 除综合分数外，必须报告各场景明细、macro 平均、micro 平均和 worst-scene（最差场景）；
-3. Composite score (lower is better), with min–max normalization over **pre-frozen** reference bounds / 综合分数（越低越好），采用**预先冻结**参考范围的 min–max 归一化：
-
-```text
-z(m, j) = (x(m, j) − best(j)) / (worst(j) − best(j)),   j ∈ {minFDE20, minADE20, MR}
-S(m)    = (z(m, minFDE20) + z(m, minADE20) + z(m, MR)) / 3
-```
-
-The normalization bounds must be frozen before the leaderboard is released and must not be re-chosen from test results. Near-tied composite scores must report the raw metrics; small margins are not interpreted as stable wins.
-
-归一化上下界必须在榜单发布前冻结，不得根据测试结果事后调整。综合分数接近时须并列展示原始指标，微小差异不解释为稳定优势。
+1. Both primary metrics come from the same Mixed test, checkpoint, scene protocol, and K=20 / 两个主指标必须来自同一 Mixed 测试集、同一 checkpoint、同一场景协议和同一 K=20；
+2. Reports must include per-scene results, five-scene macro average, sample-weighted micro average, and worst-scene / 必须报告各场景结果、五场景宏平均、样本加权 micro 平均及最差场景；
+3. Methods are compared by the two raw metrics; no composite score or single overall rank is defined / 方法按两个原始指标并列比较，不定义综合分数或单一总排名。
 
 ## 6. Reference Implementation (M0) 参考实现
 
@@ -156,17 +146,13 @@ M0 is the reference model of this project: a MoFlow-derived state-space trajecto
 
 M0 是本项目的参考模型：MoFlow 派生的状态空间轨迹预测器（单向 Mamba 历史编码器、Scene Transformer 多智能体交叉注意力、结构化时间解码器），输入包含显式有效性掩码通道（`x_valid_mask`）。严格按上述协议在 Mixed-train 上训练。
 
-Training setup 训练配置：seed 2024, 100 epochs, batch size 64, K=20 mode queries, AdamW with module-local parameter grouping, `val_minFDE20` checkpoint selection.
+Training setup 训练配置：seed 2024, 100 epochs, batch size 64, K=20 mode queries, AdamW with module-local parameter grouping, `val_new_minFDE20` checkpoint selection.
 
 Reference results, Mixed-test (macro average over 5 scenes, seed 2024); Mixed-test 参考结果（5 场景 macro 平均，seed 2024）：
 
-**Model 模型** | **minADE20** | **minFDE20** | **MR**
---- | ---: | ---: | ---:
-M0 (this work 本工作) | 0.3249 | 0.5039 | 0.0461
+The existing M0 and GAST-PF comparison artifacts were produced under earlier checkpoint-selection runs. They are historical until regenerated under this version's final-head `val_new_minFDE20` rule; they do not define v1.1 reference scores.
 
-These numbers define the current reference point of the leaderboard and are regenerated from a single fixed checkpoint per scene.
-
-这些数字定义榜单当前参考点，每场景由单一固定 checkpoint 重算得到。
+现有 M0 与 GAST-PF 对比产物来自较早的 checkpoint 选点实验。在按本版本最终预测头 `val_new_minFDE20` 规则重算前，它们仅作为历史结果，不定义 v1.1 的参考分数。
 
 ## 7. Code and Usage 代码与使用
 
@@ -200,9 +186,9 @@ Key interfaces 关键接口：`src/datamodule/trajimpute_dataset.py::TrajGapData
 **Submission checklist for new methods 新方法提交清单:**
 
 1. Same Mixed train/val/test organization 使用相同的 Mixed train/val/test 组织；
-2. Single `val_minFDE20` checkpoint selection 单一 `val_minFDE20` checkpoint 选择；
+2. Single `val_new_minFDE20` checkpoint selection from the final prediction head 使用最终预测头的单一 `val_new_minFDE20` checkpoint 选择；
 3. K=20, same 8→12 task, direct (no external imputation) K=20、相同的 8→12 任务、直接预测（无外部插补）；
-4. Report per-scene + macro + micro + worst-scene raw metrics 报告各场景 + macro + micro + worst-scene 原始指标；
+4. Report per-scene + macro + micro + worst-scene `minADE20`/`minFDE20` 报告各场景 + macro + micro + worst-scene 的 `minADE20`/`minFDE20`；
 5. Report the seed(s); multi-seed with mean±std is encouraged 报告 seed；鼓励多种子并给出 mean±std。
 
 ## 8. Known Limitations & Notes 已知限制与说明
