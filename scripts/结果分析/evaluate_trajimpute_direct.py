@@ -33,6 +33,7 @@ VARIANTS = {
         "encoder_type": "gast",
         "gast_depth": 4,
         "gast_gsm_operator": "max",
+        "gast_temporal_direction": "bidirectional",
     },
     # Stage 1 · AnchorGeo
     "GAST-PF-AnchorGeo": {
@@ -58,7 +59,21 @@ VARIANTS = {
         "encoder_type": "gast",
         "gast_depth": 4,
         "gast_gsm_operator": "max",
+        "gast_temporal_direction": "bidirectional",
         "gast_directional_readout": True,
+        "gast_m0_scene_tail": True,
+    },
+    "GAST-PF-Uni": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
+    },
+    "GAST-PF-UniTail": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
         "gast_m0_scene_tail": True,
     },
     "GAST-PF-ECSR": {
@@ -133,6 +148,20 @@ def load_checkpoint(model, ckpt_path):
                 f"checkpoint {switch}={ckpt_switch} does not match "
                 f"variant {switch}={model_switch}"
             )
+    checkpoint_direction = (
+        model_config.get("gast_temporal_direction", "bidirectional")
+        if hasattr(model_config, "get") else "bidirectional"
+    )
+    if checkpoint_direction in {"bi", "bidir"}:
+        checkpoint_direction = "bidirectional"
+    elif checkpoint_direction in {"uni", "causal"}:
+        checkpoint_direction = "unidirectional"
+    if checkpoint_direction != model.gast_temporal_direction:
+        raise ValueError(
+            "checkpoint gast_temporal_direction="
+            f"{checkpoint_direction} does not match variant "
+            f"gast_temporal_direction={model.gast_temporal_direction}"
+        )
     state = ckpt.get("state_dict", ckpt)
     cleaned = {k[len("net."):]: v for k, v in state.items() if k.startswith("net.")}
     # Let TrajectoryForecaster migrate legacy parameter paths first; validate

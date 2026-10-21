@@ -22,6 +22,8 @@ target:
     encoder_type: 'gast'
     gast_depth: 4
     gast_gsm_operator: 'max'
+    # 时序方向：旧 GAST-PF 默认保留双向；Uni 变体显式改为因果单向 Mamba。
+    gast_temporal_direction: 'bidirectional'
     # Legacy UT-ENC experiment keys: keep Hydra overrides loadable so the
     # unitraj_encoder_bench_seed2024 lanes can resume from their checkpoints.
     utenc_depth: 4

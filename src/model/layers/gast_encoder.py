@@ -5,7 +5,7 @@
     models/modules.py        :: Attn_Block / Mamba_Block / Temporal_Decay
 
 借用边界：GSM 空间注意力（mask ghost token + 逐帧 agent 自注意力）、
-Temporal_Decay 缺失衰减、前向+反向双 Mamba 相加均来自外部机制并在此处作为
+Temporal_Decay 缺失衰减、前向/反向 Mamba 时序状态均来自外部机制并在此处作为
 编码器组件使用；GAST-PF 的 decoder、loss、指标与 TrajGap 协议保持不变。
 本文件不含外部方法的 Future_Encoder、CVAE 潜变量或 diverse loss。
 
@@ -24,9 +24,9 @@ Temporal_Decay 缺失衰减、前向+反向双 Mamba 相加均来自外部机制
    Temporal_Decay 的 exp(-ReLU(Linear(.))) 衰减头，宽度=embed_dim。
 5. 宽度：model_dim 由源默认 64 提到 128，与 GAST-PF decoder 隐藏维对齐，省去接口
    投影；参数量变化须记录在实验 manifest。
-6. 双向 Mamba：源为两条独立 Mamba_Block（各 depth 层，残差相加）。本文件用
-   当前运行环境的 VideoMamba fork create_block 单向栈等价实现（fork 的 bimamba
-   旗标仅作用于主链裁定，不在此处使用）。
+6. 时序方向：默认保留源实现的前向/反向两条独立 Mamba 栈；新增
+   ``temporal_direction=\"unidirectional\"``，用于严格因果的前向 Mamba + 末帧读出。
+   两种模式共享 GSM、Temporal_Decay、decoder 和编码后场景尾部。
 """
 
 import torch
@@ -326,11 +326,27 @@ class GSMAttnBlock(nn.Module):
 
 
 class TemporalEncoder(nn.Module):
-    """UniTraj Temporal_Encoder 移植：MLP + 前向/反向 Mamba + 衰减门 + 相加。"""
+    """Gap-aware temporal Mamba with bidirectional and causal modes."""
 
     def __init__(self, model_dim: int, depth: int = 4, p_dropout: float = 0.2,
-                 drop_path: float = 0.2):
+                 drop_path: float = 0.2,
+                 temporal_direction: str = "bidirectional"):
         super().__init__()
+        direction_aliases = {
+            "bi": "bidirectional",
+            "bidir": "bidirectional",
+            "uni": "unidirectional",
+            "causal": "unidirectional",
+        }
+        temporal_direction = direction_aliases.get(
+            temporal_direction, temporal_direction
+        )
+        if temporal_direction not in {"bidirectional", "unidirectional"}:
+            raise ValueError(
+                "temporal_direction must be 'bidirectional' or 'unidirectional', "
+                f"got {temporal_direction!r}"
+            )
+        self.temporal_direction = temporal_direction
         self.mlp = nn.Sequential(
             nn.Linear(model_dim, model_dim),
             nn.LayerNorm(model_dim),
@@ -338,9 +354,10 @@ class TemporalEncoder(nn.Module):
             nn.Dropout(p_dropout),
         )
         self.ssm_forw = self._stack(model_dim, depth, drop_path, 0)
-        self.ssm_back = self._stack(model_dim, depth, drop_path, depth)
         self.norm_f_forw = RMSNorm(model_dim, eps=1e-5)
-        self.norm_f_back = RMSNorm(model_dim, eps=1e-5)
+        if self.temporal_direction == "bidirectional":
+            self.ssm_back = self._stack(model_dim, depth, drop_path, depth)
+            self.norm_f_back = RMSNorm(model_dim, eps=1e-5)
 
     @staticmethod
     def _stack(model_dim, depth, drop_path, offset):
@@ -361,31 +378,48 @@ class TemporalEncoder(nn.Module):
     def forward(self, x_b_t_n_c: torch.Tensor, gamma_forw=None, gamma_back=None,
                 reliability: torch.Tensor | None = None,
                 return_directions: bool = False):
-        """x [B,T,N,C]；可选返回两个方向的 [B,N,T,C] 状态。"""
+        """Encode ``x`` and return the configured temporal state sequence.
+
+        ``bidirectional`` keeps the historical flattened return contract when
+        evidence routing is disabled and returns ``[B,N,T,C]`` for routed
+        states. ``unidirectional`` always returns causal states as
+        ``[B,N,T,C]`` so the caller can explicitly read the terminal state or
+        perform a causal evidence-aware readout.
+        """
         B, T, N, C = x_b_t_n_c.shape
         x_forw = self.mlp(x_b_t_n_c).permute(0, 2, 1, 3).reshape(B * N, T, C)
-        x_flip = torch.flip(x_b_t_n_c, dims=[1])
-        x_back = self.mlp(x_flip).permute(0, 2, 1, 3).reshape(B * N, T, C)
 
         if reliability is None:
             x_forw = x_forw * gamma_forw.reshape(B * N, T, C)
-            x_back = x_back * gamma_back.reshape(B * N, T, C)
         else:
             reliability_flat = reliability.reshape(B * N, T, 1).to(x_forw.dtype)
             x_forw = x_forw * reliability_flat
-            x_back = x_back * torch.flip(reliability_flat, dims=[1])
 
         y_forw = self._run(x_forw, self.ssm_forw, self.norm_f_forw)
+        forward_states = y_forw.reshape(B, N, T, C)
+
+        if self.temporal_direction == "unidirectional":
+            if return_directions:
+                raise ValueError(
+                    "return_directions is only available in bidirectional mode"
+                )
+            return forward_states
+
+        x_flip = torch.flip(x_b_t_n_c, dims=[1])
+        x_back = self.mlp(x_flip).permute(0, 2, 1, 3).reshape(B * N, T, C)
+        if reliability is None:
+            x_back = x_back * gamma_back.reshape(B * N, T, C)
+        else:
+            x_back = x_back * torch.flip(reliability_flat, dims=[1])
+
         y_back = self._run(x_back, self.ssm_back, self.norm_f_back)
         y_back = torch.flip(y_back, dims=[1])
         if reliability is None:
             fused = y_forw + y_back
             if return_directions:
-                forward_states = y_forw.reshape(B, N, T, C)
                 backward_states = y_back.reshape(B, N, T, C)
                 return fused, forward_states, backward_states
             return fused
-        forward_states = y_forw.reshape(B, N, T, C)
         backward_states = y_back.reshape(B, N, T, C)
         return route_bidirectional_paths(
             forward_states, backward_states, reliability
@@ -580,25 +614,47 @@ class GASTEncoder(nn.Module):
         hist_feat [B, N, T, D_in]（GAST-PF 当前 4 维历史特征）
         valid_mask [B, N, T] bool（True=有效观测）
         key_padding [B, N] bool（True=padding actor）
-    输出：[B, N, C=embed_dim] —— 默认读取固定最后时间步；可选 directional
-    attention readout 汇聚完整双向状态序列。
+    输出：[B, N, C=embed_dim] —— 双向模式默认读取融合后的固定最后时间步；
+    单向模式读取前向 Mamba 的最后时间步。双向模式可选 directional attention
+    readout；单向 ECSR 使用前向状态上的 evidence-aware readout。
     """
 
     def __init__(self, input_dim: int = 4, embed_dim: int = 128, num_heads: int = 8,
                  depth: int = 4, operator: str = "max",
                  p_dropout: float = 0.2, drop_path: float = 0.2,
                  ecsr: bool = False, directional_readout: bool = False,
-                 max_steps: int = 8):
+                 max_steps: int = 8,
+                 temporal_direction: str = "bidirectional"):
         super().__init__()
+        direction_aliases = {
+            "bi": "bidirectional",
+            "bidir": "bidirectional",
+            "uni": "unidirectional",
+            "causal": "unidirectional",
+        }
+        temporal_direction = direction_aliases.get(
+            temporal_direction, temporal_direction
+        )
+        if temporal_direction not in {"bidirectional", "unidirectional"}:
+            raise ValueError(
+                "temporal_direction must be 'bidirectional' or 'unidirectional', "
+                f"got {temporal_direction!r}"
+            )
         self.ecsr = bool(ecsr)
         self.use_directional_readout = bool(directional_readout)
+        self.temporal_direction = temporal_direction
+        if self.use_directional_readout and temporal_direction != "bidirectional":
+            raise ValueError(
+                "directional_readout requires temporal_direction='bidirectional'"
+            )
         if self.ecsr and self.use_directional_readout:
             raise ValueError("directional_readout is not supported with ECSR")
         self.spatial = GSMAttnBlock(input_dim, embed_dim, num_heads,
                                     operator=operator, p_dropout=p_dropout,
                                     ecsr=self.ecsr)
         self.temporal = TemporalEncoder(embed_dim, depth=depth,
-                                        p_dropout=p_dropout, drop_path=drop_path)
+                                        p_dropout=p_dropout, drop_path=drop_path,
+                                        temporal_direction=temporal_direction)
         if self.use_directional_readout:
             self.directional_readout = DirectionalAttentionReadout(
                 embed_dim=embed_dim, max_steps=max_steps
@@ -651,28 +707,32 @@ class GASTEncoder(nn.Module):
             x_spa = self.spatial(x, m, kp)                 # [B,T,N,C]
             d_forw, d_back = missing_run_deltas(valid_mask)
             delta_forw = d_forw.unsqueeze(-1).expand(*d_forw.shape, 2)
-            delta_back = d_back.unsqueeze(-1).expand(*d_back.shape, 2)
             g_forw = self.temporal_decay(delta_forw)
-            g_back = self.temporal_decay(delta_back)
-            if self.use_directional_readout:
-                _, forward_states, backward_states = self.temporal(
-                    x_spa,
-                    g_forw,
-                    g_back,
-                    return_directions=True,
-                )
-                age_back_aligned = torch.flip(d_back, dims=[-1])
-                output = self.directional_readout(
-                    forward_states,
-                    backward_states,
-                    valid_mask,
-                    kp,
-                    d_forw,
-                    age_back_aligned,
-                )
+            if self.temporal_direction == "unidirectional":
+                y = self.temporal(x_spa, g_forw)
+                output = y[:, :, -1]
             else:
-                y = self.temporal(x_spa, g_forw, g_back)
-                output = y[:, -1].reshape(B, N, -1)
+                delta_back = d_back.unsqueeze(-1).expand(*d_back.shape, 2)
+                g_back = self.temporal_decay(delta_back)
+                if self.use_directional_readout:
+                    _, forward_states, backward_states = self.temporal(
+                        x_spa,
+                        g_forw,
+                        g_back,
+                        return_directions=True,
+                    )
+                    age_back_aligned = torch.flip(d_back, dims=[-1])
+                    output = self.directional_readout(
+                        forward_states,
+                        backward_states,
+                        valid_mask,
+                        kp,
+                        d_forw,
+                        age_back_aligned,
+                    )
+                else:
+                    y = self.temporal(x_spa, g_forw, g_back)
+                    output = y[:, -1].reshape(B, N, -1)
 
         return output * (~kp).unsqueeze(-1).to(output.dtype)
 

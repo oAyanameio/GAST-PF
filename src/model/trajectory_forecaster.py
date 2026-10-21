@@ -19,7 +19,8 @@ class M0SceneInteractionTail(nn.Module):
 
     GAST-PF 已经负责历史时空编码；该模块只恢复 M0 在编码后的场景推理，
     不恢复 M0 的历史投影和历史 Mamba。残差系数从零开始，使开启该尾部时
-    的初始前向行为严格退化为 DAP actor token。
+    的初始前向行为严格退化为输入 actor token。输入可以来自 DAP、双向末帧
+    读出或单向因果末帧读出。
     """
 
     def __init__(self, embed_dim, num_heads, mlp_ratio, qkv_bias,
@@ -109,6 +110,7 @@ class TrajectoryForecaster(nn.Module):
         gast_ecsr: bool = False,
         gast_directional_readout: bool = False,
         gast_m0_scene_tail: bool = False,
+        gast_temporal_direction: str = "bidirectional",
         utenc_depth: int = None,
         utenc_gsm_operator: str = None,
     ) -> None:
@@ -138,8 +140,30 @@ class TrajectoryForecaster(nn.Module):
         self.gast_m0_scene_tail = (
             bool(gast_m0_scene_tail) and self.encoder_type == "gast"
         )
-        if self.gast_m0_scene_tail and not self.gast_directional_readout:
-            raise ValueError("gast_m0_scene_tail requires gast_directional_readout")
+        temporal_direction_aliases = {
+            "bi": "bidirectional",
+            "bidir": "bidirectional",
+            "uni": "unidirectional",
+            "causal": "unidirectional",
+        }
+        self.gast_temporal_direction = temporal_direction_aliases.get(
+            gast_temporal_direction, gast_temporal_direction
+        )
+        if self.gast_temporal_direction not in {
+            "bidirectional", "unidirectional"
+        }:
+            raise ValueError(
+                "gast_temporal_direction must be 'bidirectional' or "
+                f"'unidirectional', got {gast_temporal_direction!r}"
+            )
+        if (
+            self.gast_directional_readout
+            and self.gast_temporal_direction != "bidirectional"
+        ):
+            raise ValueError(
+                "gast_directional_readout requires "
+                "gast_temporal_direction='bidirectional'"
+            )
         if self.gast_ecsr and (
             self.gast_anchor_geo or self.gast_frame_geo or self.gast_directional_readout
         ):
@@ -234,6 +258,7 @@ class TrajectoryForecaster(nn.Module):
                 ecsr=self.gast_ecsr,
                 directional_readout=self.gast_directional_readout,
                 max_steps=obs_len,
+                temporal_direction=self.gast_temporal_direction,
             )
             torch.random.set_rng_state(rng_state)
             if self.gast_anchor_geo:
@@ -410,8 +435,8 @@ class TrajectoryForecaster(nn.Module):
         key_valid_mask = data["x_key_valid_mask"]
 
         if self.encoder_type == "gast":
-            # GAST-PF encoder replacement：spatial interaction + decay +
-            # bidirectional temporal state encoding.
+            # GAST-PF encoder: spatial interaction + gap decay + configured
+            # temporal direction, followed by its matching actor readout.
             # 替换 M0 的 history_input_projection + hist_embed_mamba + 取末态 +
             # scene_interaction_blocks；输出 [B, N, embed_dim]（padding 置零）。
             actor_feat = self.gast_encoder(

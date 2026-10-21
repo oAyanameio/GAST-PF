@@ -49,6 +49,7 @@ VARIANTS = {
         "encoder_type": "gast",
         "gast_depth": 4,
         "gast_gsm_operator": "max",
+        "gast_temporal_direction": "bidirectional",
     },
     # Stage 1 · AnchorGeo：在 GAST-PF actor 输出端叠加 anchor 空间 +
     # 末端方向 + anchor lag 几何证据；GSM attention 与 decoder 输入维度不变。
@@ -77,7 +78,23 @@ VARIANTS = {
         "encoder_type": "gast",
         "gast_depth": 4,
         "gast_gsm_operator": "max",
+        "gast_temporal_direction": "bidirectional",
         "gast_directional_readout": True,
+        "gast_m0_scene_tail": True,
+    },
+    # Uni：GSM + 前向 gap-aware Mamba + 最后时间步读出。
+    "GAST-PF-Uni": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
+    },
+    # UniTail：在单向末帧 actor token 后恢复 M0 场景交互尾部。
+    "GAST-PF-UniTail": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
         "gast_m0_scene_tail": True,
     },
     "GAST-PF-ECSR": {
@@ -268,7 +285,8 @@ def _model_config(args):
         "num_actor_types": 1, "num_modes": args.K, "dt": 0.4,
         "obs_len": 8, "bimamba": args.bimamba,
         "encoder_type": "gast", "gast_depth": 4,
-        "gast_gsm_operator": "max", "utenc_depth": 4,
+        "gast_gsm_operator": "max", "gast_temporal_direction": "bidirectional",
+        "utenc_depth": 4,
         "utenc_gsm_operator": "max",
     }
     config.update(VARIANTS[args.variant])
@@ -838,6 +856,7 @@ def main():
         "M0": "0", "GAST-PF": "G", "GAST-PF-AnchorGeo": "GA",
         "GAST-PF-FrameGeo": "GF", "GAST-PF-DAP": "GD",
         "GAST-PF-Tail": "GT",
+        "GAST-PF-Uni": "GU", "GAST-PF-UniTail": "GUT",
         "GAST-PF-ECSR": "GE", "UT-ENC": "U",
     }[args.variant]
 

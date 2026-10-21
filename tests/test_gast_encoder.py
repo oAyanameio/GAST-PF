@@ -7,8 +7,9 @@
 4. padding actor 隔离（固定 batch 内扰动 padding 数据不改有效 actor 输出）；
 5. 双向注意力读出屏蔽缺失帧、零门控退化为基线且不扩展时间轴；
 6. M0SceneTail 零初始化时严格退化为 DAP actor token；
-7. evaluator 编码器契约（GAST-PF ckpt 拒载 M0、M0 拒载 GAST-PF、缺键拒绝）；
-8. GAST-PF 可训练参数全部进入 AdamW 参数组（优化器闭包纪律）。
+7. 单向因果 Mamba 的末帧读出与 Tail 解耦；
+8. evaluator 编码器契约（GAST-PF ckpt 拒载 M0、M0 拒载 GAST-PF、缺键拒绝）；
+9. GAST-PF 可训练参数全部进入 AdamW 参数组（优化器闭包纪律）。
 """
 
 import sys
@@ -194,6 +195,43 @@ def test_directional_readout_keeps_original_temporal_length(monkeypatch):
     assert torch.count_nonzero(output[0, 2]) == 0
 
 
+def test_unidirectional_encoder_reads_forward_terminal_state(monkeypatch):
+    from src.model.layers import gast_encoder as gast_encoder_module
+
+    class SpatialIdentity(torch.nn.Module):
+        def forward(self, x, mask, key_padding):
+            return x
+
+    class CausalTemporalCapture(torch.nn.Module):
+        def forward(self, x, gamma_forw=None, gamma_back=None,
+                    reliability=None, return_directions=False):
+            self.gamma_back = gamma_back
+            return x.permute(0, 2, 1, 3)
+
+    temporal = CausalTemporalCapture()
+    monkeypatch.setattr(
+        gast_encoder_module, "TemporalEncoder", lambda *args, **kwargs: temporal
+    )
+    encoder = GASTEncoder(
+        input_dim=4, embed_dim=4, num_heads=1, depth=1,
+        p_dropout=0.0, drop_path=0.0,
+        temporal_direction="unidirectional",
+    )
+    encoder.spatial = SpatialIdentity()
+
+    hist_feat = torch.arange(2 * 3 * 8 * 4, dtype=torch.float32).reshape(2, 3, 8, 4)
+    valid_mask = torch.ones(2, 3, 8, dtype=torch.bool)
+    key_padding = torch.tensor([[False, False, True], [False, False, False]])
+    output = encoder(hist_feat, valid_mask, key_padding)
+
+    expected = hist_feat[:, :, -1]
+    expected = expected * (~key_padding).unsqueeze(-1)
+    assert output.shape == (2, 3, 4)
+    assert torch.equal(output, expected)
+    assert temporal.gamma_back is None
+    assert torch.count_nonzero(output[0, 2]) == 0
+
+
 def test_directional_readout_is_variant_and_checkpoint_contract(tmp_path):
     from scripts.训练与评估.run_trajimpute_experiments import VARIANTS as TRAIN_VARIANTS
     from scripts.结果分析.evaluate_trajimpute_direct import build_model, load_checkpoint
@@ -264,15 +302,66 @@ def test_m0_scene_tail_starts_as_exact_dap_identity():
     )
 
 
-def test_m0_scene_tail_requires_dap_readout():
+def test_m0_scene_tail_does_not_require_dap_readout():
     from src.model.trajectory_forecaster import TrajectoryForecaster
 
-    with pytest.raises(ValueError, match="requires gast_directional_readout"):
-        TrajectoryForecaster(
-            num_modes=6,
-            encoder_type="gast",
-            gast_m0_scene_tail=True,
-        )
+    model = TrajectoryForecaster(
+        num_modes=6,
+        encoder_type="gast",
+        gast_m0_scene_tail=True,
+    )
+    assert model.gast_m0_scene_tail is True
+
+
+def test_unidirectional_tail_variant_does_not_register_backward_mamba():
+    from src.model.trajectory_forecaster import TrajectoryForecaster
+
+    model = TrajectoryForecaster(
+        embed_dim=8,
+        num_heads=2,
+        future_steps=4,
+        num_modes=3,
+        obs_len=4,
+        encoder_type="gast",
+        gast_temporal_direction="unidirectional",
+        gast_m0_scene_tail=True,
+    )
+
+    assert model.gast_temporal_direction == "unidirectional"
+    assert model.gast_m0_scene_tail is True
+    assert not hasattr(model.gast_encoder.temporal, "ssm_back")
+    assert not hasattr(model.gast_encoder.temporal, "norm_f_back")
+    assert model.gast_encoder.temporal.temporal_direction == "unidirectional"
+
+
+def test_unidirectional_tail_variant_is_registered():
+    from scripts.训练与评估.run_trajimpute_experiments import VARIANTS as TRAIN_VARIANTS
+    from scripts.结果分析.evaluate_trajimpute_direct import VARIANTS as EVAL_VARIANTS
+    from scripts.结果分析.evaluate_trajimpute_direct import build_model
+
+    assert TRAIN_VARIANTS["GAST-PF-UniTail"]["gast_temporal_direction"] == "unidirectional"
+    assert EVAL_VARIANTS["GAST-PF-UniTail"]["gast_temporal_direction"] == "unidirectional"
+    model = build_model("GAST-PF-UniTail", num_modes=6)
+    assert model.gast_temporal_direction == "unidirectional"
+    assert model.gast_m0_scene_tail is True
+
+
+def test_evaluator_rejects_bidirectional_checkpoint_for_unidirectional_variant(tmp_path):
+    from scripts.结果分析.evaluate_trajimpute_direct import build_model, load_checkpoint
+
+    model = build_model("GAST-PF", num_modes=20)
+    path = tmp_path / "bidirectional.ckpt"
+    torch.save({
+        "state_dict": {f"net.{key}": value for key, value in model.state_dict().items()},
+        "hyper_parameters": {"model": {
+            "num_modes": 20,
+            "encoder_type": "gast",
+            "gast_temporal_direction": "bidirectional",
+        }},
+    }, path)
+
+    with pytest.raises(ValueError, match="gast_temporal_direction"):
+        load_checkpoint(build_model("GAST-PF-Uni", num_modes=20), path)
 
 
 def test_m0_scene_tail_variant_and_checkpoint_contract(tmp_path):
