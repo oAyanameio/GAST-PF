@@ -6,7 +6,7 @@
 3. GAST-PF 真实 TrajGap Mixed batch 前向/反向（GPU）；
 4. padding actor 隔离（固定 batch 内扰动 padding 数据不改有效 actor 输出）；
 5. 双向注意力读出屏蔽缺失帧、零门控退化为基线且不扩展时间轴；
-6. M0SceneTail 零初始化时严格退化为 DAP actor token；
+6. SceneReasoningTail 零初始化时严格退化为 DAP actor token；
 7. 单向因果 Mamba 的末帧读出与 Tail 解耦；
 8. evaluator 编码器契约（GAST-PF ckpt 拒载 M0、M0 拒载 GAST-PF、缺键拒绝）；
 9. GAST-PF 可训练参数全部进入 AdamW 参数组（优化器闭包纪律）。
@@ -268,7 +268,7 @@ def test_directional_readout_is_variant_and_checkpoint_contract(tmp_path):
         load_checkpoint(build_model("GAST-PF-DAP", 20), baseline_path)
 
 
-def test_m0_scene_tail_starts_as_exact_dap_identity():
+def test_scene_reasoning_tail_starts_as_exact_dap_identity():
     from src.model.trajectory_forecaster import TrajectoryForecaster
 
     model = TrajectoryForecaster(
@@ -279,7 +279,7 @@ def test_m0_scene_tail_starts_as_exact_dap_identity():
         obs_len=4,
         encoder_type="gast",
         gast_directional_readout=True,
-        gast_m0_scene_tail=True,
+        gast_scene_reasoning_tail=True,
     )
     model.gast_scene_tail.eval()
     actor_feat = torch.randn(1, 3, 8)
@@ -302,15 +302,15 @@ def test_m0_scene_tail_starts_as_exact_dap_identity():
     )
 
 
-def test_m0_scene_tail_does_not_require_dap_readout():
+def test_scene_reasoning_tail_does_not_require_dap_readout():
     from src.model.trajectory_forecaster import TrajectoryForecaster
 
     model = TrajectoryForecaster(
         num_modes=6,
         encoder_type="gast",
-        gast_m0_scene_tail=True,
+        gast_scene_reasoning_tail=True,
     )
-    assert model.gast_m0_scene_tail is True
+    assert model.gast_scene_reasoning_tail is True
 
 
 def test_unidirectional_tail_variant_does_not_register_backward_mamba():
@@ -324,11 +324,11 @@ def test_unidirectional_tail_variant_does_not_register_backward_mamba():
         obs_len=4,
         encoder_type="gast",
         gast_temporal_direction="unidirectional",
-        gast_m0_scene_tail=True,
+        gast_scene_reasoning_tail=True,
     )
 
     assert model.gast_temporal_direction == "unidirectional"
-    assert model.gast_m0_scene_tail is True
+    assert model.gast_scene_reasoning_tail is True
     assert not hasattr(model.gast_encoder.temporal, "ssm_back")
     assert not hasattr(model.gast_encoder.temporal, "norm_f_back")
     assert model.gast_encoder.temporal.temporal_direction == "unidirectional"
@@ -343,7 +343,7 @@ def test_unidirectional_tail_variant_is_registered():
     assert EVAL_VARIANTS["GAST-PF-UniTail"]["gast_temporal_direction"] == "unidirectional"
     model = build_model("GAST-PF-UniTail", num_modes=6)
     assert model.gast_temporal_direction == "unidirectional"
-    assert model.gast_m0_scene_tail is True
+    assert model.gast_scene_reasoning_tail is True
 
 
 def test_evaluator_rejects_bidirectional_checkpoint_for_unidirectional_variant(tmp_path):
@@ -364,24 +364,24 @@ def test_evaluator_rejects_bidirectional_checkpoint_for_unidirectional_variant(t
         load_checkpoint(build_model("GAST-PF-Uni", num_modes=20), path)
 
 
-def test_m0_scene_tail_variant_and_checkpoint_contract(tmp_path):
+def test_scene_reasoning_tail_variant_and_checkpoint_contract(tmp_path):
     from scripts.训练与评估.run_trajimpute_experiments import VARIANTS as TRAIN_VARIANTS
     from scripts.结果分析.evaluate_trajimpute_direct import build_model, load_checkpoint
 
-    assert TRAIN_VARIANTS["GAST-PF-Tail"]["gast_m0_scene_tail"] is True
+    assert TRAIN_VARIANTS["GAST-PF-Tail"]["gast_scene_reasoning_tail"] is True
     model = build_model("GAST-PF-Tail", num_modes=20)
     assert model.gast_directional_readout is True
-    assert model.gast_m0_scene_tail is True
+    assert model.gast_scene_reasoning_tail is True
     assert model.gast_scene_tail.residual_scale.item() == 0.0
 
-    path = tmp_path / "gast_dap_m0_tail.ckpt"
+    path = tmp_path / "gast_dap_scene_tail.ckpt"
     torch.save({
         "state_dict": {f"net.{key}": value for key, value in model.state_dict().items()},
         "hyper_parameters": {"model": {
             "num_modes": 20,
             "encoder_type": "gast",
             "gast_directional_readout": True,
-            "gast_m0_scene_tail": True,
+            "gast_scene_reasoning_tail": True,
         }},
     }, path)
     missing, unexpected = load_checkpoint(
@@ -389,7 +389,7 @@ def test_m0_scene_tail_variant_and_checkpoint_contract(tmp_path):
     )
     assert not missing
     assert not unexpected
-    with pytest.raises(ValueError, match="gast_m0_scene_tail"):
+    with pytest.raises(ValueError, match="gast_scene_reasoning_tail"):
         load_checkpoint(build_model("GAST-PF-DAP", 20), path)
 
 
@@ -441,9 +441,9 @@ def test_ecsr_exposes_shared_evidence_state_for_scene_tail(monkeypatch):
 
 
 def test_evidence_scene_tail_builds_actor_key_bias():
-    from src.model.trajectory_forecaster import M0SceneInteractionTail
+    from src.model.trajectory_forecaster import SceneReasoningTail
 
-    tail = M0SceneInteractionTail(
+    tail = SceneReasoningTail(
         embed_dim=4, num_heads=2, mlp_ratio=2.0, qkv_bias=False,
         num_actor_types=1, drop_path=0.0, max_steps=4,
         evidence_conditioned=True,
@@ -481,28 +481,57 @@ def test_evidence_scene_tail_builds_actor_key_bias():
     assert torch.count_nonzero(output[:, 2]) == 0
 
 
-def test_echsr_variant_wires_shared_evidence_tail():
+def test_oehsr_variant_wires_named_evidence_modules():
     from scripts.训练与评估.run_trajimpute_experiments import VARIANTS as TRAIN_VARIANTS
     from scripts.结果分析.evaluate_trajimpute_direct import VARIANTS as EVAL_VARIANTS, build_model
+    from src.model.layers.gast_encoder import (
+        EvidenceModulatedCausalMamba,
+        ObservationEvidenceGSM,
+    )
+    from src.model.trajectory_forecaster import EvidenceGatedSceneTail
 
     for variants in (TRAIN_VARIANTS, EVAL_VARIANTS):
-        config = variants["GAST-PF-ECHSR"]
-        assert config["gast_ecsr"] is True
-        assert config["gast_m0_scene_tail"] is True
-        assert config["gast_hierarchical_evidence"] is True
+        config = variants["GAST-PF-OEHSR"]
+        assert config["gast_oer_spatial"] is True
+        assert config["gast_emc_temporal"] is True
+        assert config["gast_ewhr_readout"] is True
+        assert config["gast_scene_reasoning_tail"] is True
+        assert config["gast_egst_tail"] is True
+        assert config["gast_oehsr"] is True
 
-    model = build_model("GAST-PF-ECHSR", num_modes=6)
-    assert model.gast_ecsr is True
-    assert model.gast_m0_scene_tail is True
-    assert model.gast_hierarchical_evidence is True
-    assert model.gast_scene_tail.evidence_conditioned is True
+    model = build_model("GAST-PF-OEHSR", num_modes=6)
+    assert model.gast_oer_spatial is True
+    assert model.gast_emc_temporal is True
+    assert model.gast_ewhr_readout is True
+    assert model.gast_scene_reasoning_tail is True
+    assert model.gast_egst_tail is True
+    assert model.gast_oehsr is True
+    assert isinstance(model.gast_encoder.spatial, ObservationEvidenceGSM)
+    assert isinstance(model.gast_encoder.temporal, EvidenceModulatedCausalMamba)
+    assert isinstance(model.gast_scene_tail, EvidenceGatedSceneTail)
 
     from src.model.trajectory_forecaster import TrajectoryForecaster
     with pytest.raises(ValueError, match="unidirectional"):
         TrajectoryForecaster(
-            encoder_type="gast", gast_ecsr=True,
-            gast_m0_scene_tail=True, gast_hierarchical_evidence=True,
+            encoder_type="gast", gast_oer_spatial=True,
+            gast_scene_reasoning_tail=True, gast_oehsr=True,
         )
+
+
+def test_legacy_echsr_switches_still_construct_oehsr():
+    from src.model.trajectory_forecaster import TrajectoryForecaster
+
+    model = TrajectoryForecaster(
+        encoder_type="gast",
+        gast_temporal_direction="unidirectional",
+        gast_ecsr=True,
+        gast_m0_scene_tail=True,
+        gast_hierarchical_evidence=True,
+    )
+
+    assert model.gast_oehsr is True
+    assert model.gast_scene_reasoning_tail is True
+    assert model.gast_scene_tail.evidence_conditioned is True
 
 
 def test_gast_rejects_unknown_encoder_type():
@@ -697,7 +726,7 @@ def test_directional_readout_parameters_are_covered_by_adamw_groups():
     assert id(beta) in grouped
 
 
-def test_m0_scene_tail_parameters_are_covered_by_adamw_groups():
+def test_scene_reasoning_tail_parameters_are_covered_by_adamw_groups():
     from src.model.forecasting_module import ForecastingLightningModule
 
     module = ForecastingLightningModule(
@@ -708,7 +737,7 @@ def test_m0_scene_tail_parameters_are_covered_by_adamw_groups():
             "num_actor_types": 1, "num_modes": 20, "dt": 0.4, "obs_len": 8,
             "bimamba": False, "encoder_type": "gast",
             "gast_directional_readout": True,
-            "gast_m0_scene_tail": True,
+            "gast_scene_reasoning_tail": True,
         },
         lr=1e-3, warmup_epochs=5, epochs=100, weight_decay=1e-4,
     )

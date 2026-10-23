@@ -61,7 +61,7 @@ VARIANTS = {
         "gast_gsm_operator": "max",
         "gast_temporal_direction": "bidirectional",
         "gast_directional_readout": True,
-        "gast_m0_scene_tail": True,
+        "gast_scene_reasoning_tail": True,
     },
     "GAST-PF-Uni": {
         "encoder_type": "gast",
@@ -74,36 +74,66 @@ VARIANTS = {
         "gast_depth": 4,
         "gast_gsm_operator": "max",
         "gast_temporal_direction": "unidirectional",
-        "gast_m0_scene_tail": True,
+        "gast_scene_reasoning_tail": True,
     },
-    "GAST-PF-UniECSR": {
+    "GAST-PF-UniOER": {
         "encoder_type": "gast",
         "gast_depth": 4,
         "gast_gsm_operator": "max",
         "gast_temporal_direction": "unidirectional",
+        "gast_oer_spatial": True,
+        "gast_emc_temporal": True,
+        "gast_ewhr_readout": True,
+    },
+    "GAST-PF-UniOER-Tail": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
+        "gast_oer_spatial": True,
+        "gast_emc_temporal": True,
+        "gast_ewhr_readout": True,
+        "gast_scene_reasoning_tail": True,
+    },
+    "GAST-PF-OER": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_oer_spatial": True,
+        "gast_emc_temporal": True,
+        "gast_ewhr_readout": True,
+    },
+    "GAST-PF-OEHSR": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
+        "gast_oer_spatial": True,
+        "gast_emc_temporal": True,
+        "gast_ewhr_readout": True,
+        "gast_scene_reasoning_tail": True,
+        "gast_egst_tail": True,
+        "gast_oehsr": True,
+    },
+    # Historical variant labels remain available for evaluating old artifacts.
+    "GAST-PF-UniECSR": {
+        "encoder_type": "gast", "gast_depth": 4,
+        "gast_gsm_operator": "max", "gast_temporal_direction": "unidirectional",
         "gast_ecsr": True,
     },
     "GAST-PF-UniECSR-Tail": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_ecsr": True,
-        "gast_m0_scene_tail": True,
+        "encoder_type": "gast", "gast_depth": 4,
+        "gast_gsm_operator": "max", "gast_temporal_direction": "unidirectional",
+        "gast_ecsr": True, "gast_m0_scene_tail": True,
     },
     "GAST-PF-ECSR": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_ecsr": True,
+        "encoder_type": "gast", "gast_depth": 4,
+        "gast_gsm_operator": "max", "gast_ecsr": True,
     },
     "GAST-PF-ECHSR": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_ecsr": True,
-        "gast_m0_scene_tail": True,
+        "encoder_type": "gast", "gast_depth": 4,
+        "gast_gsm_operator": "max", "gast_temporal_direction": "unidirectional",
+        "gast_ecsr": True, "gast_m0_scene_tail": True,
         "gast_hierarchical_evidence": True,
     },
     # Legacy label kept for evaluating historical experiment outputs.
@@ -158,20 +188,32 @@ def load_checkpoint(model, ckpt_path):
             f"checkpoint encoder_type={checkpoint_encoder} does not match "
             f"variant encoder_type={expected_encoder}"
         )
-    # 分阶段开关必须与 checkpoint 一致：否则对应分支会静默失效或错配。
-    for switch in (
-        "gast_anchor_geo", "gast_frame_geo", "gast_ecsr",
-        "gast_directional_readout", "gast_m0_scene_tail",
-        "gast_hierarchical_evidence",
-    ):
-        ckpt_switch = bool(
-            model_config.get(switch, False)
+    # 分阶段开关必须与 checkpoint 一致；新模型使用创新模块名，旧 checkpoint
+    # 通过 legacy_switches 映射迁移，不改变历史结果的可评估性。
+    switch_specs = {
+        "gast_anchor_geo": ("gast_anchor_geo",),
+        "gast_frame_geo": ("gast_frame_geo",),
+        "gast_directional_readout": ("gast_directional_readout",),
+        "gast_scene_reasoning_tail": (
+            "gast_scene_reasoning_tail", "gast_m0_scene_tail"
+        ),
+        "gast_oer_spatial": ("gast_oer_spatial", "gast_ecsr"),
+        "gast_emc_temporal": ("gast_emc_temporal", "gast_ecsr"),
+        "gast_ewhr_readout": ("gast_ewhr_readout", "gast_ecsr"),
+        "gast_egst_tail": ("gast_egst_tail", "gast_hierarchical_evidence"),
+        "gast_oehsr": ("gast_oehsr", "gast_hierarchical_evidence"),
+    }
+    for switch, aliases in switch_specs.items():
+        ckpt_switch = any(
+            bool(model_config.get(alias, False))
+            for alias in aliases
         ) if hasattr(model_config, "get") else False
         model_switch = bool(getattr(model, switch, False))
         if ckpt_switch != model_switch:
             raise ValueError(
                 f"checkpoint {switch}={ckpt_switch} does not match "
-                f"variant {switch}={model_switch}"
+                f"variant {switch}={model_switch} (legacy alias: "
+                f"gast_ecsr/gast_hierarchical_evidence)"
             )
     checkpoint_direction = (
         model_config.get("gast_temporal_direction", "bidirectional")

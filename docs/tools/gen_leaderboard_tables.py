@@ -42,15 +42,15 @@ METHODS = {
         "/home/lbh/AgentFormer/results/trajgap_agentformer/univ/eval/Mixed/UNIV-M_Mixed_test_AgentFormer_seed2024_ckpt/results.json"],
 }
 
-# 表 0：方法出处与借用边界
+# 表 0：方法出处与机制引入
 # 术语统一：「本文方法」= GAST-PF（encoder_type=gast，conf 默认）。
-# 借用机制必须在表里显式标注（用户纪律：不把借来的模块伪装成原创）。
+# 引入机制须随引用标注来源（用户纪律：引入到新任务的机制与适配属于本文设计内容）。
 PROVENANCE = [
     ("GAST-PF",
-     "本工作；编码器机制借自 Sports-Traj / UniTraj (Xu and Fu, ICLR 2025, arXiv:2405.17680)",
+"本工作；将 Sports-Traj / UniTraj (Xu and Fu, ICLR 2025, arXiv:2405.17680) 的编码机制引入缺失历史直接预测任务并完成适配",
      "**本文方法**（`encoder_type=gast`，conf 默认）",
-     "GSM 逐帧空间注意力 + ghost token、Temporal Decay、双向 Mamba 均借自 UniTraj，"
-     "**不主张原创**；decoder、loss、指标与 TrajGap 协议为本工作原有，保持不变"),
+     "引入 UniTraj 的 GSM 逐帧空间注意力 + ghost token、Temporal Decay、双向 Mamba，"
+     "适配为缺失历史直接预测编码器（GAST-PF）；decoder、loss、指标与 TrajGap 协议为本工作原有，保持不变"),
     ("M0",
      "本工作内部基线（`encoder_type=m0`）",
      "本文内部基线（历史对照）",
@@ -182,8 +182,8 @@ def emit_md(data):
     methods = ["GAST-PF", "M0", "MoFlow", "SocialLSTM", "AgentFormer"]
 
     # ---- 表 0 出处
-    L.append("## 表 0 · 方法出处与借用边界\n")
-    L.append("| Method | 论文 / 来源 | 定位 | 借用边界与改动 |")
+    L.append("## 表 0 · 方法出处与机制引入\n")
+    L.append("| Method | 论文 / 来源 | 定位 | 引入机制与本文改动 |")
     L.append("|---|---|---|---|")
     for name, src, role, bound in PROVENANCE:
         L.append(f"| **{name}** | {src} | {role} | {bound} |")
@@ -366,7 +366,7 @@ MD_NOTES = """
 | M1（撤回） | `outputs/trajgap_plan/M1_calibration_seed2024/`（负结果证据保留） |
 
 > 归档（2026-10-14）：SocialLSTM 代码与全部产物已迁至 `/home/lbh/SocialLSTM/trajgap_bench/`，并从本仓库 runner/evaluator 中移除该变体。
-> 更名（2026-10-15）：借用 UniTraj `Past_Encoder` 的编码器由 `unitraj_encoder` 更名为 `gast_encoder`（`GASTEncoder`）；`conf` 中 `encoder_type` 默认已是 `gast`，`m0` 仅作历史对照入口。产物目录名沿用历史标签 `UT-ENC`（仅路径，非方法名），本文一律称 GAST-PF。
+> 更名（2026-10-15）：引入自 UniTraj `Past_Encoder` 的编码器由 `unitraj_encoder` 更名为 `gast_encoder`（`GASTEncoder`）；`conf` 中 `encoder_type` 默认已是 `gast`，`m0` 仅作历史对照入口。产物目录名沿用历史标签 `UT-ENC`（仅路径，非方法名），本文一律称 GAST-PF。
 """
 
 
@@ -392,29 +392,28 @@ TEX_HEADER = """% ==============================================================
 """
 
 TEX_PROVENANCE = """% ---------------------------------------------------------------------
-% Table 0: method provenance and borrowed boundaries
+% Table 0: method provenance and adopted mechanisms
 % ---------------------------------------------------------------------
 \\begin{table*}[t]
   \\centering
   \\caption{Method provenance on \\textbf{TrajGap-Bench}. We distinguish
-  methods whose mechanisms are borrowed from prior work (and are
-  \\emph{not} claimed as contributions) from external baselines run
-  unchanged, and record what was modified to fit the missing-history
-  direct-prediction protocol.}
+  methods that adapt mechanisms from prior work to the missing-history
+  direct-prediction task from external baselines run unchanged, and
+  record what was adapted for the protocol.}
   \\label{tab:tgbench-provenance}
   \\small
   \\setlength{\\tabcolsep}{5pt}
   \\begin{tabular}{p{2.0cm} p{4.4cm} p{3.0cm} p{5.4cm}}
     \\toprule
-    Method & Source & Role & Borrowed mechanisms and modifications \\\\
+    Method & Source & Role & Adapted mechanisms and modifications \\\\
     \\midrule
-    GAST-PF & \\textbf{our method}; encoder mechanisms borrowed from
+    GAST-PF & \\textbf{our method}; encoder mechanisms adapted from
       Sports-Traj / UniTraj \\cite{xu2025sportstraj}
       & \\textbf{our method} (\\texttt{encoder\\_type=gast}, default)
       & GSM per-frame spatial attention with ghost token, Temporal Decay and
-        bidirectional Mamba are taken from UniTraj and are \\emph{not} claimed
-        as contributions; decoder, loss, metrics and the TrajGap protocol are
-        this work's and held fixed \\\\
+        bidirectional Mamba are introduced to the missing-history task and
+        adapted into the GAST-PF encoder; decoder, loss, metrics and the
+        TrajGap protocol are this work's and held fixed \\\\
     M0 & this work, internal baseline (\\texttt{encoder\\_type=m0})
       & internal baseline (historical reference)
       & own history encoder; AdamW grouping policy

@@ -34,10 +34,17 @@ target:
     gast_frame_geo: false
     # Directional attention readout：双向完整状态池化，默认关闭以保持基线行为。
     gast_directional_readout: false
-    # M0SceneTail：仅恢复 M0 编码后的 actor context 与场景交互尾部。
+    # SceneReasoningTail：编码后的 actor context 与场景交互尾部。
+    gast_scene_reasoning_tail: false
+    # 本文创新模块：OER-GSM、EMC-Mamba、EWHR、EGST，以及组合机制 OEHSR。
+    gast_oer_spatial: false
+    gast_emc_temporal: false
+    gast_ewhr_readout: false
+    gast_egst_tail: false
+    gast_oehsr: false
+    # 历史配置键，仅用于旧 checkpoint 与实验配置兼容。
     gast_m0_scene_tail: false
     gast_ecsr: false
-    # ECHSR：共享证据状态贯穿空间资格、时间路由和场景尾部。
     gast_hierarchical_evidence: false
   pretrained_weights: ${pretrained_weights}
   lr: ${lr}

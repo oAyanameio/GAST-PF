@@ -222,31 +222,14 @@ MERGE_X = 2470
 d.line([((BX + BW + 2) * S, Y(A_C) * S), (MERGE_X * S, Y(A_C) * S)], fill=INK, width=int(7 * S))      # (a) 支输出
 d.line([((BX + BW + 2) * S, Y(B_C) * S), (MERGE_X * S, Y(B_C) * S)], fill=INK, width=int(7 * S))      # (b) 支输出
 d.line([(MERGE_X * S, Y(B_C) * S), (MERGE_X * S, Y(A_C) * S)], fill=INK, width=int(7 * S))          # 汇合竖干
-arrow((MERGE_X, Y(A_C)), (SX0 - 2, Y(A_C)), lw=7, size=18)                 # 合并后进 (c)
+arrow((MERGE_X, Y(362)), (SX0 - 2, Y(362)), lw=7, size=18)                 # 合并后进 (c)，落在框垂直中心
 
-# ---- (c) 模块 ----
-SX0, SX1 = 2580, 2810
-STG_H, STG_GAP, STG_Y0 = 52, 36, 222
-STG = [(STG_Y0 + i * (STG_H + STG_GAP), STG_Y0 + i * (STG_H + STG_GAP) + STG_H) for i in range(4)]
-NAMES = ["Hybrid CrossAttn", "Hybrid SelfAttn", "Mode SelfAttn", "State BiMamba"]
-ANNS = ["(B, KT_f, C)", "(B, KT_f, C)", "(BT_f, K, C)", "(BK, T_f, C)"]
-CNTS = ["3", "3", "3", "2"]
-for i, (sy0, sy1) in enumerate(STG):
-    # 框内两行：上=名字，下=形状标注 + ×n（显式定位，避免贴到下边框）
-    d.rounded_rectangle((SX0 * S, Y(sy0) * S, SX1 * S, Y(sy1) * S), radius=10 * S, fill=GREY,
-                        outline=INK, width=int(3 * S))
-    ELEMS.append(("s%d" % i, SX0, Y(sy0), SX1, Y(sy1)))
-    f = fit(NAMES[i], CMB, (SX1 - SX0) - 76, start=22)
-    tc(NAMES[i], (SX0 + SX1 - 56) / 2.0, Y(sy0 + 26), f, tag="s%d" % i)
-    mul_count(SX1 - 40, Y(sy0 + 26), CNTS[i], 18)
-    if i < 3:
-        arrow(((SX0 + SX1) // 2, Y(sy1 + 2)), ((SX0 + SX1) // 2, Y(STG[i + 1][0] - 2)), lw=7, size=11)
-tc("(c) Hybrid Coupling Module", (SX0 + SX1) / 2.0, Y(STG[3][1] + 26),
-   fit("(c) Hybrid Coupling Module", CMB, 300), INK, tag="cap_c")
-# 张量已删除：合并箭头已在上面画好，此处不再需要额外连线
+# ---- (c) 模块：四级合成一个模块，只暴露综合名 ----
+SX0, SX1 = 2580, 2810          # 与原堆栈同位；汇合箭头、输出箭头落点不变
+box(SX0, Y(254), SX1, Y(470), ["Hybrid Coupling", "Module"], name="c1")   # 高度 328->216 只收高度，中心 362 不变
 
 # ---- 扇面 + 输出 ----
-FX, FY, FL = 2890, 380, 150   # FY = (c) 四级中心，输出箭头与扇面原点都在此
+FX, FY, FL = 2890, 362, 150   # FY = 合并框垂直中心，输出箭头与扇面原点都在此
 for k in range(20):
     ang = math.radians(-40 + (k / 19.0) * 80)   # 上下对称扇面
     pts = []
@@ -260,10 +243,8 @@ for k in range(20):
     else:
         d.line(pts, fill=(176, 190, 205), width=int(2 * S), joint="curve")
 d.ellipse(((FX - 5) * S, (Y(FY) - 5) * S, (FX + 5) * S, (Y(FY) + 5) * S), fill=INK)
-# (c) 右缘在级间补一段（输出端口），让居中高度的输出箭头有落点、不悬空
-d.line([(SX1 * S, Y(364) * S), (SX1 * S, Y(396) * S)], fill=INK, width=int(3 * S))
-arrow((SX1 + 2, Y(FY)), (FX - 5, Y(FY)), lw=7, size=16)          # (c) 输出 -> 扇面起点（贴住圆点）
-tc("K = 20 futures", FX + 75, Y(258), fit("K = 20 futures", CMB, 210), INK, tag="k20")
+arrow((SX1 + 2, Y(FY)), (FX - 5, Y(FY)), lw=7, size=16)          # (c) 输出 -> 扇面起点（整框右缘即落点）
+tc("K = 20 futures", FX + 75, Y(240), fit("K = 20 futures", CMB, 210), INK, tag="k20")
 
 # ---- 图例 ----
 def swatch(x0, y0, x1, y1, col, label, word, name):

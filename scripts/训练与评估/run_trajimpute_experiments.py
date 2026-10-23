@@ -72,7 +72,7 @@ VARIANTS = {
         "gast_gsm_operator": "max",
         "gast_directional_readout": True,
     },
-    # M0SceneTail：在 DAP 后恢复 M0 的 actor context 与 5 层场景交互，
+    # 普通 SceneReasoningTail：在 DAP 后加入 actor context 与场景交互，
     # 以零初始化残差系数接入；不恢复 M0 历史 Mamba。
     "GAST-PF-Tail": {
         "encoder_type": "gast",
@@ -80,7 +80,7 @@ VARIANTS = {
         "gast_gsm_operator": "max",
         "gast_temporal_direction": "bidirectional",
         "gast_directional_readout": True,
-        "gast_m0_scene_tail": True,
+        "gast_scene_reasoning_tail": True,
     },
     # Uni：GSM + 前向 gap-aware Mamba + 最后时间步读出。
     "GAST-PF-Uni": {
@@ -89,43 +89,74 @@ VARIANTS = {
         "gast_gsm_operator": "max",
         "gast_temporal_direction": "unidirectional",
     },
-    # UniTail：在单向末帧 actor token 后恢复 M0 场景交互尾部。
+    # UniTail：在单向末帧 actor token 后加入普通场景推理尾部。
     "GAST-PF-UniTail": {
         "encoder_type": "gast",
         "gast_depth": 4,
         "gast_gsm_operator": "max",
         "gast_temporal_direction": "unidirectional",
-        "gast_m0_scene_tail": True,
+        "gast_scene_reasoning_tail": True,
     },
-    "GAST-PF-UniECSR": {
+    # OER：Observation-Evidence Relational GSM + evidence-conditioned encoder path.
+    "GAST-PF-UniOER": {
         "encoder_type": "gast",
         "gast_depth": 4,
         "gast_gsm_operator": "max",
         "gast_temporal_direction": "unidirectional",
+        "gast_oer_spatial": True,
+        "gast_emc_temporal": True,
+        "gast_ewhr_readout": True,
+    },
+    "GAST-PF-UniOER-Tail": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
+        "gast_oer_spatial": True,
+        "gast_emc_temporal": True,
+        "gast_ewhr_readout": True,
+        "gast_scene_reasoning_tail": True,
+    },
+    "GAST-PF-OER": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_oer_spatial": True,
+        "gast_emc_temporal": True,
+        "gast_ewhr_readout": True,
+    },
+    # OEHSR：Observation-Evidence Hierarchical Scene Reasoning。
+    "GAST-PF-OEHSR": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
+        "gast_oer_spatial": True,
+        "gast_emc_temporal": True,
+        "gast_ewhr_readout": True,
+        "gast_scene_reasoning_tail": True,
+        "gast_egst_tail": True,
+        "gast_oehsr": True,
+    },
+    # Historical variant names and switches remain loadable for old artifacts.
+    "GAST-PF-UniECSR": {
+        "encoder_type": "gast", "gast_depth": 4,
+        "gast_gsm_operator": "max", "gast_temporal_direction": "unidirectional",
         "gast_ecsr": True,
     },
     "GAST-PF-UniECSR-Tail": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_ecsr": True,
-        "gast_m0_scene_tail": True,
+        "encoder_type": "gast", "gast_depth": 4,
+        "gast_gsm_operator": "max", "gast_temporal_direction": "unidirectional",
+        "gast_ecsr": True, "gast_m0_scene_tail": True,
     },
     "GAST-PF-ECSR": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_ecsr": True,
+        "encoder_type": "gast", "gast_depth": 4,
+        "gast_gsm_operator": "max", "gast_ecsr": True,
     },
-    # ECHSR：共享 evidence state 贯穿逐帧关系、时间聚合和场景尾部。
     "GAST-PF-ECHSR": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_ecsr": True,
-        "gast_m0_scene_tail": True,
+        "encoder_type": "gast", "gast_depth": 4,
+        "gast_gsm_operator": "max", "gast_temporal_direction": "unidirectional",
+        "gast_ecsr": True, "gast_m0_scene_tail": True,
         "gast_hierarchical_evidence": True,
     },
     # Legacy experiment label; keep it loadable without making it the current

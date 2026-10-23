@@ -425,6 +425,10 @@ log.append("E23 补 (a)/(b) 输出横连接 + 两条损失引出箭头")
 clear((2372, 254, 2496, 260), WHITE)
 log.append("E24 去掉 (a) 支重复的细横线")
 
+# ---------- E25 去掉 ghost token 标注小字（文字在 y 213..231，其上 198..204 是连线，保留）----------
+clear((686, 208, 815, 236), WHITE)
+log.append("E25 去掉 ghost token 小字")
+
 im.save(OUT)
 print("saved", OUT, im.size)
 for l in log:

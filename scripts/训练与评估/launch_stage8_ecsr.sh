@@ -1,13 +1,6 @@
 #!/usr/bin/env bash
-# Stage 8 · GAST-PF-ECSR 训练启动器（独立输出目录，setsid 脱离会话）。
-#
-# 用法：
-#   bash scripts/训练与评估/launch_stage8_ecsr.sh
-#   LANES="1:HOTEL-M,ZARA1-M 2:ETH-M,ZARA2-M,UNIV-M" \
-#     bash scripts/训练与评估/launch_stage8_ecsr.sh
-#
-# 启动前先看空闲卡：
-#   nvidia-smi --query-gpu=index,memory.used,utilization.gpu --format=csv,noheader
+# Historical Stage 8 launcher retained for exact ECSR run-directory compatibility.
+# New experiments should use launch_stage8_oer.sh.
 set -u
 
 REPO=/home/lbh/GAST-PF

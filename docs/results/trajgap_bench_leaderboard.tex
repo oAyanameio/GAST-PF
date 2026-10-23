@@ -14,29 +14,28 @@
 % =====================================================================
 
 % ---------------------------------------------------------------------
-% Table 0: method provenance and borrowed boundaries
+% Table 0: method provenance and adopted mechanisms
 % ---------------------------------------------------------------------
 \begin{table*}[t]
   \centering
   \caption{Method provenance on \textbf{TrajGap-Bench}. We distinguish
-  methods whose mechanisms are borrowed from prior work (and are
-  \emph{not} claimed as contributions) from external baselines run
-  unchanged, and record what was modified to fit the missing-history
-  direct-prediction protocol.}
+  methods that adapt mechanisms from prior work to the missing-history
+  direct-prediction task from external baselines run unchanged, and
+  record what was adapted for the protocol.}
   \label{tab:tgbench-provenance}
   \small
   \setlength{\tabcolsep}{5pt}
   \begin{tabular}{p{2.0cm} p{4.4cm} p{3.0cm} p{5.4cm}}
     \toprule
-    Method & Source & Role & Borrowed mechanisms and modifications \\
+    Method & Source & Role & Adapted mechanisms and modifications \\
     \midrule
-    GAST-PF & \textbf{our method}; encoder mechanisms borrowed from
+    GAST-PF & \textbf{our method}; encoder mechanisms adapted from
       Sports-Traj / UniTraj \cite{xu2025sportstraj}
       & \textbf{our method} (\texttt{encoder\_type=gast}, default)
       & GSM per-frame spatial attention with ghost token, Temporal Decay and
-        bidirectional Mamba are taken from UniTraj and are \emph{not} claimed
-        as contributions; decoder, loss, metrics and the TrajGap protocol are
-        this work's and held fixed \\
+        bidirectional Mamba are introduced to the missing-history task and
+        adapted into the GAST-PF encoder; decoder, loss, metrics and the
+        TrajGap protocol are this work's and held fixed \\
     M0 & this work, internal baseline (\texttt{encoder\_type=m0})
       & internal baseline (historical reference)
       & own history encoder; AdamW grouping policy

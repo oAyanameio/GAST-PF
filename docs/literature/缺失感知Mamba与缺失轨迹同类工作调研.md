@@ -12,7 +12,7 @@
 1. **direct（免插补）行人轨迹预测在 2026 年仍是空白**：TrajImpute 全部 16 篇施引逐条核对，无一做"缺失坐标直接预测"——新增施引全部是插补系（dual-view diffusion 插补、TCN 插补、协同观测插补）或相邻基准（CrowdTraj/EgoTraj-Bench）。上次调研的空白结论继续成立，但**插补赛道竞争者持续增加**。
 2. **最高撞车警报升级：EgoTraj-Bench/BiFlow（arXiv 2510.00405，v2 2026-03）**——双流 flow matching（dual-stream flow matching）同时去噪历史观测+预测未来，"流匹配+不完整历史"叙事已出现。划界点：它是 ego-view 噪声（遮挡/ID switch/跟踪漂移），显式做历史恢复（非 direct），数据集 TBD 非 ETH/UCY 系。
 3. **缺失感知 Mamba 已是成型赛道**，按机制分五族（token/mask 输入流、Δ 离散化条件化、时间感知结构改造、mask 缩放扫描、扩散插补骨干）。其中 **MAS-Mamba 式 Δ 条件化在 M0 上已判负关闭**（C-MAS-delta，2026-10-08），不可作为缝合方向重复投入。
-4. 轨迹领域内最近的邻居是 **Sports-Traj 的 BTS 模块**（按缺失年龄的逐通道特征缩放 + 双向时间 Mamba）——其时间衰减部分**已完整移植进 GAST-PF**，属借用而非创新；见第三节 D 族与 `docs/results/stage2_frame_geo.md` §8.4。
+4. 轨迹领域内最近的邻居是 **Sports-Traj 的 BTS 模块**（按缺失年龄的逐通道特征缩放 + 双向时间 Mamba）——其时间衰减部分**已完整移植进 GAST-PF**，本文在其上做恒等性重参数化并纳入统一证据状态；见第三节 D 族与 `docs/results/stage2_frame_geo.md` §8.4。
 
 ## 二、问题①同类研究（缺失历史下的轨迹预测，按缺失处理范式分类）
 
@@ -41,7 +41,7 @@
 | C. 时间感知结构改造 | **TIDES** (Barreira et al.) | arXiv 2605.09742 (2026-05) | 把 input-dependence 从 Δ 移到对角状态矩阵 A，Δ 恢复物理时间间隔含义→不规则时间戳原生处理 | 与 B 族本质不同（不是给 Δ 加条件项而是重定位选择性）；轨迹上未见过；有 Fading Flash 诊断基准+代码 |
 | C. 时间感知结构改造 | ReTAMamba (Kim & Park) | arXiv 2605.16380 (2026-05) | 不规则临床时序→time-variable token 序列，观测可靠性（缺失度+耗时）估计+多分辨率区间统计描述符 | token 级可靠性聚合思想可与 evidence 特征共用 |
 | C. 时间感知（非 Mamba） | VISTA-SSM (Brindle et al.) | arXiv 2410.21527 | LGSSM 参数化混合，变采样率聚类 | 统计建模路线，弱相关 |
-| D. mask 缩放扫描 | **Sports-Traj BTS** (Xu et al.) | ICLR 2025 | BTS = `gamma = exp(-ReLU(MLP(delta)))` 逐通道缩放矩阵，`delta` 为前/后向距最近观测步数；`x_forw *= gamma_forw`、`x_back *= gamma_back` 后才进 Mamba 块（官方代码 `models/modules.py::Temporal_Decay` + `encoder_decoder.py::Temporal_Encoder`）。**是特征衰减，不是 Δ 条件化**：不动 selective scan 的 Δ，只在 block 前缩放输入 | **轨迹领域内最近邻居**；处理的是生成（补全+预测），非 direct 预测。**已完整移植进 GAST-PF**（`gast_encoder.py::missing_run_deltas` + `TemporalDecay`），因此"按缺失年龄门控 Mamba 输入"不可再作为 ECSR 的创新点主张；ECSR 与其差异仅在：有效帧严格 `r=1`（BTS 在观测点 `delta=1` 仍衰减）、共享标量 `tau=softplus(theta)`（BTS 为逐通道 MLP） |
+| D. mask 缩放扫描 | **Sports-Traj BTS** (Xu et al.) | ICLR 2025 | BTS = `gamma = exp(-ReLU(MLP(delta)))` 逐通道缩放矩阵，`delta` 为前/后向距最近观测步数；`x_forw *= gamma_forw`、`x_back *= gamma_back` 后才进 Mamba 块（官方代码 `models/modules.py::Temporal_Decay` + `encoder_decoder.py::Temporal_Encoder`）。**是特征衰减，不是 Δ 条件化**：不动 selective scan 的 Δ，只在 block 前缩放输入 | **轨迹领域内最近邻居**；处理的是生成（补全+预测），非 direct 预测。**已完整移植进 GAST-PF**（`gast_encoder.py::missing_run_deltas` + `TemporalDecay`），因此"按缺失年龄门控 Mamba 输入"不可再单独作为新颖性主张；当前 OER（旧称 ECSR）与其差异及可主张边界，应以观测证据条件化的分层信息路由和后续实验验证为准 |
 | E. 双向+扩散插补骨干 | DiffImp/SSD-TS (Wang et al.) | 2024 (openreview) | BAM 双向注意力 Mamba+CMB 通道 Mamba 作 DDPM 去噪骨干 | 插补任务（非预测）；双向设计参考 |
 | E. 双向+扩散插补骨干 | TIMBA (Solís-García et al.) | arXiv 2410.05916（ICLR'25 withdrawn） | 双向 Mamba 块替换 CSDI 的 transformer；消融显示双向>单向 | 插补任务；withdrawn 状态注意引用 |
 | E. 双向+扩散插补骨干 | SSSD (Alcaraz & Strodthoff) | 2022 | S4 层作扩散去噪骨干，只对缺失区加噪 | 插补经典 |
@@ -71,7 +71,7 @@
 | mask 双输入流（S4M 式） | S4M | 双流 SSM | 未测；S4→Mamba 移植需自行设计 |
 | ~~Δ 条件化~~ | MAS-Mamba | dt 注入 | **已判负关闭（2026-10-08），勿重复** |
 
-纪律提醒（沿用项目裁定）：主线为 M0 + natural Mixed 唯一滚动基线；任何缝合臂须 default-off 开关、零初始化恒等、单变量、borrowed control 标注、五指标晋级门（含 MR veto）；是否排期以主线裁定为准，本文档仅提供文献依据。
+纪律提醒（沿用项目裁定）：主线为 M0 + natural Mixed 唯一滚动基线；任何缝合臂须 default-off 开关、零初始化恒等、单变量、随引用标注机制来源（adopted control）、五指标晋级门（含 MR veto）；是否排期以主线裁定为准，本文档仅提供文献依据。
 
 ## Sources
 

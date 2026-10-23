@@ -1,4 +1,4 @@
-"""ECSR shared evidence state and routing behavior tests."""
+"""Observation-evidence routing behavior and legacy compatibility tests."""
 
 import sys
 from pathlib import Path
@@ -11,6 +11,8 @@ sys.path.insert(0, str(REPO))
 
 from src.model.layers.gast_encoder import (  # noqa: E402
     GASTEncoder,
+    build_observation_evidence_state,
+    evidence_weighted_history_readout,
     GSMAttnBlock,
     compute_evidence_state,
     evidence_aware_readout,
@@ -22,7 +24,7 @@ from src.model.layers.gast_encoder import (  # noqa: E402
 def test_evidence_state_uses_zero_age_for_observed_frames():
     valid = torch.tensor([[[True, False, False, True, False]]])
 
-    direct, reliability, age = compute_evidence_state(valid, tau=1.0)
+    direct, reliability, age = build_observation_evidence_state(valid, tau=1.0)
 
     assert direct.tolist() == [[[1.0, 0.0, 0.0, 1.0, 0.0]]]
     assert age.tolist() == [[[0.0, 1.0, 2.0, 0.0, 1.0]]]
@@ -35,10 +37,19 @@ def test_evidence_state_disables_padding_sources_and_reliability():
     valid = torch.tensor([[[True, False], [True, True]]])
     padding = torch.tensor([[False, True]])
 
-    direct, reliability, _ = compute_evidence_state(valid, tau=0.1, key_padding=padding)
+    direct, reliability, _ = build_observation_evidence_state(
+        valid, tau=0.1, key_padding=padding
+    )
 
     assert direct[0, 1].eq(0).all()
     assert reliability[0, 1].eq(0).all()
+
+
+def test_historical_evidence_helper_aliases_remain_compatible():
+    valid = torch.tensor([[[True, False]]])
+    assert compute_evidence_state is build_observation_evidence_state
+    assert evidence_aware_readout is evidence_weighted_history_readout
+    assert compute_evidence_state(valid, tau=1.0)[0].shape == valid.shape
 
 
 def test_geometry_features_ignore_missing_position_placeholders():
@@ -87,7 +98,9 @@ def test_evidence_aware_readout_is_finite_and_uses_reliability():
     reliability = torch.tensor([[1.0, 0.5, 0.25]])
     score = torch.zeros(1, 3, 1)
 
-    output, weights = evidence_aware_readout(hidden, reliability, score, beta=1.0)
+    output, weights = evidence_weighted_history_readout(
+        hidden, reliability, score, beta=1.0
+    )
 
     assert output.shape == (1, 4)
     assert weights.shape == (1, 3)
@@ -102,7 +115,7 @@ def test_evidence_aware_readout_returns_terminal_state_when_fully_observed():
     reliability = torch.ones(2, 4)
     scores = torch.randn(2, 4, 1)
 
-    output, _ = evidence_aware_readout(hidden, reliability, scores)
+    output, _ = evidence_weighted_history_readout(hidden, reliability, scores)
 
     assert torch.equal(output, hidden[:, -1])
 
@@ -203,7 +216,7 @@ def test_ecsr_spatial_attention_isolates_padding_actor():
     assert torch.allclose(base[:, :, :2], changed[:, :, :2], atol=1e-5)
 
 
-def test_ecsr_model_variant_registers_shared_routing_modules():
+def test_legacy_ecsr_model_variant_registers_evidence_routing_modules():
     from src.model.trajectory_forecaster import TrajectoryForecaster
     from scripts.训练与评估.run_trajimpute_experiments import VARIANTS
 
@@ -216,7 +229,7 @@ def test_ecsr_model_variant_registers_shared_routing_modules():
     assert hasattr(model.gast_encoder, "readout_score")
 
 
-def test_ecsr_parameters_are_covered_by_adamw_groups():
+def test_legacy_evidence_parameters_are_covered_by_adamw_groups():
     from src.model.forecasting_module import ForecastingLightningModule
 
     module = ForecastingLightningModule(
@@ -249,7 +262,7 @@ def test_ecsr_parameters_are_covered_by_adamw_groups():
     assert len(grouped) == len({id(parameter) for parameter in grouped})
 
 
-def test_ecsr_rejects_legacy_geometry_switch_combination():
+def test_evidence_routing_rejects_geometry_switch_combination():
     from src.model.trajectory_forecaster import TrajectoryForecaster
 
     try:
@@ -265,7 +278,7 @@ def test_ecsr_rejects_legacy_geometry_switch_combination():
         raise AssertionError("ECSR must not silently combine legacy geometry variants")
 
 
-def test_ecsr_evaluator_checkpoint_contract(tmp_path):
+def test_legacy_ecsr_evaluator_checkpoint_contract(tmp_path):
     from scripts.结果分析.evaluate_trajimpute_direct import build_model, load_checkpoint
 
     ecsr_model = build_model("GAST-PF-ECSR", num_modes=20)
@@ -282,6 +295,11 @@ def test_ecsr_evaluator_checkpoint_contract(tmp_path):
                         "num_modes": 20,
                         "encoder_type": "gast",
                         "gast_ecsr": model.gast_ecsr,
+                        "gast_oer_spatial": False,
+                        "gast_emc_temporal": False,
+                        "gast_ewhr_readout": False,
+                        "gast_egst_tail": False,
+                        "gast_oehsr": False,
                     }
                 },
             },
@@ -304,6 +322,50 @@ def test_ecsr_evaluator_checkpoint_contract(tmp_path):
         load_checkpoint(
             build_model("GAST-PF-ECSR", num_modes=20), baseline_checkpoint
         )
+
+
+def test_oehsr_evaluator_checkpoint_contract(tmp_path):
+    from scripts.训练与评估.run_trajimpute_experiments import VARIANTS
+    from scripts.结果分析.evaluate_trajimpute_direct import build_model, load_checkpoint
+
+    model = build_model("GAST-PF-OEHSR", num_modes=20)
+    model_config = {
+        "num_modes": 20,
+        "encoder_type": "gast",
+        "gast_temporal_direction": "unidirectional",
+        **VARIANTS["GAST-PF-OEHSR"],
+    }
+    checkpoint = tmp_path / "oehsr.ckpt"
+    torch.save(
+        {
+            "state_dict": {
+                f"net.{key}": value for key, value in model.state_dict().items()
+            },
+            "hyper_parameters": {"model": model_config},
+            "meta": {"variant": "GAST-PF-OEHSR"},
+        },
+        checkpoint,
+    )
+
+    missing, unexpected = load_checkpoint(
+        build_model("GAST-PF-OEHSR", num_modes=20), checkpoint
+    )
+
+    assert not missing and not unexpected
+
+
+def test_evidence_module_dependencies_fail_early():
+    from src.model.trajectory_forecaster import TrajectoryForecaster
+
+    with pytest.raises(ValueError, match="requires an observation-evidence"):
+        TrajectoryForecaster(
+            encoder_type="gast",
+            gast_scene_reasoning_tail=True,
+            gast_egst_tail=True,
+        )
+
+    with pytest.raises(ValueError, match="EWHR requires evidence_modulated_temporal"):
+        GASTEncoder(evidence_weighted_readout=True)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="需要 GPU（Mamba CUDA）")

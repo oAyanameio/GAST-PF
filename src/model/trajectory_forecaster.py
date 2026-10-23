@@ -14,8 +14,8 @@ except ImportError:
     RMSNorm, layer_norm_fn, rms_norm_fn = None, None, None
 
 
-class M0SceneInteractionTail(nn.Module):
-    """M0 的 actor context 与场景交互尾部。
+class SceneReasoningTail(nn.Module):
+    """Actor context and scene reasoning tail for GAST actor tokens.
 
     GAST-PF 已经负责历史时空编码；该模块只恢复 M0 在编码后的场景推理，
     不恢复 M0 的历史投影和历史 Mamba。残差系数从零开始，使开启该尾部时
@@ -142,6 +142,18 @@ class M0SceneInteractionTail(nn.Module):
         return output
 
 
+class EvidenceGatedSceneTail(SceneReasoningTail):
+    """EGST: Evidence-Gated Scene Reasoning Tail."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs["evidence_conditioned"] = True
+        super().__init__(*args, **kwargs)
+
+
+# Historical name retained for old checkpoints and external scripts.
+M0SceneInteractionTail = SceneReasoningTail
+
+
 # Actor-centric trajectory forecaster. The legacy class name was ModelForecast.
 class TrajectoryForecaster(nn.Module):
     def __init__(
@@ -164,8 +176,14 @@ class TrajectoryForecaster(nn.Module):
         gast_frame_geo: bool = False,
         gast_ecsr: bool = False,
         gast_directional_readout: bool = False,
-        gast_m0_scene_tail: bool = False,
+        gast_scene_reasoning_tail: bool = False,
+        gast_m0_scene_tail: bool | None = None,
         gast_hierarchical_evidence: bool = False,
+        gast_oer_spatial: bool = False,
+        gast_emc_temporal: bool = False,
+        gast_ewhr_readout: bool = False,
+        gast_egst_tail: bool = False,
+        gast_oehsr: bool = False,
         gast_temporal_direction: str = "bidirectional",
         utenc_depth: int = None,
         utenc_gsm_operator: str = None,
@@ -189,16 +207,44 @@ class TrajectoryForecaster(nn.Module):
         # Stage 2 FrameGeo（默认关闭）：把逐帧相对位置显式送入 GSM。
         # 只在 GAST-PF 路径生效；M0 历史投影保持 4 维。
         self.gast_frame_geo = bool(gast_frame_geo) and self.encoder_type == "gast"
-        self.gast_ecsr = bool(gast_ecsr) and self.encoder_type == "gast"
+        legacy_evidence = bool(gast_ecsr)
+        legacy_hierarchical = bool(gast_hierarchical_evidence)
+        self.gast_oer_spatial = (
+            bool(gast_oer_spatial) or legacy_evidence
+        ) and self.encoder_type == "gast"
+        self.gast_emc_temporal = (
+            bool(gast_emc_temporal) or legacy_evidence
+        ) and self.encoder_type == "gast"
+        self.gast_ewhr_readout = (
+            bool(gast_ewhr_readout) or legacy_evidence
+        ) and self.encoder_type == "gast"
+        self.gast_egst_tail = (
+            bool(gast_egst_tail) or legacy_hierarchical
+        ) and self.encoder_type == "gast"
+        self.gast_scene_reasoning_tail = (
+            bool(gast_scene_reasoning_tail or gast_m0_scene_tail)
+            and self.encoder_type == "gast"
+        )
+        # Compatibility attribute for old experiment manifests/checkpoints.
+        self.gast_m0_scene_tail = self.gast_scene_reasoning_tail
+        self.gast_oehsr = (
+            bool(gast_oehsr) or legacy_hierarchical
+        ) and self.encoder_type == "gast"
+        if self.gast_oehsr:
+            self.gast_oer_spatial = True
+            self.gast_emc_temporal = True
+            self.gast_ewhr_readout = True
+            self.gast_egst_tail = True
+            self.gast_scene_reasoning_tail = True
+            self.gast_m0_scene_tail = True
+        self.gast_observation_evidence_enabled = any(
+            (self.gast_oer_spatial, self.gast_emc_temporal, self.gast_ewhr_readout)
+        )
+        self.gast_ecsr = self.gast_observation_evidence_enabled
         self.gast_directional_readout = (
             bool(gast_directional_readout) and self.encoder_type == "gast"
         )
-        self.gast_m0_scene_tail = (
-            bool(gast_m0_scene_tail) and self.encoder_type == "gast"
-        )
-        self.gast_hierarchical_evidence = (
-            bool(gast_hierarchical_evidence) and self.encoder_type == "gast"
-        )
+        self.gast_hierarchical_evidence = self.gast_oehsr
         temporal_direction_aliases = {
             "bi": "bidirectional",
             "bidir": "bidirectional",
@@ -223,26 +269,31 @@ class TrajectoryForecaster(nn.Module):
                 "gast_directional_readout requires "
                 "gast_temporal_direction='bidirectional'"
             )
-        if self.gast_ecsr and (
+        if self.gast_oer_spatial and (
             self.gast_anchor_geo or self.gast_frame_geo or self.gast_directional_readout
         ):
             raise ValueError(
-                "gast_ecsr is mutually exclusive with geometry and directional-readout variants"
+                "gast_oer_spatial is mutually exclusive with geometry and "
+                "directional-readout variants"
             )
-        if self.gast_hierarchical_evidence and not self.gast_ecsr:
+        if self.gast_oehsr and not self.gast_observation_evidence_enabled:
             raise ValueError(
-                "gast_hierarchical_evidence requires gast_ecsr=True"
+                "gast_oehsr requires at least one observation-evidence encoder module"
             )
-        if self.gast_hierarchical_evidence and not self.gast_m0_scene_tail:
+        if self.gast_egst_tail and not self.gast_scene_reasoning_tail:
             raise ValueError(
-                "gast_hierarchical_evidence requires gast_m0_scene_tail=True"
+                "gast_egst_tail requires gast_scene_reasoning_tail=True"
+            )
+        if self.gast_egst_tail and not self.gast_observation_evidence_enabled:
+            raise ValueError(
+                "gast_egst_tail requires an observation-evidence encoder module"
             )
         if (
-            self.gast_hierarchical_evidence
+            self.gast_oehsr
             and self.gast_temporal_direction != "unidirectional"
         ):
             raise ValueError(
-                "gast_hierarchical_evidence requires unidirectional temporal encoding"
+                "gast_oehsr requires unidirectional temporal encoding"
             )
 
         # Keep old configuration keys loadable while making GAST-PF the
@@ -329,8 +380,10 @@ class TrajectoryForecaster(nn.Module):
                 operator=gast_gsm_operator,
                 p_dropout=0.2,
                 drop_path=drop_path,
-                ecsr=self.gast_ecsr,
-                hierarchical_evidence=self.gast_hierarchical_evidence,
+                observation_evidence_spatial=self.gast_oer_spatial,
+                evidence_modulated_temporal=self.gast_emc_temporal,
+                evidence_weighted_readout=self.gast_ewhr_readout,
+                hierarchical_scene_reasoning=self.gast_oehsr,
                 directional_readout=self.gast_directional_readout,
                 max_steps=obs_len,
                 temporal_direction=self.gast_temporal_direction,
@@ -344,11 +397,15 @@ class TrajectoryForecaster(nn.Module):
                     embed_dim=embed_dim, geo_dim=5, p_dropout=0.2
                 )
                 torch.random.set_rng_state(rng_state)
-            if self.gast_m0_scene_tail:
+            if self.gast_scene_reasoning_tail:
                 # The tail is an independent branch. Restore the RNG state so
                 # adding it cannot alter any shared GAST initialization.
                 rng_state = torch.random.get_rng_state()
-                self.gast_scene_tail = M0SceneInteractionTail(
+                tail_cls = (
+                    EvidenceGatedSceneTail
+                    if self.gast_egst_tail else SceneReasoningTail
+                )
+                self.gast_scene_tail = tail_cls(
                     embed_dim=embed_dim,
                     num_heads=num_heads,
                     mlp_ratio=mlp_ratio,
@@ -356,7 +413,7 @@ class TrajectoryForecaster(nn.Module):
                     num_actor_types=num_actor_types,
                     drop_path=drop_path,
                     max_steps=obs_len,
-                    evidence_conditioned=self.gast_hierarchical_evidence,
+                    evidence_conditioned=self.gast_egst_tail,
                 )
                 torch.random.set_rng_state(rng_state)
 
@@ -520,10 +577,12 @@ class TrajectoryForecaster(nn.Module):
                 hist_feat,
                 hist_valid_mask,
                 ~hist_key_valid_mask,
-                positions=data["x_positions"] if self.gast_ecsr else None,
-                return_evidence=self.gast_hierarchical_evidence,
+                positions=(
+                    data["x_positions"] if self.gast_oer_spatial else None
+                ),
+                return_evidence=self.gast_egst_tail,
             )
-            if self.gast_hierarchical_evidence:
+            if self.gast_egst_tail:
                 actor_feat, evidence_state = encoder_result
             else:
                 actor_feat = encoder_result
@@ -535,7 +594,7 @@ class TrajectoryForecaster(nn.Module):
                 actor_feat = actor_feat + self.anchor_geo_projection(
                     geo, ~hist_key_valid_mask
                 )
-            if self.gast_m0_scene_tail:
+            if self.gast_scene_reasoning_tail:
                 actor_feat = self.gast_scene_tail(
                     actor_feat,
                     data,

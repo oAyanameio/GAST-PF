@@ -222,9 +222,9 @@ bash scripts/训练与评估/launch_watcher.sh    # 默认 Stage 2 / GAST-PF-Fra
 - [ ] 噪声通道对照臂（`GAST-PF-FrameGeo-Noise`）——判定"几何 vs 容量"归属的唯一缺口，未运行
 - [ ] `GAST-PF` 同口径配对基线（消融阶段补）
 
-## 8. ECSR 实现 checkpoint（代码完成，实验未启动）
+## 8. OER 实现 checkpoint（历史记录曾称 ECSR）
 
-Stage 8 的完整候选实现已作为 `GAST-PF-ECSR` 接入，但本节只记录代码和验证状态，不能把它表述为已经取得实验收益。
+本节保留当时的实现审计记录。旧变体名 `GAST-PF-ECSR` 现对应 `GAST-PF-OER`，旧配置开关 `gast_ecsr` 由 `gast_oer_spatial`、`gast_emc_temporal` 和 `gast_ewhr_readout` 取代；旧 checkpoint 与 Stage 8 产物仍可通过兼容别名读取。本节中的验证状态是该记录形成时的状态，不代表当前训练进度。
 
 ### 8.1 统一证据状态
 
@@ -243,8 +243,8 @@ Stage 8 的完整候选实现已作为 `GAST-PF-ECSR` 接入，但本节只记�
 | 空间关系 | 逐帧 7 维相对位置/距离/速度/朝向差 attention bias；缺失 actor 不能作为 source，缺失 query 仍可接收有效邻居与 ghost token |
 | 时序状态 | `r` 分别门控前向和反向 Mamba 输入；方向融合按累计缺失负担加权 |
 | 读出 | 可靠度加权历史 evidence readout；末端有效时保留末端状态，末端缺失时融合历史证据 |
-| 变体 | `TrajectoryForecaster(gast_ecsr=True)` / `GAST-PF-ECSR` |
-| 兼容性 | ECSR 与旧 `gast_anchor_geo`、`gast_frame_geo` 互斥；默认配置关闭，旧 GAST-PF 行为不变 |
+| 变体 | `TrajectoryForecaster(gast_oer_spatial=True, gast_emc_temporal=True, gast_ewhr_readout=True)` / `GAST-PF-OER` |
+| 兼容性 | OER-GSM 与 `gast_anchor_geo`、`gast_frame_geo` 互斥；默认配置关闭，旧 GAST-PF 行为不变 |
 
 ### 8.3 验证状态
 
@@ -253,19 +253,19 @@ Stage 8 的完整候选实现已作为 `GAST-PF-ECSR` 接入，但本节只记�
 - runner 闭环 smoke（ETH-M、1 epoch、训练/验证/评估各 1 batch）返回 `status=complete`、checkpoint 选择成功、evaluator `rc=0`；临时产物未纳入仓库；
 - 旧回归：`tests/test_gast_encoder.py tests/test_stage2_frame_geo.py` 为 `22 passed, 2 skipped`；
 - 代码提交 checkpoint：`564cc0d`；后续新增真实 batch 测试尚未提交；
-- 尚未启动五场景正式训练，因此目前不能判断 ECSR 是 Go 还是 No-Go。
+- 该审计记录形成时尚未启动五场景正式训练；此处不据此判断当前 OER/OEHSR 的实验结论。
 
-正式实验前仍需比较 `GAST-PF`、最近一个通过验收的几何版本和 `GAST-PF-ECSR`，并至少检查 `missing_count=0`、高缺失组、末端缺失组和全场景均值；若没有稳定收益，应收缩方法主张，而不是继续无条件叠加模块。
+后续正式实验应比较 `GAST-PF`、最近一个通过验收的几何版本和 `GAST-PF-OER`，并检查完整历史、高缺失组、末端缺失组和全场景结果；若没有稳定收益，应收缩方法主张，而不是继续无条件叠加模块。
 
 正式实验启动器：
 
 ```bash
-bash scripts/训练与评估/launch_stage8_ecsr.sh
+bash scripts/训练与评估/launch_stage8_oer.sh
 ```
 
 默认输出根为 `outputs/stage8_ecsr_seed2024`，与 Stage 1/2 结果隔离；可通过 `ROOT` 和 `LANES` 覆盖输出目录与 GPU/场景分配。
 
-### 8.4 与 Sports-Traj BTS 的借用边界（不可作为创新点主张）
+### 8.4 与 Sports-Traj BTS 的机制对照（本文差异=恒等性重参数化+统一证据状态）
 
 BTS（Bidirectional Temporal Scaled）不是数据集，而是 Sports-Traj / UniTraj 的时间缩放模块；论文三个数据集为 Basketball-U / Football-U / Soccer-U。
 
@@ -282,12 +282,12 @@ BTS（Bidirectional Temporal Scaled）不是数据集，而是 Sports-Traj / Uni
 
 未引入的是 UniTraj 的**生成式框架**：`Future_Encoder`、CVAE 后验/先验（`qz_layer`/`pz_layer`）、WTA/diverse loss、MLP decoder、三类 agent one-hot、固定槽位 `pos_embed`。这些会改训练目标或 decoder，破坏单变量对照，故不引入。论文 Eq.(8) 所述"仅训练期使用的 GT 卷积核"对应 `Future_Encoder` 分支，不属于 BTS 本身。
 
-**因此 ECSR 的时间落点与 BTS 同族，不能作为创新点。** 两者都是"按缺失年龄衰减特征后送入时间栈"，差异仅在参数化与恒等性：
+**EMC-Mamba 的时间落点与 BTS 同族**：两者都是"按缺失年龄衰减特征后送入时间栈"；当前设计差异在参数化与恒等性，并将其纳入统一证据状态组织。早期记录将整体机制称为 ECSR：
 
-| 项 | BTS | ECSR 状态路由 |
+| 项 | BTS | OER / EMC-Mamba 状态路由 |
 | --- | --- | --- |
 | 衰减形式 | 逐通道 MLP：`exp(-ReLU(Linear(delta)))` | 共享标量：`r = m + (1-m)·exp(-τa)`，`τ = softplus(θ)` |
 | 有效帧取值 | `delta=1` → `gamma<1`，有效观测也被衰减 | 严格 `r=1`，全有效输入恒等 |
 | 作用位置 | block 前缩放输入特征 | 同（`TemporalEncoder.forward` 内 `x_forw *= reliability`） |
 
-ECSR 可主张的部分限定为另外三个落点：逐帧空间 source 资格（官方 GSM 只有 `[B,N]` padding mask，无法表达逐帧缺失 source）、有效行人对之间的几何 attention bias、按前/后向缺失负担加权的路径融合、以及末端可靠度加权读出。若正式实验只有时间落点带来收益，则方法主张应收缩为"BTS 式衰减的恒等性修正"，而非新的证据路由机制。
+OER 的设计由同一证据状态驱动：OER-GSM 控制逐帧空间 source 资格并注入几何 attention bias；EMC-Mamba 调制时序输入，并在双向模式下按累计缺失负担融合路径；EWHR 执行可靠度加权历史读出。若实验只有时间落点带来收益，则方法表述应收缩为证据新鲜度重参数化，不能据结构本身主张完整分层路由有效。

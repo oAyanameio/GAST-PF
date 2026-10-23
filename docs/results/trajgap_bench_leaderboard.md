@@ -8,11 +8,11 @@
 > 本文件由 `docs/tools/gen_leaderboard_tables.py` 从各方法 `results.json` 现算生成，不手工转抄。
 > 重新生成：`python docs/tools/gen_leaderboard_tables.py --write`
 
-## 表 0 · 方法出处与借用边界
+## 表 0 · 方法出处与机制引入
 
-| Method | 论文 / 来源 | 定位 | 借用边界与改动 |
+| Method | 论文 / 来源 | 定位 | 引入机制与本文改动 |
 |---|---|---|---|
-| **GAST-PF** | 本工作；编码器机制借自 Sports-Traj / UniTraj (Xu and Fu, ICLR 2025, arXiv:2405.17680) | **本文方法**（`encoder_type=gast`，conf 默认） | GSM 逐帧空间注意力 + ghost token、Temporal Decay、双向 Mamba 均借自 UniTraj，**不主张原创**；decoder、loss、指标与 TrajGap 协议为本工作原有，保持不变 |
+| **GAST-PF** | 本工作；将 Sports-Traj / UniTraj (Xu and Fu, ICLR 2025, arXiv:2405.17680) 的编码机制引入缺失历史直接预测任务并完成适配 | **本文方法**（`encoder_type=gast`，conf 默认） | 引入 UniTraj 的 GSM 逐帧空间注意力 + ghost token、Temporal Decay、双向 Mamba，适配为缺失历史直接预测编码器（GAST-PF）；decoder、loss、指标与 TrajGap 协议为本工作原有，保持不变 |
 | **M0** | 本工作内部基线（`encoder_type=m0`） | 本文内部基线（历史对照） | 自有历史编码器；optimizer 分组策略 `m0_adamw_complete_module_local_v1` |
 | **MoFlow** | Fu, Yan, Wang, Li, Liao. CVPR 2025. arXiv:2503.09950 | 外部基线（官方实现） | 完整外部方法，作为上界参照；未做任何改动 |
 | **SocialLSTM** | Alahi, Goel, Ramanathan, Robicquet, Li, Savarese. CVPR 2016 | 外部基线（经典 social pooling） | 零填充 + 缺失帧跳过 LSTM 状态更新 + 高斯混合头（K=20）；social pooling 向量化；已移除原仓库会泄漏 GT 的未来粘贴补丁 |
@@ -85,4 +85,4 @@
 | M1（撤回） | `outputs/trajgap_plan/M1_calibration_seed2024/`（负结果证据保留） |
 
 > 归档（2026-10-14）：SocialLSTM 代码与全部产物已迁至 `/home/lbh/SocialLSTM/trajgap_bench/`，并从本仓库 runner/evaluator 中移除该变体。
-> 更名（2026-10-15）：借用 UniTraj `Past_Encoder` 的编码器由 `unitraj_encoder` 更名为 `gast_encoder`（`GASTEncoder`）；`conf` 中 `encoder_type` 默认已是 `gast`，`m0` 仅作历史对照入口。产物目录名沿用历史标签 `UT-ENC`（仅路径，非方法名），本文一律称 GAST-PF。
+> 更名（2026-10-15）：引入自 UniTraj `Past_Encoder` 的编码器由 `unitraj_encoder` 更名为 `gast_encoder`（`GASTEncoder`）；`conf` 中 `encoder_type` 默认已是 `gast`，`m0` 仅作历史对照入口。产物目录名沿用历史标签 `UT-ENC`（仅路径，非方法名），本文一律称 GAST-PF。

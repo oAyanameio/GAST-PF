@@ -4,9 +4,10 @@
     models/encoder_decoder.py :: Past_Encoder / Spatial_Encoder / Temporal_Encoder
     models/modules.py        :: Attn_Block / Mamba_Block / Temporal_Decay
 
-借用边界：GSM 空间注意力（mask ghost token + 逐帧 agent 自注意力）、
-Temporal_Decay 缺失衰减、前向/反向 Mamba 时序状态均来自外部机制并在此处作为
-编码器组件使用；GAST-PF 的 decoder、loss、指标与 TrajGap 协议保持不变。
+机制引入：GSM 空间注意力（mask ghost token + 逐帧 agent 自注意力）、
+Temporal_Decay 缺失衰减、前向/反向 Mamba 时序状态引入自 Sports-Traj / UniTraj
+（colorfulfuture/UniTraj-pytorch），适配为缺失历史直接预测任务的编码器组件；
+GAST-PF 的 decoder、loss、指标与 TrajGap 协议保持不变。
 本文件不含外部方法的 Future_Encoder、CVAE 潜变量或 diverse loss。
 
 与源实现的适配差异（逐条为 TrajGap 契约所需，非机制改动）：
@@ -66,9 +67,12 @@ def missing_run_deltas(mask: torch.Tensor) -> tuple:
     return d_forw, d_back
 
 
-def compute_evidence_state(valid_mask: torch.Tensor, tau: torch.Tensor | float,
-                           key_padding: torch.Tensor | None = None):
-    """Build direct-source eligibility, soft reliability, and missing age."""
+def build_observation_evidence_state(
+    valid_mask: torch.Tensor,
+    tau: torch.Tensor | float,
+    key_padding: torch.Tensor | None = None,
+):
+    """Build the shared Observation Evidence State (OES)."""
     observed = valid_mask.bool()
     if key_padding is not None:
         observed = observed & ~key_padding.bool().unsqueeze(-1)
@@ -152,10 +156,14 @@ def route_bidirectional_paths(forward: torch.Tensor, backward: torch.Tensor,
     return fused, alpha
 
 
-def evidence_aware_readout(hidden: torch.Tensor, reliability: torch.Tensor,
-                           scores: torch.Tensor, beta: torch.Tensor | float = 1.0,
-                           eps: float = 1e-8):
-    """Blend the terminal state with reliability-weighted historical evidence."""
+def evidence_weighted_history_readout(
+    hidden: torch.Tensor,
+    reliability: torch.Tensor,
+    scores: torch.Tensor,
+    beta: torch.Tensor | float = 1.0,
+    eps: float = 1e-8,
+):
+    """Evidence-Weighted History Readout (EWHR)."""
     logits = scores.squeeze(-1) + torch.as_tensor(
         beta, dtype=hidden.dtype, device=hidden.device
     ) * torch.log(reliability.to(hidden.dtype).clamp_min(eps))
@@ -169,6 +177,11 @@ def evidence_aware_readout(hidden: torch.Tensor, reliability: torch.Tensor,
     return output, weights
 
 
+# Backward-compatible names for historical experiment scripts.
+compute_evidence_state = build_observation_evidence_state
+evidence_aware_readout = evidence_weighted_history_readout
+
+
 class GSMAttnBlock(nn.Module):
     """UniTraj Attn_Block 移植：patch embed + mask ghost token + 逐帧自注意力。
 
@@ -177,14 +190,27 @@ class GSMAttnBlock(nn.Module):
     （动态 N），MHA 增加 key_padding_mask 屏蔽 padding actor。
     """
 
-    def __init__(self, input_dim: int, model_dim: int, num_heads: int,
-                 operator: str = "max", p_dropout: float = 0.2,
-                 ecsr: bool = False):
+    def __init__(
+        self,
+        input_dim: int,
+        model_dim: int,
+        num_heads: int,
+        operator: str = "max",
+        p_dropout: float = 0.2,
+        observation_evidence_spatial: bool = False,
+        ecsr: bool | None = None,
+    ):
         super().__init__()
         if operator not in {"mean", "sum", "max"}:
             raise ValueError(f"unsupported GSM operator={operator!r}")
         self.operator = operator
-        self.ecsr = bool(ecsr)
+        if ecsr is not None:
+            observation_evidence_spatial = (
+                bool(observation_evidence_spatial) or bool(ecsr)
+            )
+        self.observation_evidence_spatial = bool(observation_evidence_spatial)
+        # Compatibility attribute for historical ECSR code.
+        self.ecsr = self.observation_evidence_spatial
         self.patch_embed = nn.Sequential(
             nn.Linear(input_dim, model_dim, bias=False),
             nn.LayerNorm(model_dim),
@@ -212,7 +238,7 @@ class GSMAttnBlock(nn.Module):
             nn.LeakyReLU(),
             nn.Dropout(p_dropout),
         )
-        if self.ecsr:
+        if self.observation_evidence_spatial:
             self.geometry_bias = nn.Sequential(
                 nn.Linear(7, max(model_dim // 4, 16)),
                 nn.GELU(),
@@ -221,7 +247,7 @@ class GSMAttnBlock(nn.Module):
             nn.init.zeros_(self.geometry_bias[-1].weight)
             nn.init.zeros_(self.geometry_bias[-1].bias)
         self.apply(self._init_weights)
-        if self.ecsr:
+        if self.observation_evidence_spatial:
             nn.init.zeros_(self.geometry_bias[-1].weight)
             nn.init.zeros_(self.geometry_bias[-1].bias)
 
@@ -280,9 +306,11 @@ class GSMAttnBlock(nn.Module):
         attn_key_padding = torch.cat(
             [torch.zeros(B * T, 1, dtype=torch.bool, device=x.device),
              key_padding.unsqueeze(1).expand(B, T, N).reshape(B * T, N)], dim=1)
-        if self.ecsr:
+        if self.observation_evidence_spatial:
             if positions is None or source_eligibility is None:
-                raise ValueError("ECSR spatial attention requires positions and source eligibility")
+                raise ValueError(
+                    "OER-GSM requires positions and source eligibility"
+                )
             geometry, _ = relative_geometry_features(positions, source_eligibility.bool())
             geometry_bias = self.geometry_bias(geometry).permute(0, 1, 4, 2, 3)
             geometry_bias = geometry_bias.reshape(
@@ -326,6 +354,14 @@ class GSMAttnBlock(nn.Module):
         if query_reliability is not None:
             y = y * query_reliability.unsqueeze(-1).to(y.dtype)
         return y
+
+
+class ObservationEvidenceGSM(GSMAttnBlock):
+    """OER-GSM: Observation-Evidence Relational GSM."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs["observation_evidence_spatial"] = True
+        super().__init__(*args, **kwargs)
 
 
 class TemporalEncoder(nn.Module):
@@ -427,6 +463,10 @@ class TemporalEncoder(nn.Module):
         return route_bidirectional_paths(
             forward_states, backward_states, reliability
         )[0]
+
+
+class EvidenceModulatedCausalMamba(TemporalEncoder):
+    """EMC-Mamba: Evidence-Modulated Causal Mamba temporal encoder."""
 
 
 class DirectionalAttentionReadout(nn.Module):
@@ -611,24 +651,37 @@ class AnchorGeoProjection(nn.Module):
 
 
 class GASTEncoder(nn.Module):
-    """GAST-PF 的缺失间隔感知时空编码器。
+    """GAST-PF encoder with modular observation-evidence reasoning.
 
-    入口契约（GAST-PF batch 字段 -> 时间优先）：
-        hist_feat [B, N, T, D_in]（GAST-PF 当前 4 维历史特征）
-        valid_mask [B, N, T] bool（True=有效观测）
-        key_padding [B, N] bool（True=padding actor）
-    输出：[B, N, C=embed_dim] —— 双向模式默认读取融合后的固定最后时间步；
-    单向模式读取前向 Mamba 的最后时间步。双向模式可选 directional attention
-    readout；单向 ECSR 使用前向状态上的 evidence-aware readout。
+    The named innovation modules are:
+      - OER-GSM: Observation-Evidence Relational GSM;
+      - EMC-Mamba: Evidence-Modulated Causal Mamba;
+      - EWHR: Evidence-Weighted History Readout.
+
+    ``ecsr`` and ``hierarchical_evidence`` remain accepted as compatibility
+    aliases for historical checkpoints. New configurations should use the
+    explicit module switches below.
     """
 
-    def __init__(self, input_dim: int = 4, embed_dim: int = 128, num_heads: int = 8,
-                 depth: int = 4, operator: str = "max",
-                 p_dropout: float = 0.2, drop_path: float = 0.2,
-                 ecsr: bool = False, directional_readout: bool = False,
-                 hierarchical_evidence: bool = False,
-                 max_steps: int = 8,
-                 temporal_direction: str = "bidirectional"):
+    def __init__(
+        self,
+        input_dim: int = 4,
+        embed_dim: int = 128,
+        num_heads: int = 8,
+        depth: int = 4,
+        operator: str = "max",
+        p_dropout: float = 0.2,
+        drop_path: float = 0.2,
+        observation_evidence_spatial: bool = False,
+        evidence_modulated_temporal: bool = False,
+        evidence_weighted_readout: bool = False,
+        directional_readout: bool = False,
+        hierarchical_scene_reasoning: bool = False,
+        max_steps: int = 8,
+        temporal_direction: str = "bidirectional",
+        ecsr: bool | None = None,
+        hierarchical_evidence: bool | None = None,
+    ):
         super().__init__()
         direction_aliases = {
             "bi": "bidirectional",
@@ -644,115 +697,199 @@ class GASTEncoder(nn.Module):
                 "temporal_direction must be 'bidirectional' or 'unidirectional', "
                 f"got {temporal_direction!r}"
             )
-        self.ecsr = bool(ecsr)
-        self.hierarchical_evidence = bool(hierarchical_evidence)
-        if self.hierarchical_evidence and not self.ecsr:
-            raise ValueError("hierarchical_evidence requires ecsr=True")
+
+        legacy_evidence = bool(ecsr) if ecsr is not None else False
+        legacy_hierarchical = (
+            bool(hierarchical_evidence)
+            if hierarchical_evidence is not None else False
+        )
+        self.observation_evidence_spatial = bool(
+            observation_evidence_spatial or legacy_evidence
+        )
+        self.evidence_modulated_temporal = bool(
+            evidence_modulated_temporal or legacy_evidence
+        )
+        self.evidence_weighted_readout = bool(
+            evidence_weighted_readout or legacy_evidence
+        )
+        self.hierarchical_scene_reasoning = bool(
+            hierarchical_scene_reasoning or legacy_hierarchical
+        )
+        self.evidence_enabled = any(
+            (
+                self.observation_evidence_spatial,
+                self.evidence_modulated_temporal,
+                self.evidence_weighted_readout,
+                self.hierarchical_scene_reasoning,
+            )
+        )
+
+        if self.evidence_weighted_readout and not self.evidence_modulated_temporal:
+            raise ValueError(
+                "EWHR requires evidence_modulated_temporal=True"
+            )
+
+        # Compatibility attributes used by historical checkpoint contracts.
+        self.ecsr = self.evidence_enabled
+        self.hierarchical_evidence = self.hierarchical_scene_reasoning
         self.use_directional_readout = bool(directional_readout)
         self.temporal_direction = temporal_direction
+        if self.hierarchical_scene_reasoning and not self.evidence_enabled:
+            raise ValueError(
+                "hierarchical_scene_reasoning requires an evidence module"
+            )
         if self.use_directional_readout and temporal_direction != "bidirectional":
             raise ValueError(
                 "directional_readout requires temporal_direction='bidirectional'"
             )
-        if self.ecsr and self.use_directional_readout:
-            raise ValueError("directional_readout is not supported with ECSR")
-        self.spatial = GSMAttnBlock(input_dim, embed_dim, num_heads,
-                                    operator=operator, p_dropout=p_dropout,
-                                    ecsr=self.ecsr)
-        self.temporal = TemporalEncoder(embed_dim, depth=depth,
-                                        p_dropout=p_dropout, drop_path=drop_path,
-                                        temporal_direction=temporal_direction)
+        if self.observation_evidence_spatial and self.use_directional_readout:
+            raise ValueError(
+                "observation_evidence_spatial is mutually exclusive with "
+                "directional_readout"
+            )
+
+        spatial_cls = (
+            ObservationEvidenceGSM
+            if self.observation_evidence_spatial else GSMAttnBlock
+        )
+        self.spatial = spatial_cls(
+            input_dim,
+            embed_dim,
+            num_heads,
+            operator=operator,
+            p_dropout=p_dropout,
+        )
+        temporal_cls = (
+            EvidenceModulatedCausalMamba
+            if self.evidence_modulated_temporal else TemporalEncoder
+        )
+        self.temporal = temporal_cls(
+            embed_dim,
+            depth=depth,
+            p_dropout=p_dropout,
+            drop_path=drop_path,
+            temporal_direction=temporal_direction,
+        )
         if self.use_directional_readout:
             self.directional_readout = DirectionalAttentionReadout(
                 embed_dim=embed_dim, max_steps=max_steps
             )
-        if self.ecsr:
+        if self.evidence_enabled:
             self.evidence_tau_logit = nn.Parameter(torch.tensor(-2.2521685))
+        if self.evidence_weighted_readout:
             self.readout_score = nn.Linear(embed_dim, 1)
             nn.init.zeros_(self.readout_score.weight)
             nn.init.zeros_(self.readout_score.bias)
             self.register_buffer("readout_beta", torch.tensor(1.0))
-        else:
+        if not self.evidence_modulated_temporal:
             self.temporal_decay = TemporalDecay(embed_dim, delta_dim=2)
 
     @property
     def evidence_tau(self):
-        if not self.ecsr:
-            raise AttributeError("evidence_tau is only available when ECSR is enabled")
+        if not self.evidence_enabled:
+            raise AttributeError(
+                "evidence_tau is only available when evidence modules are enabled"
+            )
         return torch.nn.functional.softplus(self.evidence_tau_logit)
 
-    def forward(self, hist_feat: torch.Tensor, valid_mask: torch.Tensor,
-                key_padding: torch.Tensor, positions: torch.Tensor | None = None,
-                return_evidence: bool = False):
-        B, N, T, _ = hist_feat.shape
-        # GAST-PF [B,N,T,*] -> internal [B,T,N,*]
+    def _regular_temporal_readout(self, x_spa, valid_mask, key_padding, batch_size):
+        d_forw, d_back = missing_run_deltas(valid_mask)
+        delta_forw = d_forw.unsqueeze(-1).expand(*d_forw.shape, 2)
+        g_forw = self.temporal_decay(delta_forw)
+        if self.temporal_direction == "unidirectional":
+            y = self.temporal(x_spa, g_forw)
+            return y[:, :, -1]
+        delta_back = d_back.unsqueeze(-1).expand(*d_back.shape, 2)
+        g_back = self.temporal_decay(delta_back)
+        if self.use_directional_readout:
+            _, forward_states, backward_states = self.temporal(
+                x_spa,
+                g_forw,
+                g_back,
+                return_directions=True,
+            )
+            age_back_aligned = torch.flip(d_back, dims=[-1])
+            return self.directional_readout(
+                forward_states,
+                backward_states,
+                valid_mask,
+                key_padding,
+                d_forw,
+                age_back_aligned,
+            )
+        y = self.temporal(x_spa, g_forw, g_back)
+        return y[:, -1].reshape(batch_size, valid_mask.shape[1], -1)
+
+    def forward(
+        self,
+        hist_feat: torch.Tensor,
+        valid_mask: torch.Tensor,
+        key_padding: torch.Tensor,
+        positions: torch.Tensor | None = None,
+        return_evidence: bool = False,
+    ):
+        batch_size, actors, steps, _ = hist_feat.shape
         x = hist_feat.permute(0, 2, 1, 3)
-        m = valid_mask.permute(0, 2, 1).float()
-        kp = key_padding
+        mask = valid_mask.permute(0, 2, 1).float()
+        padding = key_padding
 
         evidence_state = None
-        if self.ecsr:
-            if positions is None:
-                raise ValueError("ECSR encoder requires observed positions")
-            source_eligibility, reliability, age = compute_evidence_state(
-                valid_mask, self.evidence_tau, kp
+        if self.evidence_enabled:
+            source_eligibility, reliability, age = build_observation_evidence_state(
+                valid_mask, self.evidence_tau, padding
             )
             evidence_state = {
                 "source_eligibility": source_eligibility,
                 "reliability": reliability,
                 "age": age,
             }
+        else:
+            source_eligibility = reliability = None
+
+        if self.observation_evidence_spatial:
+            if positions is None:
+                raise ValueError(
+                    "OER-GSM requires observed positions for relational attention"
+                )
             x_spa = self.spatial(
                 x,
-                m,
-                kp,
+                mask,
+                padding,
                 positions=positions,
                 source_eligibility=source_eligibility,
                 query_reliability=(
                     reliability.permute(0, 2, 1)
-                    if self.hierarchical_evidence else None
+                    if self.hierarchical_scene_reasoning else None
                 ),
             )
-            y = self.temporal(
-                x_spa,
-                reliability=reliability,
-            )
+        else:
+            x_spa = self.spatial(x, mask, padding)
+
+        if self.evidence_modulated_temporal:
+            y = self.temporal(x_spa, reliability=reliability)
+        else:
+            y = None
+
+        if self.evidence_weighted_readout:
             scores = self.readout_score(y)
-            output, _ = evidence_aware_readout(
+            output, _ = evidence_weighted_history_readout(
                 y, reliability, scores, beta=self.readout_beta
             )
-        else:
-            x_spa = self.spatial(x, m, kp)                 # [B,T,N,C]
-            d_forw, d_back = missing_run_deltas(valid_mask)
-            delta_forw = d_forw.unsqueeze(-1).expand(*d_forw.shape, 2)
-            g_forw = self.temporal_decay(delta_forw)
+        elif self.evidence_modulated_temporal:
             if self.temporal_direction == "unidirectional":
-                y = self.temporal(x_spa, g_forw)
                 output = y[:, :, -1]
             else:
-                delta_back = d_back.unsqueeze(-1).expand(*d_back.shape, 2)
-                g_back = self.temporal_decay(delta_back)
-                if self.use_directional_readout:
-                    _, forward_states, backward_states = self.temporal(
-                        x_spa,
-                        g_forw,
-                        g_back,
-                        return_directions=True,
-                    )
-                    age_back_aligned = torch.flip(d_back, dims=[-1])
-                    output = self.directional_readout(
-                        forward_states,
-                        backward_states,
-                        valid_mask,
-                        kp,
-                        d_forw,
-                        age_back_aligned,
-                    )
-                else:
-                    y = self.temporal(x_spa, g_forw, g_back)
-                    output = y[:, -1].reshape(B, N, -1)
+                output = (
+                    y[:, :, -1]
+                    if y.shape[1] == actors
+                    else y[:, -1].reshape(batch_size, actors, -1)
+                )
+        else:
+            output = self._regular_temporal_readout(
+                x_spa, valid_mask, padding, batch_size
+            )
 
-        output = output * (~kp).unsqueeze(-1).to(output.dtype)
+        output = output * (~padding).unsqueeze(-1).to(output.dtype)
         if return_evidence:
             return output, evidence_state
         return output

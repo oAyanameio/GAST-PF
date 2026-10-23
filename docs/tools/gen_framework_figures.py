@@ -652,7 +652,7 @@ def figure_overall():
     # mask -> δ 跳连（沿编码器上方）
     poly_arrow(ax, [(222, 675), (290, 675), (290, 752), (863, 752), (863, 737)],
                color=MUTED, lw=1.2, ms=11, ls=(0, (5, 3)), label="mask->delta")
-    annot(ax, 76, 200, "mechanisms borrowed from Sports-Traj", fs=10.5)
+    annot(ax, 76, 200, "GAST-PF encoder components", fs=10.5)
 
     # ================= 解码器：双分支 fork → 联合 query → 融合 =================
     panel(ax, 1450, 120, 660, 480, "Structured Future Decoder", name="panel_dec")
