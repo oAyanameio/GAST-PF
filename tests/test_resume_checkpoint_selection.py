@@ -62,21 +62,6 @@ def test_resume_skips_invalid_newest_checkpoint(tmp_path):
     assert latest_valid_resume_checkpoint(checkpoint_dir) == valid
 
 
-def test_resume_rejects_unmigrated_optimizer_checkpoint(tmp_path):
-    checkpoint_dir = tmp_path / "checkpoints"
-    checkpoint_dir.mkdir()
-    legacy = checkpoint_dir / "last.ckpt"
-    _write_checkpoint(
-        legacy,
-        epoch=20,
-        global_step=1000,
-        state_dict={"net.unitraj_encoder.weight": torch.ones(1)},
-    )
-
-    with pytest.raises(RuntimeError, match="migrate model and optimizer state"):
-        latest_valid_resume_checkpoint(checkpoint_dir)
-
-
 def test_resume_returns_none_without_checkpoint(tmp_path):
     assert latest_valid_resume_checkpoint(tmp_path) is None
 
@@ -110,19 +95,6 @@ def test_resume_rebases_stale_callback_paths_without_mutating_source(tmp_path):
     assert list(callback["best_k_models"]) == [str(best.resolve())]
     original = torch.load(source, map_location="cpu", weights_only=False)
     assert "lane_c" in original["callbacks"]["ModelCheckpoint"]["best_model_path"]
-
-
-def test_checkpoint_migrator_refuses_already_migrated_checkpoint(tmp_path):
-    from migrate_utenc_ckpt import migrate
-
-    checkpoint = tmp_path / "already_migrated.ckpt"
-    torch.save({
-        "state_dict": {"net.gast_encoder.weight": torch.ones(1)},
-        "optimizer_states": [],
-    }, checkpoint)
-
-    with pytest.raises(RuntimeError, match="already migrated"):
-        migrate(checkpoint)
 
 
 def test_selection_monitor_is_final_output_head_metric():

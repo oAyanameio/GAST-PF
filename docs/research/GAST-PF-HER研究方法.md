@@ -1,25 +1,25 @@
-# GAST-PF-OEHSR：面向缺失历史的行人轨迹预测框架
+# GAST-PF-HER：面向缺失历史的分层证据推理行人轨迹预测框架
 
-_研究方法与实验执行指南 · 版本日期：2026-10-22 · 面向缺失历史条件下的行人未来轨迹多模态预测_
+_研究方法与实验执行指南 · 版本日期：2026-10-23 · 面向缺失历史条件下的行人未来轨迹多模态预测_
 
-> **文档定位**：本文将当前 OEHSR 代码整理为可复现的方法章节草案，并规定后续验证路线。它不是实验结果论文，也不把尚未验证的机制假设写成结论。若实现、配置或数据协议发生变化，应先更新相应小节再引用本文。
+> **文档定位**：本文将当前模型统一命名为 GAST-PF-HER（Gap-Aware Spatio-Temporal Pedestrian Forecaster with Hierarchical Evidence Reasoning），并整理为可复现的方法章节草案。它不是实验结果论文，也不把尚未验证的机制假设写成结论。旧 OEHSR 仅作为兼容标签保留。
 
 ## 方法组件与术语
 
 | 代码模块 | 英文名称 | 作用 |
 |---|---|---|
-| `OES` | Observation Evidence State | 从有效性、缺失年龄和 padding 构造共享观测证据状态 |
-| `OER-GSM` | Observation-Evidence Relational GSM | 在逐帧 GSM 中约束观测 source 资格并注入相对几何关系 |
-| `EMC-Mamba` | Evidence-Modulated Causal Mamba | 用证据可靠度调制单向 Mamba 的时序状态输入 |
-| `EWHR` | Evidence-Weighted History Readout | 按可靠度对历史状态进行读出并处理末端缺失 |
-| `EGST` | Evidence-Gated Scene Reasoning Tail | 用末端证据控制 actor 级场景注意力和残差融合 |
-| `OEHSR` | Observation-Evidence Hierarchical Scene Reasoning | 将上述模块组织成一个共享证据状态驱动的总体机制 |
+| `OES` | Observation Evidence State | 从有效性、缺失年龄和 padding 构造贯穿各阶段的共享状态 |
+| `GERE` | Geometry-Evidence Relational Encoding | 在逐帧关系交互中约束消息源资格并注入相对几何关系 |
+| `RMCM` | Reliability-Modulated Causal Mamba | 用证据可靠度调制单向 Mamba 的时序状态输入 |
+| `EPHR` | Evidence-Pooled History Readout | 按证据可靠度聚合历史状态并处理末端缺失 |
+| `ECSI` | Evidence-Conditioned Scene Integration | 用末端证据调节 actor 级场景消息和残差融合 |
+| `HER` | Hierarchical Evidence Reasoning | 将 OES、GERE、RMCM、EPHR 与 ECSI 组织为完整预测流程 |
 
-旧名称 `ECSR`、`ECHSR`、`gast_m0_scene_tail` 仅作为历史 checkpoint、配置和实验产物的兼容标识；新实验和论文正文统一使用 `OES`、`OER-GSM`、`EMC-Mamba`、`EWHR`、`EGST` 与 `OEHSR`。这些名称用于描述一个完整预测框架中的功能组件，不意味着每个基础算子都是彼此独立的论文贡献。对 GSM、Mamba、缺失年龄建模及场景交互等已有方法，在相关工作与方法章节按其实际来源引用；本文重点阐述它们针对缺失历史行人轨迹预测所做的任务化组织、接口适配和整体设计。
+旧名称 `OEHSR`、`ECSR`、`ECHSR`、`gast_m0_scene_tail` 仅作为历史 checkpoint、配置和实验产物的兼容标识；新实验和论文正文统一使用 `OES`、`GERE`、`RMCM`、`EPHR`、`ECSI` 与 `HER`。这些名称是对完整方法中功能阶段的统一抽象，不意味着基础 GSM、Mamba、Temporal Decay 或场景 Transformer 本身被重新发明。相关工作中仍需准确引用其来源；本文的方法贡献落在这些阶段针对缺失历史轨迹预测的接口设计、证据状态贯穿和整体组合，并由配对消融与分层实验验证。
 
 ## 摘要式概述
 
-缺失历史下的行人轨迹预测同时面临输入不完整、运动连续性受损、相对几何关系变化、场景上下文不均衡以及末端缺失导致历史读出不稳等问题。本文围绕这一任务构建 **GAST-PF-OEHSR** 完整预测框架：将历史运动特征、观测掩码与几何信息组织为统一输入；通过逐帧关系建模融合行人间相对运动；采用单向 gap-aware Mamba 编码个体时间演化；在末端观测不完整时对历史状态进行证据加权读出；再利用编码后场景交互整合邻居上下文，最终由既有多模态分布解码器生成未来轨迹候选。观测证据状态为多个阶段提供一致的缺失信息接口，是整体架构中的一项任务适配设计，而非全文唯一的创新落点。本文的核心研究对象是这些时空建模方法如何被组织并适配到缺失历史直接预测任务中；整体效果及各组件作用仍须由同口径对照、缺失分层和消融实验验证。
+缺失历史下的行人轨迹预测同时面临输入不完整、运动连续性受损、相对几何关系变化、场景上下文不均衡以及末端缺失导致历史读出不稳等问题。本文围绕这一任务构建 **GAST-PF-HER** 完整预测框架：将历史运动特征、观测掩码与几何信息组织为统一输入；通过 GERE 收集逐帧关系证据；采用 RMCM 编码个体时间演化；在末端观测不完整时通过 EPHR 聚合历史状态；再利用 ECSI 整合经过证据条件化的邻居上下文，最终由既有多模态分布解码器生成未来轨迹候选。OES 为多个阶段提供一致的缺失信息接口，是整体方法的组织中枢；完整框架的有效性仍须由同口径对照、缺失分层和消融实验验证。
 
 ## 1. 研究问题与可检验假设
 
@@ -34,7 +34,7 @@ _研究方法与实验执行指南 · 版本日期：2026-10-22 · 面向缺失�
 - **H1：显式几何关系有助于缺失条件下的空间建模。** 在逐帧 actor 表示中纳入相对位置、相对速度和方向关系，预期比仅依据个体运动差分更好地表达邻居对当前运动的影响；该作用需通过匹配输入与训练设置的消融检验。
 - **H2：因果时序编码与历史读出共同影响末端缺失预测。** 单向 Mamba 建模可用历史的因果演化，证据加权读出在末端缺失时整合此前状态；预期收益应结合末端缺失与不同缺失长度分层评估，而不能由模型结构直接推断。
 - **H3：编码后场景交互补充逐帧局部关系建模。** 在个体时序编码后整合 actor 级上下文，预期能补充逐帧 GSM 的交互信息；尾部是否需要由观测状态调制，应通过普通 Scene Tail 与证据条件化 Scene Tail 的配对对照区分。
-- **H4：整体框架的收益来自对空间、时间和场景信息的协同组织。** GAST-PF-OEHSR 应在统一缺失协议下与基线及结构匹配变体比较，并报告总体性能、缺失分层、参数量和计算成本；若收益只出现在单一场景或单一子组，应相应收窄结论。
+- **H4：整体框架的收益来自对空间、时间和场景信息的协同组织。** GAST-PF-HER 应在统一缺失协议下与基线及结构匹配变体比较，并报告总体性能、缺失分层、参数量和计算成本；若收益只出现在单一场景或单一子组，应相应收窄结论。
 
 以上均为待验证假设。若完整历史样本明显退化，或收益不集中在预先定义的证据困难子组，则应收缩机制解释；若主指标未优于结构匹配对照，则不应仅凭可解释门控宣称方法有效。
 
@@ -42,7 +42,7 @@ _研究方法与实验执行指南 · 版本日期：2026-10-22 · 面向缺失�
 
 论文的模型贡献应从**缺失历史行人轨迹预测的完整方法设计**来阐述，而不是将创新压缩为单一的信息路由机制，也不是把每个已有算子拆成互不相关的贡献：
 
-> **面向不完整历史下的行人未来轨迹多模态预测，构建 GAST-PF-OEHSR 时空预测框架，将逐帧几何关系建模、因果时序编码、缺失感知历史读出与编码后场景交互组织为端到端预测流程，并以共享观测证据状态适配不同阶段对历史信息的使用。**
+> **面向不完整历史下的行人未来轨迹多模态预测，构建 GAST-PF-HER 时空预测框架，将逐帧几何关系建模、因果时序编码、缺失感知历史读出与编码后场景交互组织为端到端预测流程，并以共享层级证据状态协调不同阶段对历史与邻居信息的使用。**
 
 论文应完整说明各阶段如何回应任务需求、阶段间如何传递表示，以及该组合相对于直接套用完整历史预测器的具体差异。GSM、Mamba、几何编码、历史读出与场景交互的已有研究来源应通过规范引用交代；论文的贡献表述聚焦于缺失历史预测这一任务中的整体方法设计、各组件的具体适配及经实验验证的增益。结构命名本身不替代新颖性比较或实证证据。
 
@@ -57,7 +57,7 @@ _研究方法与实验执行指南 · 版本日期：2026-10-22 · 面向缺失�
 \sum_{k=1}^{K}\pi_k=1,
 \]
 
-其中 \(\hat{\mathbf{y}}_1^{(k)}\in\mathbb{R}^{H\times2}\) 是第 \(k\) 个未来模式，\(\pi_k\) 是其概率。OEHSR 不先生成插补轨迹，也不改变既有多模态解码器。
+其中 \(\hat{\mathbf{y}}_1^{(k)}\in\mathbb{R}^{H\times2}\) 是第 \(k\) 个未来模式，\(\pi_k\) 是其概率。HER 不先生成插补轨迹，也不改变既有多模态解码器。
 
 **当前 TrajGap-Bench 配置**：ETH-M、HOTEL-M、UNIV-M、ZARA1-M、ZARA2-M 五个场景；Mixed-direct 训练、验证与测试；\(T=8\)、\(H=12\)、\(K=20\)。正式报告须明确数据 release、split、缺失协议和 checkpoint 选择规则，不能把 impute-then-predict 结果与 direct 结果混作同一评估口径。
 
@@ -161,7 +161,7 @@ b^{geo}_{ij,t,h}\right),
 
 ### 4.2 可靠度调制的单向 gap-aware Mamba
 
-GAST-PF-OEHSR 使用单向因果 Mamba 栈。Mamba 的选择性状态空间序列建模来源见 [1]，并已用于轨迹预测编码 [2]。对 actor \(i\) 的逐帧表示先经共享线性投影，再按可靠度缩放：
+HER 使用单向因果 Mamba 栈。Mamba 的选择性状态空间序列建模来源见 [1]，并已用于轨迹预测编码 [2]。对 actor \(i\) 的逐帧表示先经共享线性投影，再按可靠度缩放：
 
 \[
 \mathbf{u}_{i,t}=r_{i,t}\,\operatorname{MLP}(\tilde{\mathbf{z}}_{i,t}),\qquad
@@ -225,22 +225,23 @@ Scene Tail 输出经归一化后，与输入 actor token 作证据调制的残�
 
 ### 4.5 预测头与训练目标
 
-\(\mathbf{a}^{out}\) 输入原有 `FutureDistributionDecoder`，输出 K 个未来轨迹模式、模式概率及原预测头所需的不确定性参数。OEHSR 不增加插补头、未来编码器、辅助重建目标或 OEHSR 专属损失。训练损失、优化器和主指标与配对对照保持一致，以便将差异归因于历史编码与信息路由，而不是训练目标改写。
+\(\mathbf{a}^{out}\) 输入原有 `FutureDistributionDecoder`，输出 K 个未来轨迹模式、模式概率及原预测头所需的不确定性参数。HER 不增加插补头、未来编码器、辅助重建目标或独立损失。训练损失、优化器和主指标与配对对照保持一致，以便将差异归因于历史编码与信息组织，而不是训练目标改写。
 
 ## 5. 实现与论文术语对照
 
 | 论文概念 | 代码实现 | 精确表述边界 |
 |---|---|---|
-| 共享证据状态 \((s,a,r)\) | `build_observation_evidence_state`，`gast_encoder.py` | 可靠度由 mask 与年龄解析得到；不是不确定性估计器 |
-| 逐帧关系交互 | `ObservationEvidenceGSM` / `gast_oer_spatial` | ghost token + actor self-attention；padding 与无直接观测 source 被屏蔽 |
+| OES：共享观测证据状态 \((s,a,r)\) | `construct_hierarchical_evidence_state`，`gast_encoder.py` | 可靠度由 mask 与年龄解析得到；不是不确定性估计器 |
+| GERE：逐帧几何证据关系编码 | `GeometryEvidenceRelationalGSM` / `gast_oer_spatial` | ghost token + actor self-attention；padding 与无直接观测 source 被屏蔽 |
 | 相对几何偏置 | `relative_geometry_features`、`geometry_bias` | 7 维 pairwise 特征生成每头加性 bias |
 | GSM query 可靠度调节 | `query_reliability` | 注意力后的表示相乘；不要称作 query-logit routing |
-| 单向 gap-aware 时序编码 | `EvidenceModulatedCausalMamba` / `gast_emc_temporal` | OEHSR 路径中 Mamba 输入按 \(r\) 缩放，内部状态更新规则未改 |
-| 证据历史读出 | `evidence_weighted_history_readout` / `gast_ewhr_readout` | score + \(\log r\) 加权，再与末帧状态按末端 \(r\) 混合 |
+| RMCM：单向证据调制时序编码 | `ReliabilityModulatedCausalMamba` / `gast_emc_temporal` | HER 路径中 Mamba 输入按 \(r\) 缩放，内部状态更新规则未改 |
+| EPHR：证据池化历史读出 | `evidence_pooled_history_readout` / `gast_ewhr_readout` | score + \(\log r\) 加权，再与末帧状态按末端 \(r\) 混合 |
+| Temporal Decay 的路径边界 | `TemporalDecay` | 基础 GAST-PF 的非证据时序路径使用；HER 打开证据调制时序编码后不实例化该模块 |
 | 普通场景尾部 | `SceneReasoningTail` / `gast_scene_reasoning_tail` | actor context + 5 层 Scene Transformer；未恢复 M0 历史 Mamba |
-| 证据门控场景尾部 | `EvidenceGatedSceneTail` / `gast_egst_tail` | 末端可靠度控制 actor key bias 与 query actor 的残差融合门 |
+| ECSI：证据条件化场景整合 | `EvidenceConditionedSceneTail` / `gast_egst_tail` | 末端可靠度控制 actor key bias 与 query actor 的残差融合门 |
 | key 可靠度偏置与 actor 融合门 | `_build_evidence_attention_mask`、`_evidence_fusion_gate` | 分别控制 source actor key 权重和 query actor 的残差注入 |
-| 整体变体 | `gast_oehsr=True` / `GAST-PF-OEHSR` | 自动开启 OER-GSM、EMC-Mamba、EWHR、EGST 与普通尾部，并要求单向 Mamba |
+| 整体变体 | `gast_her=True` / `GAST-PF-HER` | 自动开启 GERE、RMCM、EPHR、ECSI 与普通场景尾部，并要求单向 Mamba；`gast_oehsr` 为兼容别名 |
 
 主要代码位置：`src/model/layers/gast_encoder.py`、`src/model/trajectory_forecaster.py`、`scripts/训练与评估/run_trajimpute_experiments.py`。研究路线与历史决策见 `docs/research/观测证据条件化几何时序编码器后续优化方向.md`。
 
@@ -257,7 +258,7 @@ Scene Tail 输出经归一化后，与输入 actor token 作证据调制的残�
 | `Uni + FrameGeo` | `Uni` → 打开 `gast_frame_geo` | 逐帧相对位置输入能否补足运动差分表示？ |
 | `GAST-PF-UniOER` | `Uni` → OER 空间、时间与读出路径 | 整合几何关系和缺失状态处理后，编码路径整体如何变化？ |
 | `GAST-PF-UniOER-Tail` | `UniOER` → 普通 Scene Tail | 普通场景尾部对 OER 编码表示的增量是什么？ |
-| `GAST-PF-OEHSR` | `UniOER-Tail` → 证据条件化 Scene Tail | 场景层是否需要根据观测状态调节消息源和残差融合？ |
+| `GAST-PF-HER` | `UniOER-Tail` → 证据条件化 Scene Tail | 场景层是否需要根据观测状态调节消息源和残差融合？ |
 
 该比较组用于评估时序方向、几何输入、历史编码、场景交互及其整合效果。`Uni` 到 `UniOER` 同时改变关系、时间和读出处理，只能解释为编码路径整体差异，不能拆作单个机制的因果效应。若整体结果通过预设门槛，再追加最小定向消融：
 
@@ -287,16 +288,16 @@ Scene Tail 输出经归一化后，与输入 actor token 作证据调制的残�
 
 ### 6.4 预先判定规则
 
-1. **进入机制归因**：OEHSR 在完整五场景同口径测试中，相对 `GAST-PF-UniOER-Tail` 的主指标表现有稳定改善，且该改善不是由少数单一场景主导。
+1. **进入机制归因**：HER 在完整五场景同口径测试中，相对 `GAST-PF-UniOER-Tail` 的主指标表现有稳定改善，且该改善不是由少数单一场景主导。
 2. **支持证据路由解释**：末端缺失或长连续缺失组有与假设一致的收益，门控/可靠度诊断方向合理；全有效组没有不可接受的系统性退化。
-3. **收缩方法主张**：若只有 UniTail 有益，则结论限于编码后场景交互；若仅 OER 编码路径有益，则不主张 OEHSR 尾部；若 OEHSR 只改善 overall 而证据困难子组无改善，则不得将收益归因于缺失证据路由。
+3. **收缩方法主张**：若只有 UniTail 有益，则结论限于编码后场景交互；若仅 OER 编码路径有益，则不主张 HER 尾部；若 HER 只改善 overall 而证据困难子组无改善，则不得将收益归因于缺失证据路由。
 4. **停止条件**：完整测试不优于结构匹配对照，或关键收益不能在多 seed / 关键场景上复现时，停止叠加模块，记录负结果并回到主问题与机制实现审计。
 
 ## 7. 当前证据状态与论文结论边界
 
-截至 2026-10-22，本地 OEHSR 产物中已找到 4 个场景的 Mixed-test `results.json`；HOTEL-M 的训练任务目前正在从 `last-resume` checkpoint 恢复训练，最新核对到的本地 checkpoint 约为 epoch 46，尚无 HOTEL-M 测试结果。该状态会随训练推进变化，最终应以 `outputs/trajgap_bench/GAST-PF-OEHSR_seed2024/` 下的 manifest、checkpoint 和评估产物为准。因此，当前不具备完整五场景 OEHSR 主表，任何四场景宏平均只能标注为临时筛选结果，不得作为完整 benchmark 结论。
+**历史实验快照（2026-10-22）**：当时 OEHSR 产物中有 4 个场景的 Mixed-test `results.json`；HOTEL-M 训练尚未完成。该状态仅用于解释历史产物，不代表当前实验状态。相关目录仍使用旧标签 `GAST-PF-OEHSR_seed2024`；正式结论须核验该目录下的 manifest、checkpoint 与评估产物。
 
-即使五场景单 seed 完成，也只能支持 screening 层面的性能观察。论文投稿前还需要：确认所有变体使用匹配的 `val_new_minFDE20` 选点与一致代码/协议；核实 M0、Uni、UniTail、UniOER、UniOER-Tail 对照产物完整；完成至少关键对照的多 seed 稳定性评估；针对性能主张执行必要机制消融；补足与当前直接缺失历史预测和缺失感知社会交互工作的相关工作比较。当前不能据此宣称 OEHSR 已达到顶会或顶刊的创新/性能门槛。
+即使五场景单 seed 完成，也只能支持 screening 层面的性能观察。论文投稿前还需要：确认所有变体使用匹配的 `val_new_minFDE20` 选点与一致代码/协议；核实 M0、Uni、UniTail、UniOER、UniOER-Tail 对照产物完整；完成至少关键对照的多 seed 稳定性评估；针对性能主张执行必要机制消融；补足与当前直接缺失历史预测和缺失感知社会交互工作的相关工作比较。当前不能据此宣称 HER 已达到顶会或顶刊的创新/性能门槛。
 
 ## 8. 论文写作结构建议
 
@@ -309,7 +310,7 @@ Scene Tail 输出经归一化后，与输入 actor token 作证据调制的残�
 
 ### 8.2 方法章节顺序
 
-建议依次撰写：任务定义与输入边界 → 整体架构 → 输入表示与观测证据状态 → 逐帧几何关系建模 → 单向 gap-aware Mamba 与历史读出 → 编码后场景交互 → 多模态预测头与训练目标 → 复杂度与实现细节。正文从完整预测流程阐述 OEHSR；消融章节分析各阶段设计的作用及其组合效果。
+建议依次撰写：任务定义与输入边界 → 整体架构 → 输入表示与观测证据状态 → 逐帧几何关系建模 → 单向 gap-aware Mamba 与历史读出 → 编码后场景交互 → 多模态预测头与训练目标 → 复杂度与实现细节。正文从完整预测流程阐述 HER；消融章节分析各阶段设计的作用及其组合效果。
 
 ### 8.3 结果章节顺序
 

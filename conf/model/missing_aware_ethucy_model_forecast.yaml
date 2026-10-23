@@ -15,37 +15,17 @@ target:
     num_modes: 20
     dt: 0.4
     obs_len: 8
-    # 主链配置：GAST-PF 自带前向/反向时序状态分支；bimamba 仅保留给 M0 对照路径。
+    # bimamba 仅用于 M0 对照；GAST-PF-UniOER 固定使用因果单向 Mamba。
     bimamba: ${bimamba}
-    # 正式模型：GAST-PF 缺失间隔感知时空编码器。
-    # M0 仅通过 encoder_type=m0 作为历史对照，不作为默认入口。
+    # 当前主模型：GAST-PF-UniOER；M0 由对照实验显式指定。
     encoder_type: 'gast'
     gast_depth: 4
     gast_gsm_operator: 'max'
-    # 时序方向：旧 GAST-PF 默认保留双向；Uni 变体显式改为因果单向 Mamba。
-    gast_temporal_direction: 'bidirectional'
-    # Legacy UT-ENC experiment keys: keep Hydra overrides loadable so the
-    # unitraj_encoder_bench_seed2024 lanes can resume from their checkpoints.
-    utenc_depth: 4
-    utenc_gsm_operator: 'max'
-    # Stage 1 · AnchorGeo 开关（默认关闭：基础版本行为不变）。
-    gast_anchor_geo: false
-    # Stage 2 · FrameGeo 开关（默认关闭：历史输入 4 维不变）。
-    gast_frame_geo: false
-    # Directional attention readout：双向完整状态池化，默认关闭以保持基线行为。
-    gast_directional_readout: false
-    # SceneReasoningTail：编码后的 actor context 与场景交互尾部。
-    gast_scene_reasoning_tail: false
-    # 本文创新模块：OER-GSM、EMC-Mamba、EWHR、EGST，以及组合机制 OEHSR。
-    gast_oer_spatial: false
-    gast_emc_temporal: false
-    gast_ewhr_readout: false
-    gast_egst_tail: false
-    gast_oehsr: false
-    # 历史配置键，仅用于旧 checkpoint 与实验配置兼容。
-    gast_m0_scene_tail: false
-    gast_ecsr: false
-    gast_hierarchical_evidence: false
+    # UniOER：OER 空间关系 + 单向证据调制 Mamba + 证据加权历史读出。
+    gast_temporal_direction: 'unidirectional'
+    gast_oer_spatial: true
+    gast_emc_temporal: true
+    gast_ewhr_readout: true
   pretrained_weights: ${pretrained_weights}
   lr: ${lr}
   weight_decay: ${weight_decay}

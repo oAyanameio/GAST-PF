@@ -1,100 +1,63 @@
 #!/usr/bin/env python
-"""校正版:对比 uni vs bi 训练 run(取最新有 metrics 者)的 resolved config。
+"""Validate the active TrajGap configuration and model registry."""
 
-2026-10 更新：主链配置使用最终预测头 monitor=val_new_minFDE20（不改变原有
-uni/bi 检查逻辑；无 outputs 历史 run 依赖，独立可运行）。
-"""
-import yaml
+import sys
 from pathlib import Path
+
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
-SUBS = ["eth","hotel","univ","zara1","zara2"]
+sys.path.insert(0, str(ROOT))
 
-def training_run(base):
-    cands = [rd for rd in base.glob("*/") if list((rd/"logs").glob("version_*/metrics.csv"))]
-    return sorted(cands, key=lambda p: p.stat().st_mtime)[-1] if cands else None
+from scripts.训练与评估.run_trajimpute_experiments import (  # noqa: E402
+    DEFAULT_VARIANT,
+    VARIANTS as TRAIN_VARIANTS,
+)
+from scripts.结果分析.evaluate_trajimpute_direct import (  # noqa: E402
+    VARIANTS as EVAL_VARIANTS,
+)
 
-# 先打印 uni/bi eth 各 run 的 epochs & 复用
-for tag in ["moflow_eth","moflow_bimamba_eth"]:
-    base=ROOT/"outputs"/tag
-    if not base.exists():
-        print(f"== {tag} == (目录不存在，跳过)")
-        continue
-    print(f"== {tag} ==")
-    for rd in sorted(base.glob("*/"), key=lambda p:p.stat().st_mtime):
-        cfg = rd/".hydra/config.yaml"
-        ep = yaml.safe_load(cfg.read_text())["epochs"] if cfg.exists() else "?"
-        mcsv = list((rd/"logs").glob("version_*/metrics.csv"))
-        maxep = "?"
-        if mcsv:
-            import csv
-            with open(mcsv[0]) as f:
-                es=[int(r["epoch"]) for r in csv.DictReader(f) if r.get("epoch")]
-            maxep = max(es) if es else "?"
-        print(f"   {Path(rd).name:20s} cfg.epochs={ep!r:6s} metrics_max_epoch={maxep}")
 
-print("\n=== 修正后的 uni/bi 对比(取最新有 metrics 的训练 run)===")
-for s in SUBS:
-    un=training_run(ROOT/"outputs"/f"moflow_{s}")
-    bi=training_run(ROOT/"outputs"/f"moflow_bimamba_{s}")
-    if un is None or bi is None:
-        print(f"--- {s} --- 跳过（缺 run: uni={un is not None} bi={bi is not None}）")
-        continue
-    du,_db = yaml.safe_load((un/".hydra/config.yaml").read_text()), yaml.safe_load((bi/".hydra/config.yaml").read_text())
-    db=_db
-    print(f"--- {s} ---  runs: uni={Path(un).name} bi={Path(bi).name}")
-    for f in ["seed","epochs","batch_size","lr","weight_decay","warmup_epochs","precision","gpus","num_workers","monitor","save_top_k"]:
-        a,b=du.get(f),db.get(f)
-        print(f"   {f:14s} uni={a!r:10s} bi={b!r:10s} {'SAME' if a==b else '!!DIFF'}")
-    mu=du["model"]["target"]["model"]; mb=db["model"]["target"]["model"]
-    for f in ["type","embed_dim","num_heads","future_steps","mlp_ratio","qkv_bias","drop_path","num_actor_types","num_modes","dt"]:
-        a,b=mu.get(f),mb.get(f)
-        print(f"   model.{f:14s} uni={a!r:10s} bi={b!r:10s} {'SAME' if a==b else '!!DIFF'}")
-    # bimamba 全配置树找
-    def findbi(d):
-        if isinstance(d,dict):
-            if "bimamba" in d: return d["bimamba"]
-            for v in d.values():
-                r=findbi(v)
-                if r is not None: return r
-        return None
-    print(f"   bimamba(anywhere)     uni={findbi(du)!r:10s} bi={findbi(db)!r:10s}")
-    # datamodule
-    dd=du["datamodule"]["target"]; db2=db["datamodule"]["target"]
-    same_dm=all(dd.get(k)==db2.get(k) for k in ["data_root","obs_len","pred_len","num_workers","pin_memory"]) and dd.get("subset")==db2.get("subset")
-    print(f"   datamodule 除subset相同: {same_dm} | data_root={dd.get('data_root')} obs/pred={dd.get('obs_len')}/{dd.get('pred_len')} subset={dd.get('subset')}")
-
-# ============================================================
-# 当前主链配置检查（TrajImpute direct；历史 missing_aware_* 配置已随
-# 旧自定义缺失数据废弃删除，2026-09-13）
-# ============================================================
-print("\n=== 主链配置检查 (config_missing_aware_trajimpute) ===")
-ma_fail = 0
-path = ROOT / "conf" / "config_missing_aware_trajimpute.yaml"
-if not path.exists():
-    print(f"[FAIL] config_missing_aware_trajimpute: 配置文件缺失")
-    ma_fail += 1
-else:
-    import yaml as _yaml
-    c = _yaml.safe_load(path.read_text())
-    expect = {
-        "data_root": "/home/lbh/TrajImpute/dataset/TrajImpute",
+def main():
+    root_config = yaml.safe_load(
+        (ROOT / "conf/config_missing_aware_trajimpute.yaml").read_text()
+    )
+    model_config = yaml.safe_load(
+        (ROOT / "conf/model/missing_aware_ethucy_model_forecast.yaml").read_text()
+    )
+    model = model_config["target"]["model"]
+    expected = {
         "monitor": "val_new_minFDE20",
         "bimamba": False,
-        "num_modes-check": c["model"]["target"]["model"]["num_modes"] == 20,
+        "num_modes": 20,
+        "encoder_type": "gast",
+        "gast_temporal_direction": "unidirectional",
+        "gast_oer_spatial": True,
+        "gast_emc_temporal": True,
+        "gast_ewhr_readout": True,
     }
-    problems = []
-    if c.get("data_root") != expect["data_root"]:
-        problems.append(f"data_root={c.get('data_root')!r}")
-    if c.get("monitor") != expect["monitor"]:
-        problems.append(f"monitor={c.get('monitor')!r}")
-    if c.get("bimamba") != expect["bimamba"]:
-        problems.append(f"bimamba={c.get('bimamba')!r} (期望单向 false)")
-    if not expect["num_modes-check"]:
-        problems.append("num_modes != 20")
-    status = "PASS" if not problems else "FAIL"
-    if problems:
-        ma_fail += 1
-    print(f"[{status}] config_missing_aware_trajimpute: " +
-          ("; ".join(problems) if problems else "data_root/monitor/bimamba/num_modes 全部符合"))
+    actual = {
+        "monitor": root_config.get("monitor"),
+        "bimamba": root_config.get("bimamba"),
+        "num_modes": model.get("num_modes"),
+        **{key: model.get(key) for key in expected
+           if key in model and key not in {"monitor", "bimamba", "num_modes"}},
+    }
+    problems = [f"{key}: expected {value!r}, found {actual.get(key)!r}"
+                for key, value in expected.items() if actual.get(key) != value]
+    if DEFAULT_VARIANT != "GAST-PF-UniOER":
+        problems.append(f"default variant is {DEFAULT_VARIANT!r}")
+    if TRAIN_VARIANTS.keys() != EVAL_VARIANTS.keys():
+        problems.append("training and evaluation variant registries differ")
+    if set(TRAIN_VARIANTS) != {"M0", "GAST-PF-Uni", "GAST-PF-UniOER"}:
+        problems.append(f"unexpected active variants: {sorted(TRAIN_VARIANTS)}")
+    if TRAIN_VARIANTS.get("GAST-PF-UniOER") != EVAL_VARIANTS.get("GAST-PF-UniOER"):
+        problems.append("UniOER training and evaluation switches differ")
 
-print(f"\n配置检查失败项: {ma_fail}")
+    if problems:
+        raise SystemExit("CONFIG CHECK FAILED\n- " + "\n- ".join(problems))
+    print("CONFIG CHECK PASSED: UniOER defaults and active variants are aligned")
+
+
+if __name__ == "__main__":
+    main()

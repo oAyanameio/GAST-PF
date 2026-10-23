@@ -25,12 +25,9 @@ import pytorch_lightning as pl
 _GROUP_RULES = (
     ("gast_encoder.spatial", "enc.spatial"),
     ("gast_encoder.temporal_decay", "enc.temporal_decay"),
-    ("gast_encoder.directional_readout", "enc.readout"),
-    ("gast_encoder.middle_readout_token", "enc.readout"),
     ("gast_encoder.evidence_tau_logit", "enc.readout"),
     ("gast_encoder.readout_score", "enc.readout"),
     ("gast_encoder.readout_beta", "enc.readout"),
-    ("gast_encoder.anchor_geo_projection", "enc.geo"),
     ("gast_encoder.temporal", "enc.temporal"),
     ("gast_encoder", "enc.other"),
     ("future_decoder", "decoder"),

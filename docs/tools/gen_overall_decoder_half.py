@@ -27,7 +27,7 @@ TCOL = [(46, 117, 182), (110, 160, 215), (157, 195, 230), (244, 177, 131), (255,
 
 S = 3
 W, H = 3384, 670
-DY = -49                      # 整体竖直偏移（使内容垂直居中）
+DY = -62                      # 整体竖直偏移（使内容垂直居中；竖框版内容更高）
 
 img = Image.new("RGB", (W * S, H * S), WHITE)
 d = ImageDraw.Draw(img)
@@ -199,37 +199,37 @@ def Y(v):
 # ================= 布局 =================
 TRUNK = 1880
 AX, BX, BW, BH = 1945, 2175, 180, 75
-A_C, B_C = 255, 490
+A_C, B_C = 245, 500   # 两支中心拉开，给竖框留间隙
 
 # 主干
 d.line([(TRUNK * S, Y(A_C) * S), (TRUNK * S, Y(B_C) * S)], fill=INK, width=int(7 * S))
 arrow((TRUNK, Y(A_C)), (AX - 2, Y(A_C)), lw=7, size=18)
 arrow((TRUNK, Y(B_C)), (AX - 2, Y(B_C)), lw=7, size=18)
 
-# ---- (a) 支：CrossAttn + SelfAttn 合并为一个模块，只暴露综合名 ----
-box(AX, Y(A_C - BH // 2), BX + BW, Y(A_C + BH // 2), ["Mode Localization Module"], name="a1")
+# ---- (a) 支：CrossAttn + SelfAttn 合并为一个模块，只暴露综合名；竖向长框（对齐 Mamba 模块风格）----
+box(AX, Y(A_C - 110), AX + 150, Y(A_C + 110), ["Mode", "Localization", "Module"], name="a1")
 arrow((2413, Y(A_C - 2)), (2413, Y(A_C - 34)), lw=4, size=13)
 loss_badge(2413, Y(A_C - 56), "m", 32, tag="loss_a")
 
-# ---- (b) 支：CrossAttn + BiMamba 合并为一个模块，只暴露综合名 ----
-box(AX, Y(B_C - BH // 2), BX + BW, Y(B_C + BH // 2), ["State Consistency Module"], name="b1")
+# ---- (b) 支：CrossAttn + BiMamba 合并为一个模块，只暴露综合名；竖向长框 ----
+box(AX, Y(B_C - 110), AX + 150, Y(B_C + 110), ["State", "Consistency", "Module"], name="b1")
 arrow((2413, Y(B_C + 2)), (2413, Y(B_C + 62)), lw=4, size=13)
 loss_badge(2413, Y(B_C + 84), "s", 32, tag="loss_b")
 
 # ---- 两支输出汇合（去掉中间大矩阵张量）----
 SX0, SX1 = 2580, 2810          # (c) 模块位置（提前定义，供汇合箭头使用）
 MERGE_X = 2470
-d.line([((BX + BW + 2) * S, Y(A_C) * S), (MERGE_X * S, Y(A_C) * S)], fill=INK, width=int(7 * S))      # (a) 支输出
-d.line([((BX + BW + 2) * S, Y(B_C) * S), (MERGE_X * S, Y(B_C) * S)], fill=INK, width=int(7 * S))      # (b) 支输出
+d.line([((AX + 152) * S, Y(A_C) * S), (MERGE_X * S, Y(A_C) * S)], fill=INK, width=int(7 * S))          # (a) 支输出（框右缘 AX+150）
+d.line([((AX + 152) * S, Y(B_C) * S), (MERGE_X * S, Y(B_C) * S)], fill=INK, width=int(7 * S))          # (b) 支输出（框右缘 AX+150）
 d.line([(MERGE_X * S, Y(B_C) * S), (MERGE_X * S, Y(A_C) * S)], fill=INK, width=int(7 * S))          # 汇合竖干
 arrow((MERGE_X, Y(362)), (SX0 - 2, Y(362)), lw=7, size=18)                 # 合并后进 (c)，落在框垂直中心
 
-# ---- (c) 模块：四级合成一个模块，只暴露综合名 ----
-SX0, SX1 = 2580, 2810          # 与原堆栈同位；汇合箭头、输出箭头落点不变
-box(SX0, Y(254), SX1, Y(470), ["Hybrid Coupling", "Module"], name="c1")   # 高度 328->216 只收高度，中心 362 不变
+# ---- (c) 模块：四级合成一个模块，只暴露综合名；竖向长框（与两支分支、Mamba 同风格）----
+SX0, SX1 = 2600, 2750          # 竖框宽 150，中心 x=2675 与汇合/输出线同轴
+box(SX0, Y(212), SX1, Y(512), ["Hybrid", "Coupling", "Module"], name="c1")   # 高 300，中心 y=362
 
 # ---- 扇面 + 输出 ----
-FX, FY, FL = 2890, 362, 150   # FY = 合并框垂直中心，输出箭头与扇面原点都在此
+FX, FY, FL = 2855, 362, 150   # FY = 合并框垂直中心，输出箭头与扇面原点都在此
 for k in range(20):
     ang = math.radians(-40 + (k / 19.0) * 80)   # 上下对称扇面
     pts = []

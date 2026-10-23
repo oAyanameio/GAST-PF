@@ -3,7 +3,7 @@
 正式协议固定为 `--difficulty Mixed`：
   PYTHONPATH=. python scripts/结果分析/evaluate_trajimpute_direct.py \
       --checkpoint outputs/.../checkpoints/xxx.ckpt \
-      --scene ETH-M --difficulty Mixed --split test --K 20 --variant GAST-PF
+      --scene ETH-M --difficulty Mixed --split test --K 20 --variant GAST-PF-UniOER
 
 输出：outputs/trajgap_bench/<scene>_Mixed_<split>_<variant>_seed<seed>/results.json
 层级：scene/split/missing_count/variant/seed；K 显式写入 meta；
@@ -29,52 +29,11 @@ from src.evaluation.trajimpute_direct import DirectEvaluator, save_results  # no
 
 VARIANTS = {
     "M0": {"encoder_type": "m0"},
-    "GAST-PF": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "bidirectional",
-    },
-    # Stage 1 · AnchorGeo
-    "GAST-PF-AnchorGeo": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_anchor_geo": True,
-    },
-    # Stage 2 · FrameGeo
-    "GAST-PF-FrameGeo": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_frame_geo": True,
-    },
-    "GAST-PF-DAP": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_directional_readout": True,
-    },
-    "GAST-PF-Tail": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "bidirectional",
-        "gast_directional_readout": True,
-        "gast_scene_reasoning_tail": True,
-    },
     "GAST-PF-Uni": {
         "encoder_type": "gast",
         "gast_depth": 4,
         "gast_gsm_operator": "max",
         "gast_temporal_direction": "unidirectional",
-    },
-    "GAST-PF-UniTail": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_scene_reasoning_tail": True,
     },
     "GAST-PF-UniOER": {
         "encoder_type": "gast",
@@ -84,63 +43,6 @@ VARIANTS = {
         "gast_oer_spatial": True,
         "gast_emc_temporal": True,
         "gast_ewhr_readout": True,
-    },
-    "GAST-PF-UniOER-Tail": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_oer_spatial": True,
-        "gast_emc_temporal": True,
-        "gast_ewhr_readout": True,
-        "gast_scene_reasoning_tail": True,
-    },
-    "GAST-PF-OER": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_oer_spatial": True,
-        "gast_emc_temporal": True,
-        "gast_ewhr_readout": True,
-    },
-    "GAST-PF-OEHSR": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_oer_spatial": True,
-        "gast_emc_temporal": True,
-        "gast_ewhr_readout": True,
-        "gast_scene_reasoning_tail": True,
-        "gast_egst_tail": True,
-        "gast_oehsr": True,
-    },
-    # Historical variant labels remain available for evaluating old artifacts.
-    "GAST-PF-UniECSR": {
-        "encoder_type": "gast", "gast_depth": 4,
-        "gast_gsm_operator": "max", "gast_temporal_direction": "unidirectional",
-        "gast_ecsr": True,
-    },
-    "GAST-PF-UniECSR-Tail": {
-        "encoder_type": "gast", "gast_depth": 4,
-        "gast_gsm_operator": "max", "gast_temporal_direction": "unidirectional",
-        "gast_ecsr": True, "gast_m0_scene_tail": True,
-    },
-    "GAST-PF-ECSR": {
-        "encoder_type": "gast", "gast_depth": 4,
-        "gast_gsm_operator": "max", "gast_ecsr": True,
-    },
-    "GAST-PF-ECHSR": {
-        "encoder_type": "gast", "gast_depth": 4,
-        "gast_gsm_operator": "max", "gast_temporal_direction": "unidirectional",
-        "gast_ecsr": True, "gast_m0_scene_tail": True,
-        "gast_hierarchical_evidence": True,
-    },
-    # Legacy label kept for evaluating historical experiment outputs.
-    "UT-ENC": {
-        "encoder_type": "utenc",
-        "utenc_depth": 4,
-        "utenc_gsm_operator": "max",
     },
 }
 
@@ -153,12 +55,12 @@ def get_git_revision():
         return "unknown"
 
 
-def build_model(variant: str, num_modes: int, bimamba: bool = False):
+def build_model(variant: str, num_modes: int):
     from src.model.trajectory_forecaster import TrajectoryForecaster
     return TrajectoryForecaster(
         embed_dim=128, future_steps=12, num_heads=8, mlp_ratio=4.0,
         qkv_bias=False, drop_path=0.2, num_actor_types=1,
-        num_modes=num_modes, bimamba=bimamba, dt=0.4, obs_len=8,
+        num_modes=num_modes, bimamba=False, dt=0.4, obs_len=8,
         **VARIANTS[variant],
     )
 
@@ -167,7 +69,7 @@ def load_checkpoint(model, ckpt_path):
     ckpt = torch.load(ckpt_path, map_location="cpu")
     model_config = ckpt.get("hyper_parameters", {}).get("model", {})
     checkpoint_modes = model_config.get("num_modes") if hasattr(model_config, "get") else None
-    expected_modes = model.time_decoder.num_modes
+    expected_modes = model.future_decoder.num_modes
     if checkpoint_modes is not None and int(checkpoint_modes) != expected_modes:
         raise ValueError(
             f"checkpoint num_modes={checkpoint_modes} 与评估 K={expected_modes} 不一致"
@@ -178,51 +80,31 @@ def load_checkpoint(model, ckpt_path):
             f"checkpoint variant metadata mismatch: {checkpoint_variant} vs "
             f"{model_config.get('model_version')}"
         )
-    # 编码器契约：checkpoint 的 encoder_type 必须与评估 variant 一致，
-    # 且 GAST-PF checkpoint 键集须完整。
+    # Encoder and UniOER module switches must match the selected variant.
     checkpoint_encoder = model_config.get("encoder_type", "m0") if hasattr(model_config, "get") else "m0"
     expected_encoder = model.encoder_type
-    canonical = {"utenc": "gast"}
-    if canonical.get(checkpoint_encoder, checkpoint_encoder) != expected_encoder:
+    if checkpoint_encoder != expected_encoder:
         raise ValueError(
             f"checkpoint encoder_type={checkpoint_encoder} does not match "
             f"variant encoder_type={expected_encoder}"
         )
-    # 分阶段开关必须与 checkpoint 一致；新模型使用创新模块名，旧 checkpoint
-    # 通过 legacy_switches 映射迁移，不改变历史结果的可评估性。
     switch_specs = {
-        "gast_anchor_geo": ("gast_anchor_geo",),
-        "gast_frame_geo": ("gast_frame_geo",),
-        "gast_directional_readout": ("gast_directional_readout",),
-        "gast_scene_reasoning_tail": (
-            "gast_scene_reasoning_tail", "gast_m0_scene_tail"
-        ),
-        "gast_oer_spatial": ("gast_oer_spatial", "gast_ecsr"),
-        "gast_emc_temporal": ("gast_emc_temporal", "gast_ecsr"),
-        "gast_ewhr_readout": ("gast_ewhr_readout", "gast_ecsr"),
-        "gast_egst_tail": ("gast_egst_tail", "gast_hierarchical_evidence"),
-        "gast_oehsr": ("gast_oehsr", "gast_hierarchical_evidence"),
+        "gast_oer_spatial": "gast_oer_spatial",
+        "gast_emc_temporal": "gast_emc_temporal",
+        "gast_ewhr_readout": "gast_ewhr_readout",
     }
-    for switch, aliases in switch_specs.items():
-        ckpt_switch = any(
-            bool(model_config.get(alias, False))
-            for alias in aliases
-        ) if hasattr(model_config, "get") else False
+    for switch, config_key in switch_specs.items():
+        ckpt_switch = bool(model_config.get(config_key, False)) if hasattr(model_config, "get") else False
         model_switch = bool(getattr(model, switch, False))
         if ckpt_switch != model_switch:
             raise ValueError(
                 f"checkpoint {switch}={ckpt_switch} does not match "
-                f"variant {switch}={model_switch} (legacy alias: "
-                f"gast_ecsr/gast_hierarchical_evidence)"
+                f"variant {switch}={model_switch}"
             )
     checkpoint_direction = (
-        model_config.get("gast_temporal_direction", "bidirectional")
-        if hasattr(model_config, "get") else "bidirectional"
+        model_config.get("gast_temporal_direction", "unidirectional")
+        if hasattr(model_config, "get") else "unidirectional"
     )
-    if checkpoint_direction in {"bi", "bidir"}:
-        checkpoint_direction = "bidirectional"
-    elif checkpoint_direction in {"uni", "causal"}:
-        checkpoint_direction = "unidirectional"
     if checkpoint_direction != model.gast_temporal_direction:
         raise ValueError(
             "checkpoint gast_temporal_direction="
@@ -299,7 +181,7 @@ def main():
     ap.add_argument("--difficulty", default="Mixed", choices=["Mixed"],
                     help="TrajGap-Bench 正式主协议固定为 Mixed")
     ap.add_argument("--split", default="test", choices=["train", "val", "test"])
-    ap.add_argument("--variant", default="GAST-PF", choices=list(VARIANTS))
+    ap.add_argument("--variant", default="GAST-PF-UniOER", choices=list(VARIANTS))
     ap.add_argument("--K", type=int, default=20)
     ap.add_argument("--seed", type=int, default=2024)
     ap.add_argument("--batch-size", type=int, default=64)
@@ -312,8 +194,6 @@ def main():
     ap.add_argument("--max-batches", type=int, default=None)
     ap.add_argument("--output-root", default="outputs/trajgap_bench")
     ap.add_argument("--device", default="cuda:0")
-    ap.add_argument("--bimamba", action=argparse.BooleanOptionalAction, default=False,
-                    help="主链固定单向(2026-09-12裁定)；须与训练时一致")
     args = ap.parse_args()
 
     if args.K != 20:
@@ -329,11 +209,7 @@ def main():
     n_total_rows = int(dataset.missing_counts.shape[0])
     n_kept_focal = len(dataset)
     n_filtered_out = n_total_rows - n_kept_focal if args.zero_missing_only else 0
-    model = build_model(
-        args.variant,
-        args.K,
-        bimamba=args.bimamba,
-    )
+    model = build_model(args.variant, args.K)
 
     ckpt_info = None
     if args.checkpoint:

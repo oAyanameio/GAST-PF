@@ -1,7 +1,7 @@
 """TrajGap 缺失数据重训入口（统一 Mixed direct 协议）。
 
 协议（任务书 2026-09-07 + 方案 §1.4）：
-- 默认从 `GAST-PF + mixed-direct` 开始；
+- 默认从 `GAST-PF-UniOER + mixed-direct` 开始；
 - `mixed-direct` 将官方 Easy/Hard 的同一 split 合并为单一 Mixed 数据集；
 - 每个场景从头训练，不使用零样本 checkpoint；
 - 训练输出、验证选点和测试评估统一使用 K=20；
@@ -11,7 +11,7 @@
 
 用法：
   PYTHONNOUSERSITE=1 PYTHONPATH=. python scripts/训练与评估/run_trajimpute_experiments.py \
-      --protocol mixed-direct --variant GAST-PF \
+      --protocol mixed-direct --variant GAST-PF-Uni \
       --scenes ETH-M HOTEL-M UNIV-M ZARA1-M ZARA2-M \
       --seed 2024 --gpu 3 --output-root outputs/trajgap_bench
 """
@@ -38,66 +38,22 @@ SCENES = ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
 FOLDS = ["ETH", "HOTEL", "UNIV", "ZARA1", "ZARA2"]
 DIRECT_NUM_MODES = 20
 DEFAULT_PROTOCOL = "mixed-direct"
-DEFAULT_VARIANT = "GAST-PF"
+DEFAULT_VARIANT = "GAST-PF-UniOER"
 OPTIMIZER_POLICY = "adamw_complete_module_local_v1"
 
-# Variants: M0 reference；GAST-PF = gap-aware spatio-temporal encoder
-# replacement. The decoder, losses, and TrajGap protocol stay unchanged.
+# Keep only the M0 reference, the Uni attribution control, and the selected
+# UniOER model. The decoder, losses, and TrajGap protocol stay unchanged.
 VARIANTS = {
     "M0": {"encoder_type": "m0"},
-    "GAST-PF": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "bidirectional",
-    },
-    # Stage 1 · AnchorGeo：在 GAST-PF actor 输出端叠加 anchor 空间 +
-    # 末端方向 + anchor lag 几何证据；GSM attention 与 decoder 输入维度不变。
-    "GAST-PF-AnchorGeo": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_anchor_geo": True,
-    },
-    # Stage 2 · FrameGeo：把逐帧相对位置显式送入 GSM（历史输入 4 -> 6 维）。
-    "GAST-PF-FrameGeo": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_frame_geo": True,
-    },
-    "GAST-PF-DAP": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_directional_readout": True,
-    },
-    # 普通 SceneReasoningTail：在 DAP 后加入 actor context 与场景交互，
-    # 以零初始化残差系数接入；不恢复 M0 历史 Mamba。
-    "GAST-PF-Tail": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "bidirectional",
-        "gast_directional_readout": True,
-        "gast_scene_reasoning_tail": True,
-    },
-    # Uni：GSM + 前向 gap-aware Mamba + 最后时间步读出。
     "GAST-PF-Uni": {
         "encoder_type": "gast",
         "gast_depth": 4,
         "gast_gsm_operator": "max",
         "gast_temporal_direction": "unidirectional",
+        "gast_oer_spatial": False,
+        "gast_emc_temporal": False,
+        "gast_ewhr_readout": False,
     },
-    # UniTail：在单向末帧 actor token 后加入普通场景推理尾部。
-    "GAST-PF-UniTail": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_scene_reasoning_tail": True,
-    },
-    # OER：Observation-Evidence Relational GSM + evidence-conditioned encoder path.
     "GAST-PF-UniOER": {
         "encoder_type": "gast",
         "gast_depth": 4,
@@ -106,65 +62,6 @@ VARIANTS = {
         "gast_oer_spatial": True,
         "gast_emc_temporal": True,
         "gast_ewhr_readout": True,
-    },
-    "GAST-PF-UniOER-Tail": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_oer_spatial": True,
-        "gast_emc_temporal": True,
-        "gast_ewhr_readout": True,
-        "gast_scene_reasoning_tail": True,
-    },
-    "GAST-PF-OER": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_oer_spatial": True,
-        "gast_emc_temporal": True,
-        "gast_ewhr_readout": True,
-    },
-    # OEHSR：Observation-Evidence Hierarchical Scene Reasoning。
-    "GAST-PF-OEHSR": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_oer_spatial": True,
-        "gast_emc_temporal": True,
-        "gast_ewhr_readout": True,
-        "gast_scene_reasoning_tail": True,
-        "gast_egst_tail": True,
-        "gast_oehsr": True,
-    },
-    # Historical variant names and switches remain loadable for old artifacts.
-    "GAST-PF-UniECSR": {
-        "encoder_type": "gast", "gast_depth": 4,
-        "gast_gsm_operator": "max", "gast_temporal_direction": "unidirectional",
-        "gast_ecsr": True,
-    },
-    "GAST-PF-UniECSR-Tail": {
-        "encoder_type": "gast", "gast_depth": 4,
-        "gast_gsm_operator": "max", "gast_temporal_direction": "unidirectional",
-        "gast_ecsr": True, "gast_m0_scene_tail": True,
-    },
-    "GAST-PF-ECSR": {
-        "encoder_type": "gast", "gast_depth": 4,
-        "gast_gsm_operator": "max", "gast_ecsr": True,
-    },
-    "GAST-PF-ECHSR": {
-        "encoder_type": "gast", "gast_depth": 4,
-        "gast_gsm_operator": "max", "gast_temporal_direction": "unidirectional",
-        "gast_ecsr": True, "gast_m0_scene_tail": True,
-        "gast_hierarchical_evidence": True,
-    },
-    # Legacy experiment label; keep it loadable without making it the current
-    # public name.
-    "UT-ENC": {
-        "encoder_type": "utenc",
-        "utenc_depth": 4,
-        "utenc_gsm_operator": "max",
     },
 }
 
@@ -339,11 +236,10 @@ def _model_config(args):
         "embed_dim": 128, "future_steps": 12, "num_heads": 8,
         "mlp_ratio": 4.0, "qkv_bias": False, "drop_path": 0.2,
         "num_actor_types": 1, "num_modes": args.K, "dt": 0.4,
-        "obs_len": 8, "bimamba": args.bimamba,
+        "obs_len": 8, "bimamba": False,
         "encoder_type": "gast", "gast_depth": 4,
-        "gast_gsm_operator": "max", "gast_temporal_direction": "bidirectional",
-        "utenc_depth": 4,
-        "utenc_gsm_operator": "max",
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
     }
     config.update(VARIANTS[args.variant])
     return config
@@ -417,11 +313,6 @@ def latest_valid_resume_checkpoint(checkpoint_dir, expected_manifest=None,
                 raise ValueError("resume preflight requires both manifest and optimizer signature")
             if expected_manifest is not None:
                 validate_resume_checkpoint(path, expected_manifest, expected_signature)
-            elif any("unitraj_encoder." in key for key in state_dict):
-                raise ValueError(
-                    "legacy unitraj_encoder checkpoint; migrate model and optimizer "
-                    "state before resuming"
-                )
             epoch = int(payload.get("epoch", -1))
             global_step = int(payload.get("global_step", -1))
             if epoch < 0 or global_step < 0:
@@ -614,14 +505,14 @@ def build_manifest(args, protocol_cfg):
         "env": env_info(),
         "model_version": args.variant,
         "encoder_type": VARIANTS[args.variant].get("encoder_type", "m0"),
-        "encoder_source": "GAST Encoder" if VARIANTS[args.variant].get("encoder_type") in {"gast", "utenc"} else "M0",
+        "encoder_source": "GAST Encoder" if VARIANTS[args.variant].get("encoder_type") == "gast" else "M0",
         "encoder_config": {
             key: value for key, value in VARIANTS[args.variant].items()
-            if key.startswith(("gast_", "utenc_"))
+            if key.startswith("gast_")
         },
         "model_config": _model_config(args),
         "scene_partition": bool(getattr(args, "allow_scene_partition", False)),
-        "backbone": {"bimamba": args.bimamba},
+        "backbone": {"bimamba": False},
         "seed": args.seed,
         "batch_size": args.batch_size,
         "epochs": args.epochs,
@@ -678,8 +569,7 @@ def _run_one_scene_locked(args, scene, protocol_cfg, manifest, gpu_env):
     if protocol_cfg["dataset"] != "trajgap":
         raise ValueError("run_one_scene 只接受 TrajGap protocol")
     tag = f"{args.variant}_{scene}_{args.protocol}_seed{args.seed}"
-    if args.bimamba is False:
-        tag += "_uni"
+    tag += "_uni"
     run_dir = Path(args.output_root) / tag
     checkpoints_dir = run_dir / "train" / "checkpoints"
     _manifest = run_dir / "manifest.json"
@@ -733,7 +623,7 @@ def _run_one_scene_locked(args, scene, protocol_cfg, manifest, gpu_env):
         f"model.target.model.num_modes={args.K}",
         f"lr={args.lr}",
         f"weight_decay={args.weight_decay}",
-        f"bimamba={str(args.bimamba).lower()}",
+        "bimamba=false",
         f"clean_suffix={protocol_cfg['suffix']}",
     ]
     train_overrides.append(f"model_version={args.variant}")
@@ -821,7 +711,6 @@ def _run_one_scene_locked(args, scene, protocol_cfg, manifest, gpu_env):
             "--seed", str(args.seed),
             "--checkpoint", str(ckpt),
             "--output-root", str(run_dir / "eval" / test_difficulty),
-            "--bimamba" if args.bimamba else "--no-bimamba",
         ]
         if protocol_cfg["zero_missing_only"]:
             eval_cmd += ["--zero-missing-only"]
@@ -853,8 +742,7 @@ def _run_one_scene_locked(args, scene, protocol_cfg, manifest, gpu_env):
 def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
     """Serialize one scene run under an exclusive output-directory lock."""
     tag = f"{args.variant}_{scene}_{args.protocol}_seed{args.seed}"
-    if args.bimamba is False:
-        tag += "_uni"
+    tag += "_uni"
     run_dir = Path(args.output_root) / tag
     Path(args.output_root).mkdir(parents=True, exist_ok=True)
     with output_directory_lock(run_dir):
@@ -881,8 +769,6 @@ def main():
     ap.add_argument("--train-sampling-seed", type=int, default=None,
                     help="sampler seed；默认跟随 --seed")
     ap.add_argument("--K", type=int, default=DIRECT_NUM_MODES, choices=[DIRECT_NUM_MODES])
-    ap.add_argument("--bimamba", action=argparse.BooleanOptionalAction, default=False,
-                    help="主链固定单向(2026-09-12裁定)；旗标仅作用于encoder")
     ap.add_argument("--output-root", default="outputs/trajgap_bench")
     ap.add_argument(
         "--init-checkpoint",

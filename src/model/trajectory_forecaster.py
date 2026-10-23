@@ -1,160 +1,17 @@
-from typing import List
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from .layers.transformer_blocks import Block
 from .layers.structured_future_decoder import FutureDistributionDecoder
-from .layers.gast_encoder import GASTEncoder, AnchorGeoProjection, anchor_lag_norm
-from .layers.mamba.vim_mamba import init_weights, create_block
-from functools import partial
-from timm.models.layers import DropPath, to_2tuple
+from .layers.gast_encoder import GASTEncoder
+from .layers.mamba.vim_mamba import create_block
+from timm.models.layers import DropPath
 try:
     from mamba_ssm.ops.triton.layernorm import RMSNorm, layer_norm_fn, rms_norm_fn
 except ImportError:
     RMSNorm, layer_norm_fn, rms_norm_fn = None, None, None
 
 
-class SceneReasoningTail(nn.Module):
-    """Actor context and scene reasoning tail for GAST actor tokens.
-
-    GAST-PF 已经负责历史时空编码；该模块只恢复 M0 在编码后的场景推理，
-    不恢复 M0 的历史投影和历史 Mamba。残差系数从零开始，使开启该尾部时
-    的初始前向行为严格退化为输入 actor token。输入可以来自 DAP、双向末帧
-    读出或单向因果末帧读出。
-    """
-
-    def __init__(self, embed_dim, num_heads, mlp_ratio, qkv_bias,
-                 num_actor_types, drop_path, max_steps=8,
-                 evidence_conditioned=False):
-        super().__init__()
-        self.max_steps = max_steps
-        self.num_heads = num_heads
-        self.evidence_conditioned = bool(evidence_conditioned)
-        self.actor_context_projection = nn.Sequential(
-            nn.Linear(4, embed_dim),
-            nn.GELU(),
-            nn.Linear(embed_dim, embed_dim),
-        )
-        self.scene_interaction_blocks = nn.ModuleList(
-            Block(
-                dim=embed_dim,
-                num_heads=num_heads,
-                mlp_ratio=mlp_ratio,
-                qkv_bias=qkv_bias,
-                drop_path=drop_path,
-            )
-            for _ in range(5)
-        )
-        self.norm = nn.LayerNorm(embed_dim)
-        self.actor_type_embed = nn.Parameter(
-            torch.empty(num_actor_types, embed_dim)
-        )
-        self.residual_scale = nn.Parameter(torch.zeros(()))
-        if self.evidence_conditioned:
-            gate_hidden = max(embed_dim // 4, 16)
-            self.evidence_gate = nn.Sequential(
-                nn.Linear(2, gate_hidden),
-                nn.GELU(),
-                nn.Linear(gate_hidden, 1),
-            )
-        self._initialize_weights()
-        if self.evidence_conditioned:
-            nn.init.zeros_(self.evidence_gate[-1].weight)
-            nn.init.constant_(self.evidence_gate[-1].bias, 2.0)
-
-    def _initialize_weights(self):
-        nn.init.normal_(self.actor_type_embed, std=0.02)
-        for module in self.modules():
-            if isinstance(module, nn.Linear):
-                nn.init.xavier_uniform_(module.weight)
-                if module.bias is not None:
-                    nn.init.constant_(module.bias, 0)
-            elif isinstance(module, nn.LayerNorm):
-                nn.init.constant_(module.bias, 0)
-                nn.init.constant_(module.weight, 1.0)
-
-    @staticmethod
-    def _context_features(data, dtype):
-        centers = data["x_centers"].to(dtype)
-        if "x_last_valid_angle" in data:
-            angles = data["x_last_valid_angle"]
-        else:
-            angles = data["x_angles"][:, :, -1]
-        angles = angles.to(dtype)
-        direction = torch.stack([torch.cos(angles), torch.sin(angles)], dim=-1)
-        return torch.cat([centers, direction], dim=-1)
-
-    def _build_evidence_attention_mask(self, reliability, key_padding_mask):
-        key_reliability = reliability.clamp(min=1e-4, max=1.0)
-        key_bias = torch.log(key_reliability)
-        key_bias = key_bias.unsqueeze(1).expand(-1, key_bias.shape[-1], -1)
-        key_bias = key_bias.masked_fill(
-            key_padding_mask.unsqueeze(1), float("-inf")
-        )
-        return key_bias.repeat_interleave(self.num_heads, dim=0)
-
-    def _evidence_fusion_gate(self, reliability, age):
-        age_scale = max(self.max_steps - 1, 1)
-        features = torch.stack(
-            [reliability, (age / age_scale).clamp(min=0.0, max=1.0)],
-            dim=-1,
-        )
-        return torch.sigmoid(self.evidence_gate(features)).squeeze(-1)
-
-    def forward(self, actor_feat, data, key_padding_mask,
-                evidence_state=None):
-        valid = (~key_padding_mask).unsqueeze(-1).to(actor_feat.dtype)
-        context = self.actor_context_projection(
-            self._context_features(data, actor_feat.dtype)
-        )
-        actor_type = self.actor_type_embed[data["x_attr"][..., 2].long()]
-        scene_feat = (actor_feat + context + actor_type) * valid
-        attention_mask = None
-        fusion_gate = torch.ones(
-            actor_feat.shape[:2], dtype=actor_feat.dtype, device=actor_feat.device
-        )
-        if self.evidence_conditioned:
-            if evidence_state is None:
-                raise ValueError(
-                    "evidence-conditioned scene tail requires evidence_state"
-                )
-            reliability = evidence_state["reliability"][..., -1].to(actor_feat.dtype)
-            age = evidence_state["age"][..., -1].to(actor_feat.dtype)
-            attention_mask = self._build_evidence_attention_mask(
-                reliability, key_padding_mask
-            ).to(actor_feat.dtype)
-            fusion_gate = self._evidence_fusion_gate(reliability, age)
-        for block in self.scene_interaction_blocks:
-            scene_feat = block(
-                scene_feat,
-                mask=attention_mask,
-                key_padding_mask=(
-                    None if self.evidence_conditioned else key_padding_mask
-                ),
-            )
-            scene_feat = scene_feat * valid
-        scene_feat = self.norm(scene_feat) * valid
-        output = actor_feat + self.residual_scale * fusion_gate.unsqueeze(-1) * (
-            scene_feat - actor_feat
-        )
-        if self.evidence_conditioned:
-            return output * valid
-        return output
-
-
-class EvidenceGatedSceneTail(SceneReasoningTail):
-    """EGST: Evidence-Gated Scene Reasoning Tail."""
-
-    def __init__(self, *args, **kwargs):
-        kwargs["evidence_conditioned"] = True
-        super().__init__(*args, **kwargs)
-
-
-# Historical name retained for old checkpoints and external scripts.
-M0SceneInteractionTail = SceneReasoningTail
-
-
-# Actor-centric trajectory forecaster. The legacy class name was ModelForecast.
+# Actor-centric trajectory forecaster.
 class TrajectoryForecaster(nn.Module):
     def __init__(
         self,
@@ -172,141 +29,37 @@ class TrajectoryForecaster(nn.Module):
         encoder_type: str = "m0",
         gast_depth: int = 4,
         gast_gsm_operator: str = "max",
-        gast_anchor_geo: bool = False,
-        gast_frame_geo: bool = False,
-        gast_ecsr: bool = False,
-        gast_directional_readout: bool = False,
-        gast_scene_reasoning_tail: bool = False,
-        gast_m0_scene_tail: bool | None = None,
-        gast_hierarchical_evidence: bool = False,
         gast_oer_spatial: bool = False,
         gast_emc_temporal: bool = False,
         gast_ewhr_readout: bool = False,
-        gast_egst_tail: bool = False,
-        gast_oehsr: bool = False,
-        gast_temporal_direction: str = "bidirectional",
-        utenc_depth: int = None,
-        utenc_gsm_operator: str = None,
+        gast_temporal_direction: str = "unidirectional",
     ) -> None:
         super().__init__()
         self.future_steps = future_steps
         self.dt = dt
         self.num_actor_types = num_actor_types
         self.obs_len = obs_len
-        encoder_aliases = {"utenc": "gast"}
-        if encoder_type not in {"m0", "gast", "utenc"}:
+        if encoder_type not in {"m0", "gast"}:
             raise ValueError(f"unsupported encoder_type={encoder_type!r}")
-        self.encoder_type = encoder_aliases.get(encoder_type, encoder_type)
-
-        # Stage 1 AnchorGeo（默认关闭）：把 anchor 空间与末端方向证据接入
-        # GAST-PF 的 actor 输出端。关闭时模块不注册，基础版本行为与 state_dict
-        # 完全不变。
-        self.gast_anchor_geo = bool(gast_anchor_geo)
-        self.anchor_geo_projection = None
-
-        # Stage 2 FrameGeo（默认关闭）：把逐帧相对位置显式送入 GSM。
-        # 只在 GAST-PF 路径生效；M0 历史投影保持 4 维。
-        self.gast_frame_geo = bool(gast_frame_geo) and self.encoder_type == "gast"
-        legacy_evidence = bool(gast_ecsr)
-        legacy_hierarchical = bool(gast_hierarchical_evidence)
-        self.gast_oer_spatial = (
-            bool(gast_oer_spatial) or legacy_evidence
-        ) and self.encoder_type == "gast"
-        self.gast_emc_temporal = (
-            bool(gast_emc_temporal) or legacy_evidence
-        ) and self.encoder_type == "gast"
-        self.gast_ewhr_readout = (
-            bool(gast_ewhr_readout) or legacy_evidence
-        ) and self.encoder_type == "gast"
-        self.gast_egst_tail = (
-            bool(gast_egst_tail) or legacy_hierarchical
-        ) and self.encoder_type == "gast"
-        self.gast_scene_reasoning_tail = (
-            bool(gast_scene_reasoning_tail or gast_m0_scene_tail)
-            and self.encoder_type == "gast"
+        self.encoder_type = encoder_type
+        self.gast_temporal_direction = gast_temporal_direction
+        if self.gast_temporal_direction != "unidirectional":
+            raise ValueError("GAST-PF supports only unidirectional temporal encoding")
+        self.gast_oer_spatial = bool(gast_oer_spatial) and encoder_type == "gast"
+        self.gast_emc_temporal = bool(gast_emc_temporal) and encoder_type == "gast"
+        self.gast_ewhr_readout = bool(gast_ewhr_readout) and encoder_type == "gast"
+        evidence_switches = (
+            self.gast_oer_spatial,
+            self.gast_emc_temporal,
+            self.gast_ewhr_readout,
         )
-        # Compatibility attribute for old experiment manifests/checkpoints.
-        self.gast_m0_scene_tail = self.gast_scene_reasoning_tail
-        self.gast_oehsr = (
-            bool(gast_oehsr) or legacy_hierarchical
-        ) and self.encoder_type == "gast"
-        if self.gast_oehsr:
-            self.gast_oer_spatial = True
-            self.gast_emc_temporal = True
-            self.gast_ewhr_readout = True
-            self.gast_egst_tail = True
-            self.gast_scene_reasoning_tail = True
-            self.gast_m0_scene_tail = True
-        self.gast_observation_evidence_enabled = any(
-            (self.gast_oer_spatial, self.gast_emc_temporal, self.gast_ewhr_readout)
+        if any(evidence_switches) and not all(evidence_switches):
+            raise ValueError("UniOER enables OER, EMC, and EWHR together")
+        self.gast_method_name = (
+            "GAST-PF-UniOER" if all(evidence_switches)
+            else ("GAST-PF-Uni" if encoder_type == "gast" else "M0")
         )
-        self.gast_ecsr = self.gast_observation_evidence_enabled
-        self.gast_directional_readout = (
-            bool(gast_directional_readout) and self.encoder_type == "gast"
-        )
-        self.gast_hierarchical_evidence = self.gast_oehsr
-        temporal_direction_aliases = {
-            "bi": "bidirectional",
-            "bidir": "bidirectional",
-            "uni": "unidirectional",
-            "causal": "unidirectional",
-        }
-        self.gast_temporal_direction = temporal_direction_aliases.get(
-            gast_temporal_direction, gast_temporal_direction
-        )
-        if self.gast_temporal_direction not in {
-            "bidirectional", "unidirectional"
-        }:
-            raise ValueError(
-                "gast_temporal_direction must be 'bidirectional' or "
-                f"'unidirectional', got {gast_temporal_direction!r}"
-            )
-        if (
-            self.gast_directional_readout
-            and self.gast_temporal_direction != "bidirectional"
-        ):
-            raise ValueError(
-                "gast_directional_readout requires "
-                "gast_temporal_direction='bidirectional'"
-            )
-        if self.gast_oer_spatial and (
-            self.gast_anchor_geo or self.gast_frame_geo or self.gast_directional_readout
-        ):
-            raise ValueError(
-                "gast_oer_spatial is mutually exclusive with geometry and "
-                "directional-readout variants"
-            )
-        if self.gast_oehsr and not self.gast_observation_evidence_enabled:
-            raise ValueError(
-                "gast_oehsr requires at least one observation-evidence encoder module"
-            )
-        if self.gast_egst_tail and not self.gast_scene_reasoning_tail:
-            raise ValueError(
-                "gast_egst_tail requires gast_scene_reasoning_tail=True"
-            )
-        if self.gast_egst_tail and not self.gast_observation_evidence_enabled:
-            raise ValueError(
-                "gast_egst_tail requires an observation-evidence encoder module"
-            )
-        if (
-            self.gast_oehsr
-            and self.gast_temporal_direction != "unidirectional"
-        ):
-            raise ValueError(
-                "gast_oehsr requires unidirectional temporal encoding"
-            )
-
-        # Keep old configuration keys loadable while making GAST-PF the
-        # public/current name.
-        if utenc_depth is not None:
-            gast_depth = utenc_depth
-        if utenc_gsm_operator is not None:
-            gast_gsm_operator = utenc_gsm_operator
-
         hist_input_dim = 4
-        # Stage 2：FrameGeo 把历史输入从 4 维扩到 6 维
-        # [x_positions_diff(2), x_velocity_diff(1), valid_mask(1), relative_position(2)]。
-        gast_input_dim = 6 if self.gast_frame_geo else hist_input_dim
 
         if self.encoder_type == "m0":
             # M0 history encoder. These modules are deliberately absent from
@@ -348,18 +101,14 @@ class TrajectoryForecaster(nn.Module):
             self.norm = nn.LayerNorm(embed_dim)
             self.actor_type_embed = nn.Parameter(torch.Tensor(num_actor_types, embed_dim))
 
-        # Legacy attribute: dense_predictor.
         self.neighbor_prediction_head = nn.Sequential(
             nn.Linear(embed_dim, 256), nn.GELU(), nn.Linear(256, future_steps * 2)
         )
 
-        # Legacy attribute: time_embedding_mlp.
         self.future_time_embedding = nn.Sequential(
             nn.Linear(1, 64), nn.GELU(), nn.Linear(64, embed_dim)
         )
 
-        # Legacy attribute: time_decoder. Protected Mode Query, State Query,
-        # and Hybrid Coupling terminology remains unchanged.
         self.future_decoder = FutureDistributionDecoder(
             future_len=future_steps, dim=embed_dim, num_modes=num_modes
         )
@@ -373,7 +122,7 @@ class TrajectoryForecaster(nn.Module):
             # RNG 流起步，不污染主链。GAST-PF 前向中不使用 M0 历史栈参数。
             rng_state = torch.random.get_rng_state()
             self.gast_encoder = GASTEncoder(
-                input_dim=gast_input_dim,
+                input_dim=hist_input_dim,
                 embed_dim=embed_dim,
                 num_heads=num_heads,
                 depth=gast_depth,
@@ -383,39 +132,8 @@ class TrajectoryForecaster(nn.Module):
                 observation_evidence_spatial=self.gast_oer_spatial,
                 evidence_modulated_temporal=self.gast_emc_temporal,
                 evidence_weighted_readout=self.gast_ewhr_readout,
-                hierarchical_scene_reasoning=self.gast_oehsr,
-                directional_readout=self.gast_directional_readout,
-                max_steps=obs_len,
-                temporal_direction=self.gast_temporal_direction,
             )
             torch.random.set_rng_state(rng_state)
-            if self.gast_anchor_geo:
-                # Stage 1 AnchorGeo：与 gast_encoder 同处 RNG save/restore 内构造，
-                # 保证开启/关闭两臂的其余参数逐位一致（配对初始化纪律）。
-                rng_state = torch.random.get_rng_state()
-                self.anchor_geo_projection = AnchorGeoProjection(
-                    embed_dim=embed_dim, geo_dim=5, p_dropout=0.2
-                )
-                torch.random.set_rng_state(rng_state)
-            if self.gast_scene_reasoning_tail:
-                # The tail is an independent branch. Restore the RNG state so
-                # adding it cannot alter any shared GAST initialization.
-                rng_state = torch.random.get_rng_state()
-                tail_cls = (
-                    EvidenceGatedSceneTail
-                    if self.gast_egst_tail else SceneReasoningTail
-                )
-                self.gast_scene_tail = tail_cls(
-                    embed_dim=embed_dim,
-                    num_heads=num_heads,
-                    mlp_ratio=mlp_ratio,
-                    qkv_bias=qkv_bias,
-                    num_actor_types=num_actor_types,
-                    drop_path=drop_path,
-                    max_steps=obs_len,
-                    evidence_conditioned=self.gast_egst_tail,
-                )
-                torch.random.set_rng_state(rng_state)
 
     def initialize_weights(self):
         if hasattr(self, "actor_type_embed"):
@@ -452,7 +170,7 @@ class TrajectoryForecaster(nn.Module):
         self, state_dict, prefix, local_metadata, strict,
         missing_keys, unexpected_keys, error_msgs,
     ):
-        """Migrate legacy parameter paths during direct or Lightning resume loads."""
+        """Migrate decoder and head parameter paths from earlier checkpoints."""
         replacements = (
             ("hist_embed_mlp.", "history_input_projection."),
             ("pos_embed.", "actor_context_projection."),
@@ -487,8 +205,6 @@ class TrajectoryForecaster(nn.Module):
                 continue
             relative = key[len(prefix):]
             migrated = relative
-            if migrated.startswith("unitraj_encoder."):
-                migrated = "gast_encoder." + migrated[len("unitraj_encoder."):]
             for old, new in replacements:
                 if migrated.startswith(old):
                     migrated = new + migrated[len(old):]
@@ -502,51 +218,7 @@ class TrajectoryForecaster(nn.Module):
             missing_keys, unexpected_keys, error_msgs,
         )
 
-    @property
-    def time_decoder(self):
-        """Legacy attribute alias for the future distribution decoder."""
-        return self.future_decoder
-
-    @property
-    def unitraj_encoder(self):
-        """Legacy attribute alias for the pre-GAST-PF encoder name."""
-        return self.gast_encoder
-
-    @staticmethod
-    def _anchor_geo_features(data, valid_mask):
-        """Stage 1 AnchorGeo 几何输入 [B, N, 5]。
-
-        [x_centers(2), cos(last_valid_angle), sin(last_valid_angle),
-         anchor_lag_norm(1)]。anchor_lag 由 x_valid_mask 在模型侧计算，
-        全部量只来自可见历史，不含 future target / future validity。
-        """
-        centers = data["x_centers"]
-        if "x_last_valid_angle" in data:
-            angles = data["x_last_valid_angle"]
-        else:
-            angles = data["x_angles"][:, :, -1]
-        trig = torch.stack([torch.cos(angles), torch.sin(angles)], dim=-1)
-        lag = anchor_lag_norm(valid_mask).to(centers.dtype)
-        return torch.cat([centers.to(centers.dtype), trig.to(centers.dtype), lag], dim=-1)
-
-    @staticmethod
-    def _frame_geo_features(data, valid_mask):
-        """Stage 2 FrameGeo：逐帧相对位置 [B, N, T, 2]。
-
-        `relative_position_i,t = x_positions_i,t - x_centers_i`
-        （x_centers 为该 actor 最后有效位置，即 anchor）。
-
-        **缺失帧必须置零**：数据层把缺失历史的 x_positions 填成 0 占位，
-        直接相减会得到 `-x_centers` 的伪几何，因此按 valid_mask 归零；
-        有效性本身仍由 hist_feat 里的 valid_mask 通道表达。
-        """
-        rel = data["x_positions"] - data["x_centers"].unsqueeze(2)
-        keep = valid_mask.unsqueeze(-1).to(rel.dtype)
-        return rel * keep
-
     def forward(self, data):
-        ###### Scene context encoding ###### 
-        # agent encoding
         hist_valid_mask = data["x_valid_mask"]
         hist_key_valid_mask = data["x_key_valid_mask"]
 
@@ -556,52 +228,16 @@ class TrajectoryForecaster(nn.Module):
             hist_valid_mask[..., None],
         ], dim=-1)
 
-        if self.gast_frame_geo:
-            # Stage 2 FrameGeo：把逐帧相对位置追加为第 5-6 通道，
-            # 让 GSM 在每一帧就看到显式几何，而不是只在末端 token 上补位置。
-            hist_feat = torch.cat(
-                [hist_feat, self._frame_geo_features(data, hist_valid_mask)],
-                dim=-1,
-            )
-
         B, N, L, D = hist_feat.shape
         hist_key_valid_flat = hist_key_valid_mask.view(B * N)
-        key_valid_mask = data["x_key_valid_mask"]
 
         if self.encoder_type == "gast":
-            # GAST-PF encoder: spatial interaction + gap decay + configured
-            # temporal direction, followed by its matching actor readout.
-            # 替换 M0 的 history_input_projection + hist_embed_mamba + 取末态 +
-            # scene_interaction_blocks；输出 [B, N, embed_dim]（padding 置零）。
-            encoder_result = self.gast_encoder(
+            x_encoder = self.gast_encoder(
                 hist_feat,
                 hist_valid_mask,
                 ~hist_key_valid_mask,
-                positions=(
-                    data["x_positions"] if self.gast_oer_spatial else None
-                ),
-                return_evidence=self.gast_egst_tail,
+                positions=data["x_positions"] if self.gast_oer_spatial else None,
             )
-            if self.gast_egst_tail:
-                actor_feat, evidence_state = encoder_result
-            else:
-                actor_feat = encoder_result
-                evidence_state = None
-            if self.anchor_geo_projection is not None:
-                # Stage 1 AnchorGeo：只在 actor 输出端叠加几何证据，
-                # 不改 GSM attention，不改 decoder 输入维度。
-                geo = self._anchor_geo_features(data, hist_valid_mask)
-                actor_feat = actor_feat + self.anchor_geo_projection(
-                    geo, ~hist_key_valid_mask
-                )
-            if self.gast_scene_reasoning_tail:
-                actor_feat = self.gast_scene_tail(
-                    actor_feat,
-                    data,
-                    ~hist_key_valid_mask,
-                    evidence_state=evidence_state,
-                )
-            x_encoder = actor_feat
         else:
             # unidirectional mamba（M0 原版路径）
             hist_feat = hist_feat.view(B * N, L, D)
@@ -641,7 +277,7 @@ class TrajectoryForecaster(nn.Module):
             actor_feat = actor_feat + actor_type_embed
             x_encoder = actor_feat + pos_embed
             for blk in self.scene_interaction_blocks:
-                x_encoder = blk(x_encoder, key_padding_mask=~key_valid_mask)
+                x_encoder = blk(x_encoder, key_padding_mask=~hist_key_valid_mask)
             x_encoder = self.norm(x_encoder)
 
         ###### Trajectory decoding with decoupled queries ###### 
@@ -670,7 +306,7 @@ class TrajectoryForecaster(nn.Module):
 
         # decoder module with decoupled queries
         dense_predict, y_hat, pi, x_mode, new_y_hat, new_pi, mode_dense, scal, scal_new = \
-        self.future_decoder(mode, x_encoder, mask=~key_valid_mask)
+        self.future_decoder(mode, x_encoder, mask=~hist_key_valid_mask)
 
         ret_dict = {
             "y_hat": y_hat,  # trajectory output from mode query
