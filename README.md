@@ -2,7 +2,7 @@
 
 GAST-PF（Gap-Aware Spatio-Temporal Pedestrian Forecaster）是面向不完整历史观测的行人未来轨迹预测研究代码库，当前覆盖 ETH/UCY、SDD 和 TrajImpute 缺失历史数据协议，采用无地图/车道的 actor-only 预测设置。
 
-- 模型：当前主模型为 `GAST-PF-UniOER`，由 `TrajectoryForecaster` 和 `FutureDistributionDecoder` 组成；GAST 编码器固定使用单向 Mamba，M0 保留原始场景交互基线
+- 模型：当前主模型正式命名为 `GAST`，由 `TrajectoryForecaster` 和 `FutureDistributionDecoder` 组成；GAST 编码器固定使用单向 Mamba，M0 保留原始场景交互基线。旧实验标签 `GAST-PF-UniOER` 仍可用于复现实验产物
 - 数据：ETH/UCY 5 折留一（LOO）+ SDD 原始协议；缺失历史主线使用 TrajImpute 官方 Easy/Hard release
 - 研究范围：缺失历史条件下的直接未来预测，不执行历史轨迹插补
 
@@ -50,7 +50,7 @@ python eval.py checkpoint='/path/to/ckpt' test=true
 
 # TrajImpute Easy/Hard direct 缺失历史训练
 PYTHONNOUSERSITE=1 PYTHONPATH=. python scripts/训练与评估/run_trajimpute_experiments.py \
-    --protocol mixed-direct --variant GAST-PF \
+    --protocol mixed-direct --variant GAST \
     --scenes ETH-M HOTEL-M UNIV-M ZARA1-M ZARA2-M --gpu 0
 ```
 
@@ -76,8 +76,9 @@ docs/                 研究文档、实验结果、审计报告、数据集说�
 ## 方法名称
 
 ```text
-GAST-PF = Gap-Aware Spatio-Temporal Pedestrian Forecaster
+GAST = Gap-Aware Spatio-Temporal Pedestrian Forecaster
 中文：缺失间隔感知时空行人轨迹预测模型
+旧仓库名：GAST-PF（仅作为代码仓库与历史产物前缀保留）
 ```
 
 致谢：[VideoMamba](https://github.com/OpenGVLab/VideoMamba)、[Forecast-MAE](https://github.com/jchengai/forecast-mae)、[StreamPETR](https://github.com/exiawsh/StreamPETR)

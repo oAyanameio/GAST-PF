@@ -25,7 +25,7 @@ GAST-PF 的 decoder、loss、指标与 TrajGap 协议保持不变。
    Temporal_Decay 的 exp(-ReLU(Linear(.))) 衰减头，宽度=embed_dim。
 5. 宽度：model_dim 由源默认 64 提到 128，与 GAST-PF decoder 隐藏维对齐，省去接口
    投影；参数量变化须记录在实验 manifest。
-6. 时序方向：固定采用因果单向 Mamba，并由 Uni 或 UniOER 的读出规则生成 actor 表示。
+6. 时序方向：固定采用因果单向 Mamba，并由 Uni 或 GAST 的读出规则生成 actor 表示。
 """
 
 import torch
@@ -376,7 +376,7 @@ class TemporalEncoder(nn.Module):
 
 
 class ReliabilityModulatedCausalMamba(TemporalEncoder):
-    """Temporal stage used by the UniOER model."""
+    """Reliability-modulated temporal stage used by GAST."""
 
 
 class TemporalDecay(nn.Module):
@@ -399,7 +399,7 @@ class TemporalDecay(nn.Module):
 
 
 class GASTEncoder(nn.Module):
-    """Unidirectional GAST encoder with optional UniOER evidence modules."""
+    """Unidirectional GAST encoder with observation-evidence modules."""
 
     def __init__(
         self,
@@ -434,7 +434,7 @@ class GASTEncoder(nn.Module):
             self.evidence_modulated_temporal,
             self.evidence_weighted_readout,
         )):
-            raise ValueError("UniOER enables all three evidence modules together")
+            raise ValueError("GAST enables all three evidence modules together")
 
         spatial_cls = (
             GeometryEvidenceRelationalGSM

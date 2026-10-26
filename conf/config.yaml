@@ -1,4 +1,4 @@
-# 主入口默认配置：GAST-PF TrajImpute 直接缺失预测；M0 通过显式 override 作为对照。
+# 主入口默认配置：GAST TrajImpute 直接缺失预测；M0 通过显式 override 作为对照。
 # 2026-09-13：自建 ETHUCY_benchmark_v1 已作废删除（重切窗口偏离预定义 LOO 划分），
 # 本配置默认指向 TrajImpute 官方 release；完整历史 Clean 参照直接引用原论文数字。
 defaults:
@@ -33,7 +33,7 @@ batch_size: 64
 epochs: 100
 warmup_epochs: 5
 precision: bf16
-# GAST-PF 主链使用内部前向/反向时序状态编码；bimamba 仅用于 M0 对照路径。
+# GAST 主链使用证据调制的因果单向时序编码；bimamba 仅用于 M0 对照路径。
 bimamba: false
 
 # optimizer
@@ -48,7 +48,7 @@ limit_test_batches:
 log_model: all
 test: false
 
-model_version: 'GAST-PF'
+model_version: 'GAST'
 
 model:
   target:

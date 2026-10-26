@@ -3,7 +3,7 @@
 # 用法（单场景 Mixed smoke）：
 #   PYTHONPATH=. python train.py --config-name=config_missing_aware_trajimpute \
 #     scene=ETH-M difficulty=Mixed train_difficulties=[Mixed] val_difficulties=[Mixed] \
-#     hydra.run.dir=outputs/trajgap_smoke/GAST-PF_ETH-M
+#     hydra.run.dir=outputs/trajgap_smoke/GAST_ETH-M
 defaults:
   - datamodule: trajimpute
   - model: missing_aware_ethucy_model_forecast
@@ -44,13 +44,13 @@ batch_size: 64
 epochs: 100
 warmup_epochs: 5
 precision: bf16
-# 主链 K=20 配置：正式模型 GAST-PF 的时序编码由内部前向/反向状态分支完成；
+# 主链 K=20 配置：正式模型 GAST 的时序编码使用因果单向状态分支；
 # bimamba 仅在显式切换到 M0 时作用于 M0 的历史编码器。
 # 旧 uni/bi 对照产物继续保留在 outputs/ 中，不作为当前默认实验入口。
 bimamba: false
 
 # optimizer
-# GAST-PF 基础策略：AdamW 参数分组覆盖所有可训练参数；自定义 mixer/RMSNorm
+# GAST 基础策略：AdamW 参数分组覆盖所有可训练参数；自定义 mixer/RMSNorm
 # 不在 decay 白名单时进入 no-decay 组，不允许被静默遗漏。
 lr: 0.001
 weight_decay: 0.0001
@@ -64,7 +64,7 @@ log_model: all
 test: false
 
 # 模型版本标签（仅用于 output 命名）；M0 对照运行时显式覆盖为 M0。
-model_version: 'GAST-PF'
+model_version: 'GAST'
 
 # TrajImpute 原始评估脚本使用 best-of-20；该覆盖只作用于 direct 配置，
 # 历史 ETH/UCY train_adapt 配置保持 K=6。

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from .layers.transformer_blocks import Block
 from .layers.structured_future_decoder import FutureDistributionDecoder
+from .layers.gast_goal_decoder import GapAwareGoalDecoder
 from .layers.gast_encoder import GASTEncoder
 from .layers.mamba.vim_mamba import create_block
 from timm.models.layers import DropPath
@@ -33,12 +34,32 @@ class TrajectoryForecaster(nn.Module):
         gast_emc_temporal: bool = False,
         gast_ewhr_readout: bool = False,
         gast_temporal_direction: str = "unidirectional",
+        gast_goal: bool = False,
+        goal_endpoint_loss_weight: float = 1.0,
+        mode_diversity_loss_weight: float = 0.05,
+        mode_diversity_margin: float = 0.5,
+        classification_target_mode: str = "joint",
+        loss_mode: str = "legacy",
     ) -> None:
         super().__init__()
         self.future_steps = future_steps
+        self.num_modes = num_modes
         self.dt = dt
         self.num_actor_types = num_actor_types
         self.obs_len = obs_len
+        self.gast_goal = bool(gast_goal)
+        self.goal_endpoint_loss_weight = float(goal_endpoint_loss_weight)
+        self.mode_diversity_loss_weight = float(mode_diversity_loss_weight)
+        self.mode_diversity_margin = float(mode_diversity_margin)
+        if classification_target_mode not in {"joint", "trajectory"}:
+            raise ValueError(
+                "classification_target_mode must be 'joint' or 'trajectory', "
+                f"got {classification_target_mode!r}"
+            )
+        self.classification_target_mode = classification_target_mode
+        if loss_mode not in {"legacy", "final_consistent"}:
+            raise ValueError(f"unsupported loss_mode={loss_mode!r}")
+        self.loss_mode = loss_mode
         if encoder_type not in {"m0", "gast"}:
             raise ValueError(f"unsupported encoder_type={encoder_type!r}")
         self.encoder_type = encoder_type
@@ -54,11 +75,15 @@ class TrajectoryForecaster(nn.Module):
             self.gast_ewhr_readout,
         )
         if any(evidence_switches) and not all(evidence_switches):
-            raise ValueError("UniOER enables OER, EMC, and EWHR together")
-        self.gast_method_name = (
-            "GAST-PF-UniOER" if all(evidence_switches)
-            else ("GAST-PF-Uni" if encoder_type == "gast" else "M0")
-        )
+            raise ValueError("GAST enables OER, EMC, and EWHR together")
+        if self.gast_goal and (encoder_type != "gast" or not all(evidence_switches)):
+            raise ValueError("GAST-Goal requires the complete GAST encoder")
+        if self.gast_goal:
+            self.gast_method_name = "GAST-Goal"
+        elif all(evidence_switches):
+            self.gast_method_name = "GAST"
+        else:
+            self.gast_method_name = "GAST-PF-Uni" if encoder_type == "gast" else "M0"
         hist_input_dim = 4
 
         if self.encoder_type == "m0":
@@ -104,23 +129,32 @@ class TrajectoryForecaster(nn.Module):
         self.neighbor_prediction_head = nn.Sequential(
             nn.Linear(embed_dim, 256), nn.GELU(), nn.Linear(256, future_steps * 2)
         )
-
-        self.future_time_embedding = nn.Sequential(
-            nn.Linear(1, 64), nn.GELU(), nn.Linear(64, embed_dim)
+        gast_encoder_rng_state = (
+            torch.random.get_rng_state() if self.encoder_type == "gast" else None
         )
 
-        self.future_decoder = FutureDistributionDecoder(
-            future_len=future_steps, dim=embed_dim, num_modes=num_modes
-        )
-
+        if not self.gast_goal:
+            self.future_time_embedding = nn.Sequential(
+                nn.Linear(1, 64), nn.GELU(), nn.Linear(64, embed_dim)
+            )
+            self.future_decoder = FutureDistributionDecoder(
+                future_len=future_steps, dim=embed_dim, num_modes=num_modes
+            )
+        else:
+            self.goal_decoder = GapAwareGoalDecoder(
+                future_steps=future_steps,
+                dim=embed_dim,
+                num_modes=num_modes,
+                num_heads=num_heads,
+                dt=dt,
+            )
         self.initialize_weights()
 
         if self.encoder_type == "gast":
-            # GAST-PF 缺失间隔感知时空编码器：
-            # 在 initialize_weights 之后、RNG save/restore 内构造——同 seed 下
-            # 共享模块初始值与 M0 逐位一致（配对初始化纪律），借鉴臂从自身
-            # RNG 流起步，不污染主链。GAST-PF 前向中不使用 M0 历史栈参数。
+            # Isolate encoder initialization from decoder architecture so GAST
+            # and GAST-Goal share identical encoder weights under the same seed.
             rng_state = torch.random.get_rng_state()
+            torch.random.set_rng_state(gast_encoder_rng_state)
             self.gast_encoder = GASTEncoder(
                 input_dim=hist_input_dim,
                 embed_dim=embed_dim,
@@ -295,6 +329,30 @@ class TrajectoryForecaster(nn.Module):
         else:
             y_hat_others = x_encoder.new_zeros((B, 0, self.future_steps, 2))
 
+
+        # Goal-conditioned decoder uses the last valid observation and the
+        # actual forecast gap. The legacy decoder remains untouched otherwise.
+        if self.gast_goal:
+            goal_out = self.goal_decoder(
+                x_encoder,
+                data,
+                actor_padding_mask=~hist_key_valid_mask,
+            )
+            return {
+                "y_hat": goal_out["trajectories"],
+                "pi": goal_out["scores"],
+                "scal": goal_out["scales"],
+                "dense_predict": None,
+                "y_hat_others": y_hat_others,
+                "new_y_hat": goal_out["trajectories"],
+                "new_pi": goal_out["scores"],
+                "scal_new": goal_out["scales"],
+                "goal_conditioned": True,
+                "goal_endpoints": goal_out["endpoints"],
+                "goal_anchor": goal_out["anchor"],
+                "goal_delta": goal_out["goal_delta"],
+                "goal_future_time_seconds": goal_out["future_time_seconds"],
+            }
 
         # state query initialization
         # dt 参数化：ETH/UCY 与 SDD 均为 0.4s/帧（frame stride=10 @ 2.5Hz）

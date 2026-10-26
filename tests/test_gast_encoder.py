@@ -117,9 +117,17 @@ def test_training_and_evaluation_expose_only_selected_variants():
     )
     from scripts.结果分析.evaluate_trajimpute_direct import VARIANTS as eval_variants
 
-    assert DEFAULT_VARIANT == "GAST-PF-UniOER"
-    assert set(train_variants) == {"M0", "GAST-PF-Uni", "GAST-PF-UniOER"}
+    assert DEFAULT_VARIANT == "GAST"
+    assert set(train_variants) == {
+        "M0", "GAST-PF-Uni", "GAST", "GAST-Goal",
+        "GAST-Goal-TrajCls", "GAST-PF-UniOER",
+    }
     assert train_variants.keys() == eval_variants.keys()
+    assert train_variants["GAST"] == eval_variants["GAST"]
+    assert train_variants["GAST-Goal"] == eval_variants["GAST-Goal"]
+    assert train_variants["GAST-Goal-TrajCls"] == eval_variants["GAST-Goal-TrajCls"]
+    assert train_variants["GAST-Goal"]["classification_target_mode"] == "joint"
+    assert train_variants["GAST-Goal-TrajCls"]["classification_target_mode"] == "trajectory"
     assert train_variants["GAST-PF-UniOER"] == eval_variants["GAST-PF-UniOER"]
 
 
@@ -139,6 +147,6 @@ def test_forecaster_registers_unioer_and_preserves_m0_state_dict():
         gast_emc_temporal=True,
         gast_ewhr_readout=True,
     )
-    assert model.gast_method_name == "GAST-PF-UniOER"
+    assert model.gast_method_name == "GAST"
     assert not hasattr(model, "gast_scene_tail")
     assert not any(key.startswith("history_input_projection.") for key in model.state_dict())

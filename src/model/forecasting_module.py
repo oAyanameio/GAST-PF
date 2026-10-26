@@ -12,6 +12,7 @@ from src.metrics import MR, minADE, minFDE, brier_minFDE
 from src.utils.optim import WarmupCosLR
 from src.utils.LaplaceNLLLoss import LaplaceNLLLoss
 from .trajectory_forecaster import TrajectoryForecaster, ModelForecast
+from .trajectory_loss import final_consistent_loss
 
 
 def _log_detach(x):
@@ -86,6 +87,18 @@ class ForecastingLightningModule(pl.LightningModule):
 
         return predictions, probs
 
+    def _cal_loss_final_consistent(self, out, data, tag=''):
+        return final_consistent_loss(
+            out=out,
+            data=data,
+            laplace_loss=self.laplace_loss,
+            endpoint_loss_weight=self.net.goal_endpoint_loss_weight,
+            mode_diversity_loss_weight=self.net.mode_diversity_loss_weight,
+            mode_diversity_margin=self.net.mode_diversity_margin,
+            classification_target_mode=self.net.classification_target_mode,
+            tag=tag,
+        )
+
     def cal_loss(self, out, data, tag=''):
         y_hat, pi, y_hat_others = out["y_hat"], out["pi"], out["y_hat_others"]
         scal, scal_new = out["scal"], out["scal_new"]
@@ -95,6 +108,9 @@ class ForecastingLightningModule(pl.LightningModule):
 
         # gt
         y, y_others = data["target"][:, 0], data["target"][:, 1:]
+
+        if self.net.loss_mode == "final_consistent":
+            return self._cal_loss_final_consistent(out, data, tag=tag)
 
         # loss for output of state query
         if dense_predict is not None:

@@ -35,6 +35,12 @@ def main():
         "gast_oer_spatial": True,
         "gast_emc_temporal": True,
         "gast_ewhr_readout": True,
+        "gast_goal": False,
+        "loss_mode": "final_consistent",
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05,
+        "mode_diversity_margin": 0.5,
+        "classification_target_mode": "joint",
     }
     actual = {
         "monitor": root_config.get("monitor"),
@@ -45,18 +51,31 @@ def main():
     }
     problems = [f"{key}: expected {value!r}, found {actual.get(key)!r}"
                 for key, value in expected.items() if actual.get(key) != value]
-    if DEFAULT_VARIANT != "GAST-PF-UniOER":
+    if DEFAULT_VARIANT != "GAST":
         problems.append(f"default variant is {DEFAULT_VARIANT!r}")
     if TRAIN_VARIANTS.keys() != EVAL_VARIANTS.keys():
         problems.append("training and evaluation variant registries differ")
-    if set(TRAIN_VARIANTS) != {"M0", "GAST-PF-Uni", "GAST-PF-UniOER"}:
+    if set(TRAIN_VARIANTS) != {
+        "M0", "GAST-PF-Uni", "GAST", "GAST-Goal",
+        "GAST-Goal-TrajCls", "GAST-PF-UniOER"
+    }:
         problems.append(f"unexpected active variants: {sorted(TRAIN_VARIANTS)}")
+    if TRAIN_VARIANTS.get("GAST") != EVAL_VARIANTS.get("GAST"):
+        problems.append("GAST training and evaluation loss/model settings differ")
+    if TRAIN_VARIANTS.get("GAST-Goal") != EVAL_VARIANTS.get("GAST-Goal"):
+        problems.append("GAST-Goal training and evaluation loss/model settings differ")
+    if TRAIN_VARIANTS.get("GAST-Goal-TrajCls") != EVAL_VARIANTS.get("GAST-Goal-TrajCls"):
+        problems.append("GAST-Goal-TrajCls training and evaluation settings differ")
+    if TRAIN_VARIANTS.get("M0") != EVAL_VARIANTS.get("M0"):
+        problems.append("M0 training and evaluation loss/model settings differ")
+    if TRAIN_VARIANTS.get("GAST-PF-Uni") != EVAL_VARIANTS.get("GAST-PF-Uni"):
+        problems.append("GAST-PF-Uni training and evaluation loss/model settings differ")
     if TRAIN_VARIANTS.get("GAST-PF-UniOER") != EVAL_VARIANTS.get("GAST-PF-UniOER"):
-        problems.append("UniOER training and evaluation switches differ")
+        problems.append("GAST-PF-UniOER training and evaluation loss/model settings differ")
 
     if problems:
         raise SystemExit("CONFIG CHECK FAILED\n- " + "\n- ".join(problems))
-    print("CONFIG CHECK PASSED: UniOER defaults and active variants are aligned")
+    print("CONFIG CHECK PASSED: GAST defaults and active variants are aligned")
 
 
 if __name__ == "__main__":

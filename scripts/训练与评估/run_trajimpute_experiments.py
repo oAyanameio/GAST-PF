@@ -1,7 +1,7 @@
 """TrajGap 缺失数据重训入口（统一 Mixed direct 协议）。
 
 协议（任务书 2026-09-07 + 方案 §1.4）：
-- 默认从 `GAST-PF-UniOER + mixed-direct` 开始；
+- 默认从 `GAST + mixed-direct` 开始；
 - `mixed-direct` 将官方 Easy/Hard 的同一 split 合并为单一 Mixed 数据集；
 - 每个场景从头训练，不使用零样本 checkpoint；
 - 训练输出、验证选点和测试评估统一使用 K=20；
@@ -38,13 +38,20 @@ SCENES = ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
 FOLDS = ["ETH", "HOTEL", "UNIV", "ZARA1", "ZARA2"]
 DIRECT_NUM_MODES = 20
 DEFAULT_PROTOCOL = "mixed-direct"
-DEFAULT_VARIANT = "GAST-PF-UniOER"
+DEFAULT_VARIANT = "GAST"
 OPTIMIZER_POLICY = "adamw_complete_module_local_v1"
 
-# Keep only the M0 reference, the Uni attribution control, and the selected
-# UniOER model. The decoder, losses, and TrajGap protocol stay unchanged.
+# Keep the M0 reference, Uni attribution control, selected GAST model, and the
+# opt-in GAST-Goal decoder candidate. The TrajGap protocol stays unchanged.
 VARIANTS = {
-    "M0": {"encoder_type": "m0"},
+    "M0": {
+        "encoder_type": "m0",
+        "loss_mode": "final_consistent",
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05,
+        "mode_diversity_margin": 0.5,
+        "classification_target_mode": "joint",
+    },
     "GAST-PF-Uni": {
         "encoder_type": "gast",
         "gast_depth": 4,
@@ -53,7 +60,57 @@ VARIANTS = {
         "gast_oer_spatial": False,
         "gast_emc_temporal": False,
         "gast_ewhr_readout": False,
+        "loss_mode": "final_consistent",
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05,
+        "mode_diversity_margin": 0.5,
+        "classification_target_mode": "joint",
     },
+    "GAST": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
+        "gast_oer_spatial": True,
+        "gast_emc_temporal": True,
+        "gast_ewhr_readout": True,
+        "loss_mode": "final_consistent",
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05,
+        "mode_diversity_margin": 0.5,
+        "classification_target_mode": "joint",
+    },
+    "GAST-Goal-TrajCls": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
+        "gast_oer_spatial": True,
+        "gast_emc_temporal": True,
+        "gast_ewhr_readout": True,
+        "gast_goal": True,
+        "loss_mode": "final_consistent",
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05,
+        "mode_diversity_margin": 0.5,
+        "classification_target_mode": "trajectory",
+    },
+    "GAST-Goal": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
+        "gast_oer_spatial": True,
+        "gast_emc_temporal": True,
+        "gast_ewhr_readout": True,
+        "gast_goal": True,
+        "loss_mode": "final_consistent",
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05,
+        "mode_diversity_margin": 0.5,
+        "classification_target_mode": "joint",
+    },
+    # Legacy experiment label kept for loading and reproducing existing runs.
     "GAST-PF-UniOER": {
         "encoder_type": "gast",
         "gast_depth": 4,
@@ -62,6 +119,11 @@ VARIANTS = {
         "gast_oer_spatial": True,
         "gast_emc_temporal": True,
         "gast_ewhr_readout": True,
+        "loss_mode": "final_consistent",
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05,
+        "mode_diversity_margin": 0.5,
+        "classification_target_mode": "joint",
     },
 }
 
@@ -240,6 +302,12 @@ def _model_config(args):
         "encoder_type": "gast", "gast_depth": 4,
         "gast_gsm_operator": "max",
         "gast_temporal_direction": "unidirectional",
+        "gast_goal": False,
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05,
+        "mode_diversity_margin": 0.5,
+        "classification_target_mode": "joint",
+        "loss_mode": "final_consistent",
     }
     config.update(VARIANTS[args.variant])
     return config

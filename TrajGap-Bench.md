@@ -1,222 +1,387 @@
-# TrajGap-Bench: A Benchmark for Direct Trajectory Forecasting under Missing History
+# TrajGap-Bench
 
-# TrajGap-Bench：面向缺失历史直接预测的行人轨迹预测基准
+[中文版](#中文版) ｜ [English Version](#english-version)
 
-**Version 1.1 — 2026-10-20 · Bilingual 中英对照**
+<details open>
+<summary id="中文版">中文版</summary>
 
-> **Dataset / 数据集：** TrajGap (TrajImpute-derived Missing-History Trajectory Dataset / 基于 TrajImpute 的缺失历史轨迹数据集)
-> **Benchmark / 基准：** TrajGap-Bench (Missing-History Direct Forecasting Benchmark / 缺失历史直接预测基准)
+[English version](#english-version)
 
----
+## 1. 基准简介
 
-## 1. Motivation 动机
+**TrajGap-Bench** 是一个面向「缺失历史条件下直接未来预测」的行人轨迹预测基准。它不重新生成轨迹，也不把缺失历史先交给外部插补器，而是要求模型直接读取带缺失掩码的历史观测，并预测未来 12 帧轨迹。
 
-Pedestrian trajectories observed in the wild frequently contain gaps: occlusions, tracker failures, or sensor dropouts. Two families of methods handle such cases:
+本基准的底层数据来自 TrajImpute 官方 Easy/Hard release。TrajGap-Bench 的贡献不是重新发明数据，而是将官方数据整理为统一、可复现、无测试泄漏的 Mixed direct 评估协议，并冻结训练、选点和结果汇报规则。
 
-真实场景中的行人轨迹常出现缺口：遮挡、跟踪器丢失或传感器采样中断。处理方法分两类：
+### 1.1 当前本文模型
 
-- **Impute-then-predict 先插补后预测**：first reconstruct the missing coordinates, then forecast with a complete-history model (e.g., TrajImpute) / 先重建缺失坐标，再用完整历史模型预测（如 TrajImpute）；
-- **Direct prediction 直接预测**：consume the masked history as-is and condition forecasting on the evidence that is actually available / 直接消费带掩码的历史输入，基于实际可用的证据进行预测。
-
-Direct prediction matters because interpolation itself introduces error, and because a model that can reason over *the amount and arrangement of available evidence* is the only one that can degrade gracefully as observations vanish. Yet direct missing-history forecasting currently lacks a shared benchmark: existing protocols either separate conditions into isolated tracks (Easy/Hard with no unified validation or leaderboard), or do not define a common checkpoint-selection rule.
-
-直接预测之所以重要，是因为插补本身会引入误差；只有能感知*可用证据的数量与排布*的模型，才能在观测逐渐减少时优雅退化。然而，直接缺失历史预测目前缺少共享基准：现有协议要么把条件拆成相互隔离的轨道（Easy/Hard 各自验证、无统一榜单），要么不定义统一的 checkpoint（检查点）选择规则。
-
-TrajGap-Bench does not re-invent missing-history data. It re-uses the audited official TrajImpute release verbatim and removes the fragmentation:
-
-TrajGap-Bench 不重新发明缺失历史数据，而是原样复用已审计的 TrajImpute 官方发布，消除碎片化：
-
-1. **Unified protocol 统一协议**：Easy and Hard are merged sample-wise per split into one Mixed dataset; training, validation, and testing all follow the same Mixed calibre / Easy 与 Hard 按样本级合并为单一 Mixed 数据集，训练、验证、测试统一为 Mixed 口径；
-2. **Single validation 单一验证**：one Mixed validation set with a single final-head `val_new_minFDE20` selects the checkpoint — no per-difficulty selection, no test-set tuning / 一个 Mixed 验证集、按最终预测头的单一 `val_new_minFDE20` 选择 checkpoint——不按难度分别选点，不用测试集调参；
-3. **Single leaderboard 单一榜单**：one Mixed test set and two primary metrics (`minFDE20`, `minADE20`) at K=20, reported without a composite score / 一个 Mixed 测试集，K=20 下报告两个主指标（`minFDE20`、`minADE20`），不计算综合分数。
-
-## 2. Relationship to Prior Benchmarks 与既有基准的关系
-
-**Dimension 维度** | **ETH/UCY (classic) 经典** | **TrajImpute (official) 官方** | **TrajGap-Bench 本基准**
---- | --- | --- | ---
-Task 任务 | Complete-history prediction 完整历史预测 | Missing-coordinate imputation **and** imputed prediction 缺失坐标插补 **及** 插补后预测 | Direct (no-imputation) missing-history prediction 直接（无插补）缺失历史预测
-Data 数据 | Raw trajectories, LOO/LOSO predefined splits 原始轨迹，LOO/LOSO 预定义划分 | 5 scenes × Easy/Hard × train/val/test | Same official release, Easy+Hard merged per split into Mixed 同一官方发布，每个 split 合并 Easy+Hard 为 Mixed
-Missing levels 缺失程度 | None 无 | Easy: 0–4 missing points; Hard: 4–7 缺 0–4 点；缺 4–7 点 | 0–7, in a single Mixed distribution 0–7，单一 Mixed 缺失分布
-Evaluation 评估 | ADE/FDE (K=20) | Impute metrics + prediction metrics, per difficulty 按难度分开 | `minFDE20`, `minADE20`, single Mixed test 单一 Mixed 测试
-Checkpoint selection 选点 | Full val set 完整验证集 | Per difficulty 按难度分别选择 | Single Mixed val, final-head `val_new_minFDE20` 单一 Mixed 验证集
-
-**Positioning statement 定位声明.** TrajImpute established the missing-history data resource and the impute-then-predict protocol. TrajGap-Bench contributes the missing piece for the direct-prediction community: a fixed, leakage-free protocol with a reproducible 8→12-frame task, a single validation rule, and a transparent multi-metric leaderboard. Official impute-then-predict numbers from TrajImpute are **not** co-ranked with direct predictions — the two calibres differ in input information and are reported separately.
-
-TrajImpute 建立了缺失历史数据资源和先插补后预测协议。TrajGap-Bench 为直接预测社区补上缺失的一环：固定且无泄漏的协议、可复现的 8→12 帧任务、单一验证规则，以及并列呈现原始指标的透明榜单（不设综合分数）。TrajImpute 官方的先插补后预测数字**不**与直接预测结果同榜比较——两种口径的输入信息不同，须分开报告。
-
-**Clean setting Clean 设置.** Clean refers to the original ETH/UCY complete-history benchmark (8 observed frames, no missing injection, no imputation). It is not a subset of the TrajImpute Easy test; missing-0 copies there are only an artefact of the test construction. Clean results are quoted from the original papers (e.g., MoFlow CVPR 2025).
-
-Clean 指原始 ETH/UCY 完整历史基准（8 帧观测、无缺失注入、无插补）。它不是 TrajImpute Easy 测试的子集，其中的 missing-0 副本只是测试集构造的产物。Clean 的结果引用原论文（如 MoFlow, CVPR 2025）。
-
-## 3. Task Definition 任务定义
-
-Every sample is an actor-centric clip; 每个样本是以目标行人为中心的片段：
-
-- **Input 输入**：8 frames of history at 0.4 s resolution (3.2 s). For each frame and coordinate, `missing_mask` (bool) marks missing observations; missing coordinates are `NaN` in the official files and a masked placeholder downstream. Every sample retains **at least one** valid history frame. The input also carries the validity mask explicitly / 8 帧历史，分辨率 0.4 s（共 3.2 s）。每帧每坐标由 `missing_mask`（布尔）标记是否缺失；官方文件中缺失坐标为 `NaN`，下游以掩码占位。每个样本**至少保留 1 个有效历史帧**。输入同时显式携带有效性掩码。
-- **Output 输出**：12 frames of future (4.8 s), always complete, used for supervision and evaluation / 12 帧未来（4.8 s），始终完整，用于监督与评估。
-- **Prediction format 预测格式**：K = 20 candidate trajectories per focal actor, sampled from the model's output distribution (mode queries / sampling) / 每个目标行人 K=20 条候选轨迹，来自模型输出分布（mode queries 多模态查询 / 采样）。
-- **Direct constraint 直接约束**：methods must consume the masked history directly. Imputation is allowed *inside* a model as an internal latent mechanism, but a method that requires an external off-the-shelf imputation module before forecasting is evaluated separately, not on this leaderboard / 方法必须直接消费带掩码历史。模型*内部*将插补作为隐式机制是允许的；但若方法在预测前需要外部现成插补模块，则单独评估，不进本榜单。
-
-## 4. Dataset Construction 数据集构造
-
-### 4.1 Source 数据来源
-
-TrajGap uses the official TrajImpute release: 5 scenes (ETH-M, HOTEL-M, UNIV-M, ZARA1-M, ZARA2-M) × 2 difficulty tiers (Easy, Hard) × 3 splits (train/val/test), 30 pickles in total. The official pkl fields are:
-
-TrajGap 使用 TrajImpute 官方发布：5 个场景（ETH-M、HOTEL-M、UNIV-M、ZARA1-M、ZARA2-M）× 2 难度（Easy、Hard）× 3 划分（train/val/test），共 30 个 pickle 文件。官方 pkl 字段：
-
-**Field 字段** | **Shape 形状** | **Meaning 含义**
---- | --- | ---
-`obs_traj` | [N, 8, 2] | History; `NaN` where missing (`missing_mask=True`) 历史轨迹；缺失处为 `NaN`
-`pred_traj` | [N, 12, 2] | Future; always complete 未来轨迹；恒完整
-`missing_mask` | [N, 8, 2] | `True` = coordinate missing 该坐标缺失
-`seq_start_end` | [M, 2] | Scene/group boundaries (rebuilt deterministically, see §4.4) 场景/组边界（确定性重建，见 §4.4）
-
-### 4.2 Merge rule 合并规则
-
-For every scene `s ∈ {ETH-M, HOTEL-M, UNIV-M, ZARA1-M, ZARA2-M}` and every split `sp ∈ {train, val, test}`:
-
-对每个场景 `s ∈ {ETH-M, HOTEL-M, UNIV-M, ZARA1-M, ZARA2-M}` 和每个划分 `sp ∈ {train, val, test}`：
+当前本文模型使用最新的 **GAST-Goal**，其底座为正式命名的 **GAST（Gap-Aware Spatio-Temporal Pedestrian Forecaster）编码器**：
 
 ```text
-TrajGap(s, sp) = TrajImpute(s, Easy, sp)  +  TrajImpute(s, Hard, sp)
+GAST-Goal
+├── GAST gap-aware encoder
+│   ├── 单向 Mamba 时序编码
+│   ├── OER 空间证据路由
+│   ├── EMC 时间证据调制
+│   └── EWHR 证据加权读出
+└── Goal-conditioned future decoder
+    ├── 终点条件化
+    ├── final-consistent loss
+    └── mode diversity regularization
 ```
 
-`+` is **sample-wise concatenation** (actor-centric, no re-windowing, no de-duplication, no re-sampling). Source labels are kept internally for audit; the public protocol name is **Mixed** for all splits.
+旧实验中的 `GAST-PF`、`GAST-PF-UniOER` 和 `UT-ENC` 是历史标签或产物目录名。本文统一将当前编码器称为 `GAST`，将最新完整模型称为 `GAST-Goal`，避免把旧标签误解为另一套方法。
 
-`+` 表示**样本级拼接**（以行人为中心；不重切窗口、不去重、不重采样）。来源标签仅保留在内部供审计；对外协议名统一为 **Mixed**（混合）。
+### 1.2 研究问题
 
-### 4.3 Statistics 统计信息
+完整历史预测假设所有观测均可用，但真实跟踪系统可能受到遮挡、漏检、数据关联失败和传感器丢帧影响。TrajGap-Bench 关注以下问题：
 
-Focal-sample counts (audited from the official files); Focal（目标行人）样本数（已对官方文件审计）：
+1. 模型能否直接利用不完整历史，而不是依赖外部插补？
+2. 在相同缺失数量下，缺失位置和时间结构是否会改变预测难度？
+3. 模型性能是否能在可观测证据减少时平稳退化？
+4. goal 条件化是否能改善缺失历史下的多模态未来覆盖？
 
-**Scene 场景** | **Mixed train** | **Mixed val** | **Mixed test**
---- | ---: | ---: | ---:
-ETH-M | 59,618 | 10,698 | 1,629
-HOTEL-M | 58,304 | 10,272 | 9,477
-UNIV-M | 18,462 | 5,416 | 219,006
-ZARA1-M | 56,020 | 10,236 | 20,277
-ZARA2-M | 51,014 | 8,346 | 52,497
-**Total 合计** | **243,418** | **44,968** | **302,886**
+## 2. 数据集与任务
 
-Missing-level distribution in the Mixed training set covers the full range m = 0…7 (Easy provides 0–4, Hard 4–7). Approximately 10% of Mixed training focal samples have complete history (m=0), so models are simultaneously exposed to complete, lightly missing, and heavily missing inputs.
+### 2.1 数据来源
 
-Mixed 训练集的缺失程度覆盖完整区间 m = 0…7（Easy 提供 0–4，Hard 提供 4–7）。约 10% 的 Mixed 训练样本历史完整（m=0），因此模型同时暴露于完整、轻度缺失与重度缺失输入。
+TrajGap 使用 TrajImpute 官方 release：
 
-### 4.4 Data-integrity notes (audited) 数据完整性说明（已审计）
+- 场景：`ETH-M`、`HOTEL-M`、`UNIV-M`、`ZARA1-M`、`ZARA2-M`；
+- 底层文件：每个场景的 `Easy` 与 `Hard`；
+- 划分：`train`、`val`、`test`；
+- 历史：8 帧，时间间隔 0.4 s，共 3.2 s；
+- 未来：12 帧，共 4.8 s；
+- 预测：每个目标行人输出 `K=20` 条候选轨迹。
 
-- `NaN` positions in `obs_traj` match `missing_mask` exactly; `pred_traj` contains no `NaN` / `obs_traj` 中 `NaN` 位置与 `missing_mask` 严格一致；`pred_traj` 无 `NaN`。
-- The official test pickles contain repeated copies of each original trajectory (Easy: ×5 with 0–4 missing points; Hard: ×4 with 4–7). Repeated copies are **retained**: the test set is intentionally the full missing-level sweep, and sample counts above must not be read as unique original trajectories / 官方测试 pickle 包含每条原始轨迹的重复副本（Easy：×5，缺 0–4 点；Hard：×4，缺 4–7 点）。重复副本**保留**：测试集刻意构成完整缺失程度扫描，§4.3 的样本数不得解读为独立原始轨迹数。
-- A known upstream bug multiply-repeats `seq_start_end` blocks without scene offsets, so block indices misalign for blocks 2+. The adapter deterministically rebuilds `seq_start_end`; official files are never modified / 上游已知 bug 会以列表乘法重复 `seq_start_end` 块且不加场景偏移，导致第 2 块起的行索引错位。适配器确定性重建 `seq_start_end`；官方文件绝不修改。
-- TrajGap never re-windows the raw trajectories and never constructs a new train/test split; it consumes the predefined official splits verbatim / TrajGap 从不基于原始数据重切窗口，也不构造新的 train/test 划分；严格按官方预定义划分原样消费。
+每个样本包含：
 
-## 5. Evaluation Protocol 评估协议
+| 字段 | 形状 | 含义 |
+|---|---:|---|
+| `obs_traj` | `[N, 8, 2]` | 历史坐标，缺失位置为 `NaN` |
+| `pred_traj` | `[N, 12, 2]` | 完整未来轨迹 |
+| `missing_mask` | `[N, 8, 2]` | `True` 表示该坐标缺失 |
+| `seq_start_end` | `[M, 2]` | 场景内行人分组边界 |
 
-### 5.1 Splits and checkpoint selection 划分与 checkpoint 选择
+每个样本至少保留 1 个有效历史帧。缺失坐标由 `missing_mask` 显式定义，不允许使用未来真值填补历史输入。
 
-- **Train 训练**：Mixed-train (Easy+Hard train).
-- **Validation 验证**：Mixed-val (Easy+Hard val). A single `val_new_minFDE20` from the final prediction head on the merged set selects the checkpoint. Per-difficulty validation and per-difficulty checkpoint selection are **not** part of the protocol / 在合并集上以最终预测头的单一 `val_new_minFDE20` 选择 checkpoint。按难度分别验证、分别选点**不是**本协议的一部分。
-- **Test 测试**：Mixed-test (Easy+Hard test). The test set never influences sampling, hyper-parameters, or checkpoint selection / 测试集不影响采样、超参数或 checkpoint 选择。
-- All splits share the same 8-frame history, 12-frame future, direct input format, and K=20 / 所有划分共用相同的 8 帧历史、12 帧未来、直接输入格式与 K=20。
+### 2.2 Mixed 合并协议
 
-### 5.2 Metrics 指标
+对每个场景和每个 split，TrajGap 只进行样本级拼接：
 
-The two primary metrics are computed on the same K=20 candidate set; **lower is better** for both; 两个主指标基于同一组 K=20 候选轨迹计算，均为**越低越好**：
+```text
+Mixed/train = Easy/train + Hard/train
+Mixed/val   = Easy/val   + Hard/val
+Mixed/test  = Easy/test  + Hard/test
+```
 
-**Metric 指标** | **Definition 定义**
---- | ---
-`minFDE20` | Minimum final-displacement error among the 20 candidates 20 条候选轨迹中最小的终点位移误差
-`minADE20` | Minimum average-displacement error among the 20 candidates 20 条候选轨迹中最小的平均位移误差
+这里的 `+` 表示 actor-centric 样本拼接，不表示重新切窗、重采样或去重。Easy/Hard 标签仅用于内部审计，对外统一称为 `Mixed`。
 
-The candidate minimizing ADE need not be the candidate minimizing FDE. `ADE@1` / `FDE@1` (top-probability mode) and distribution-quality metrics (energy score, coverage, calibration) are **not** primary leaderboard metrics and may be reported as auxiliary diagnostics. MR is not part of the TrajGap-Bench protocol or leaderboard.
+采用 Mixed 的理由是：
 
-minADE 的最优候选不一定也是 minFDE 的最优候选。`ADE@1`/`FDE@1`（最高概率模态）与分布质量指标（能量分数、覆盖率、校准度）**不**属于主榜指标，可作为辅助诊断另行报告。MR 不属于 TrajGap-Bench 协议或榜单指标。
+- 训练、验证和测试使用同一个公开协议；
+- checkpoint 只由一个 Mixed-val 决定；
+- 模型不能依赖 Easy/Hard 标签获得额外信息；
+- 主榜不需要人为定义 Easy/Hard 权重；
+- 缺失程度仍可作为测试后的诊断分组，而不改变主协议。
 
-### 5.3 Leaderboard 榜单
+Mixed 的使用不等于声称数据完全服从真实跟踪器的缺失分布。它是一个**受控的缺失历史压力测试协议**；真实分布外推需要额外数据或外部验证。
 
-TrajGap-Bench reports one consistent leaderboard without a composite score; TrajGap-Bench 使用统一口径的榜单，不计算综合分数：
+### 2.3 样本规模
 
-1. Both primary metrics come from the same Mixed test, checkpoint, scene protocol, and K=20 / 两个主指标必须来自同一 Mixed 测试集、同一 checkpoint、同一场景协议和同一 K=20；
-2. Reports must include per-scene results, five-scene macro average, sample-weighted micro average, and worst-scene / 必须报告各场景结果、五场景宏平均、样本加权 micro 平均及最差场景；
-3. Methods are compared by the two raw metrics; no composite score or single overall rank is defined / 方法按两个原始指标并列比较，不定义综合分数或单一总排名。
+| 场景 | Mixed train | Mixed val | Mixed test |
+|---|---:|---:|---:|
+| `ETH-M` | 59,618 | 10,698 | 1,629 |
+| `HOTEL-M` | 58,304 | 10,272 | 9,477 |
+| `UNIV-M` | 18,462 | 5,416 | 219,006 |
+| `ZARA1-M` | 56,020 | 10,236 | 20,277 |
+| `ZARA2-M` | 51,014 | 8,346 | 52,497 |
+| **合计** | **243,418** | **44,968** | **302,886** |
 
-## 6. Reference Implementation (M0) 参考实现
+训练集的缺失帧数量覆盖 `0…7`。测试集保留官方的缺失程度扫描：同一潜在轨迹可能对应多个不同缺失掩码。因此，样本数不能直接解释为独立原始轨迹数；统计显著性分析应按原始轨迹聚类或采用 paired bootstrap。
 
-M0 is the reference model of this project: a MoFlow-derived state-space trajectory forecaster (unidirectional Mamba history encoder, Scene Transformer multi-agent cross-attention, structured time decoder) with a mask-aware input (`x_valid_mask` as an explicit input channel). It is trained on Mixed-train exactly under the protocol above.
+## 3. 评估协议
 
-M0 是本项目的参考模型：MoFlow 派生的状态空间轨迹预测器（单向 Mamba 历史编码器、Scene Transformer 多智能体交叉注意力、结构化时间解码器），输入包含显式有效性掩码通道（`x_valid_mask`）。严格按上述协议在 Mixed-train 上训练。
+### 3.1 训练、验证与测试
 
-Training setup 训练配置：seed 2024, 100 epochs, batch size 64, K=20 mode queries, AdamW with module-local parameter grouping, `val_new_minFDE20` checkpoint selection.
+| 阶段 | 数据 | 用途 |
+|---|---|---|
+| Train | `Mixed-train` | 模型训练 |
+| Validation | `Mixed-val` | 只用于 checkpoint 选择 |
+| Test | `Mixed-test` | 最终报告，不参与调参 |
 
-Reference results, Mixed-test (macro average over 5 scenes, seed 2024); Mixed-test 参考结果（5 场景 macro 平均，seed 2024）：
+所有方法必须遵守相同的：
 
-The existing M0 and GAST-PF comparison artifacts were produced under earlier checkpoint-selection runs. They are historical until regenerated under this version's final-head `val_new_minFDE20` rule; they do not define v1.1 reference scores.
+- 8 帧历史 → 12 帧未来任务；
+- `Mixed` train/val/test；
+- direct 输入约束；
+- `K=20` 候选轨迹；
+- 五场景评估；
+- 测试集不参与模型选择。
 
-现有 M0 与 GAST-PF 对比产物来自较早的 checkpoint 选点实验。在按本版本最终预测头 `val_new_minFDE20` 规则重算前，它们仅作为历史结果，不定义 v1.1 的参考分数。
+模型可以在内部学习隐式补全或 latent state，但不允许依赖一个外部插补模型作为预测前置步骤。先插补后预测方法应作为单独口径报告，不能直接进入 direct leaderboard。
 
-## 7. Code and Usage 代码与使用
+### 3.2 Checkpoint 选择
 
-Repository 代码仓库：`GAST-PF` (private 私有). All data loading, training, and evaluation go through the TrajGap adapter; official release files are read-only / 数据加载、训练、评估全部经由 TrajGap 适配器；官方发布文件只读。
+Checkpoint 规则固定为：
+
+```text
+monitor = val_new_minFDE20
+source  = Mixed-val
+head    = final prediction head
+mode    = K=20
+```
+
+不允许：
+
+- 分别在 Easy-val 和 Hard-val 上选点；
+- 使用测试结果选择 epoch；
+- 根据单个场景结果挑选 checkpoint；
+- 使用旧预测头或不同指标替代 `val_new_minFDE20`。
+
+### 3.3 主指标
+
+TrajGap-Bench 正式主榜只报告两个指标：
+
+| 指标 | 定义 | 趋势 |
+|---|---|---|
+| `minADE20` | 20 条候选轨迹中最小的平均位移误差 | 越低越好 |
+| `minFDE20` | 20 条候选轨迹中最小的终点位移误差 | 越低越好 |
+
+两个指标必须来自同一批 `K=20` 候选轨迹、同一个 checkpoint 和同一个 Mixed-test。不计算综合分数。
+
+可以将缺失帧数量、末端缺失、`anchor_lag` 和 `forecast_gap` 作为辅助诊断，但它们不能替代主指标或定义新的总榜。
+
+### 3.4 汇报方式
+
+正式结果应同时报告：
+
+1. 五个场景的逐场景结果；
+2. 五场景 macro average；
+3. 按测试样本数加权的 micro average；
+4. worst-scene；
+5. 随机种子和 checkpoint 选点规则。
+
+不同方法若未完成五个场景，不得计算五场景 macro 或 micro，也不得把部分场景结果写成完整 benchmark 结论。
+
+## 4. 对比实验结果
+
+### 4.1 结果说明
+
+下面的表格汇总当前仓库中已经完成或已有可审计产物的 direct 对比结果，单位为米，单元格格式为 `minADE20 / minFDE20`，所有指标均越低越好。
+
+**本文最新模型为 `GAST-Goal`，使用 `GAST` 编码器作为底座。** 表中同时保留标准解码器版本 `GAST`（历史实验标签为 `GAST-PF`）作为上一代内部对照；`MoFlow`、`SocialLSTM`、`AgentFormer`、`Re` 和 `MS-TIP` 是外部对照或外部复现结果。
+
+需要注意：`GAST-Goal` 五场景结果已经按最终预测头 `val_new_minFDE20` 完成；部分历史对照仍来自早期 screening 产物，正式投稿前应将所有方法统一重跑到同一 checkpoint 规则。表格因此用于当前研究对照，不应在重跑前称为最终 v1.1 leaderboard。
+
+### 4.2 五场景对照表
+
+| 方法 | `ETH-M` | `HOTEL-M` | `UNIV-M` | `ZARA1-M` | `ZARA2-M` | Macro Avg | 完成度 |
+|---|---|---|---|---|---|---|---|
+| **GAST-Goal（本文最新模型）** | **0.5852 / 0.8212** | 0.2541 / 0.3769 | **0.3200 / 0.5244** | 0.2510 / 0.4128 | 0.1738 / **0.2801** | **0.3168 / 0.4831** | 5/5 |
+| GAST（标准解码器；历史标签 GAST-PF） | 0.6191 / 0.8544 | 0.2572 / 0.3877 | 0.3258 / 0.5292 | **0.2494 / 0.4014** | 0.1808 / 0.3004 | 0.3264 / 0.4946 | 5/5 |
+| MoFlow | 0.6819 / 0.9389 | 0.2777 / 0.4247 | 0.3478 / 0.5572 | 0.2566 / 0.4057 | 0.1839 / 0.2867 | 0.3496 / 0.5227 | 5/5 |
+| SocialLSTM | 0.8430 / 1.0456 | 0.2924 / 0.3871 | 0.4543 / 0.6512 | 0.4126 / 0.5650 | 0.2858 / 0.3907 | 0.4576 / 0.6079 | 5/5 |
+| AgentFormer | 0.7098 / 1.0436 | **0.2083 / 0.3316** | 0.4132 / 0.6796 | — | — | — | 3/5 |
+| Re | 0.9945 / 1.4262 | 0.7799 / 1.2808 | 0.5388 / 0.8408 | 0.4960 / 0.7470 | 0.3819 / 0.5928 | 0.6382 / 0.9775 | 5/5 |
+| MS-TIP | — | — | 1.3240 / 1.1566 | 0.8842 / 1.1720 | — | — | 2/5 |
+
+每个单元格按 `minADE20 / minFDE20` 排列，单位为米。**加粗规则：** 对每个场景分别在所有已报告结果中对两个指标独立取最优；macro average 只比较完成五场景的方法。部分完成的方法不计算 macro/micro，也不参与完整五场景排序。`—` 表示暂无可用于本表的结果，不表示性能为 0。
+
+| 方法 | Macro `minADE20` | Macro `minFDE20` | Micro `minADE20` | Micro `minFDE20` |
+|---|---:|---:|---:|---:|
+| **GAST-Goal（本文最新模型）** | **0.3168** | **0.4831** | **0.2894** | **0.4716** |
+| GAST（标准解码器；历史标签 GAST-PF） | 0.3264 | 0.4946 | 0.2950 | 0.4783 |
+| MoFlow | 0.3496 | 0.5227 | 0.3129 | 0.4981 |
+| SocialLSTM | 0.4576 | 0.6079 | 0.4193 | 0.5941 |
+| AgentFormer | — | — | — | — |
+| Re | 0.6382 | 0.9775 | 0.5187 | 0.8085 |
+| MS-TIP | — | — | — | — |
+
+Micro average 按测试样本数加权。结果来源：`GAST-Goal` 为 `outputs/trajgap_gast_goal_3gpu_retry/` 下五场景 Mixed-test 结果；其余模型数字来自仓库已归档的 `docs/results/trajgap_bench_leaderboard.md`。其中未完成五场景的方法不计算聚合结果。
+
+### 4.3 本文模型配置
+
+| 项目 | `GAST-Goal` |
+|---|---|
+| Encoder | `GAST`，单向 gap-aware Mamba |
+| Evidence routing | OER + EMC + EWHR |
+| Decoder | Goal-conditioned future decoder |
+| Prediction modes | `K=20` |
+| Loss | `final_consistent` |
+| Checkpoint | Mixed-val `val_new_minFDE20` |
+| Seed | 2024 |
+| Epochs | 100 |
+| Batch size | 64 |
+
+当前 `GAST-Goal` 的五场景结果为单种子 screening 结果。它可作为最新滚动基线，但定稿时仍应补充第二随机种子、置信区间以及按原始轨迹聚类的配对统计。
+
+## 5. 代码与复现
+
+### 5.1 训练
 
 ```bash
-# Train + evaluate all 5 scenes on Mixed protocol (example, single GPU)
-# 五场景 Mixed 协议训练+评估（示例，单卡）
 PYTHONNOUSERSITE=1 PYTHONPATH=. \
 /home/lbh/.conda/envs/gast-pf/bin/python \
 scripts/训练与评估/run_trajimpute_experiments.py \
   --protocol mixed-direct \
-  --variant M0 \
+  --variant GAST-Goal \
   --scenes ETH-M HOTEL-M UNIV-M ZARA1-M ZARA2-M \
   --seed 2024 \
-  --gpu 3 \
-  --output-root outputs/trajgap_bench_m0_seed2024
+  --gpu 0 \
+  --output-root outputs/trajgap_bench_gast_goal_seed2024
+```
 
-# Evaluate an existing checkpoint on the Mixed test set
-# 用已有 checkpoint 在 Mixed 测试集上评估
+### 5.2 评估
+
+```bash
 /home/lbh/.conda/envs/gast-pf/bin/python \
 scripts/结果分析/evaluate_trajimpute_direct.py \
   --data-root /home/lbh/TrajImpute/dataset/TrajImpute \
-  --scene ETH-M --difficulty Mixed --split test \
-  --variant M0 --K 20 --seed 2024 \
-  --checkpoint <path.ckpt> --output-root <out_dir>
+  --scene ETH-M \
+  --difficulty Mixed \
+  --split test \
+  --variant GAST-Goal \
+  --K 20 \
+  --seed 2024 \
+  --checkpoint <path/to/checkpoint.ckpt> \
+  --output-root <output_dir>
 ```
 
-Key interfaces 关键接口：`src/datamodule/trajimpute_dataset.py::TrajGapDataset` (dataset 数据集), `TrajImputeDataModule` with `train_difficulties=[Mixed], val_difficulties=[Mixed]` (data module), `scripts/结果分析/evaluate_trajimpute_direct.py` (evaluator 评估器, `--difficulty Mixed`).
+### 5.3 关键实现
 
-**Submission checklist for new methods 新方法提交清单:**
+| 功能 | 实现 |
+|---|---|
+| Mixed 数据集 | `src/datamodule/trajimpute_dataset.py::TrajGapDataset` |
+| Mixed 训练/验证 | `TrajImputeDataModule` |
+| 统一训练入口 | `scripts/训练与评估/run_trajimpute_experiments.py` |
+| 统一 direct 评估 | `scripts/结果分析/evaluate_trajimpute_direct.py` |
+| 最新模型配置 | `conf/model/gast_goal_model_forecast.yaml` |
+| 主协议配置 | `conf/config_missing_aware_trajimpute.yaml` |
 
-1. Same Mixed train/val/test organization 使用相同的 Mixed train/val/test 组织；
-2. Single `val_new_minFDE20` checkpoint selection from the final prediction head 使用最终预测头的单一 `val_new_minFDE20` checkpoint 选择；
-3. K=20, same 8→12 task, direct (no external imputation) K=20、相同的 8→12 任务、直接预测（无外部插补）；
-4. Report per-scene + macro + micro + worst-scene `minADE20`/`minFDE20` 报告各场景 + macro + micro + worst-scene 的 `minADE20`/`minFDE20`；
-5. Report the seed(s); multi-seed with mean±std is encouraged 报告 seed；鼓励多种子并给出 mean±std。
+## 6. 限制与论文使用边界
 
-## 8. Known Limitations & Notes 已知限制与说明
+1. TrajGap 是基于官方 release 的受控缺失协议，不应直接宣称等同于真实跟踪器的缺失分布。
+2. 测试集保留同一潜在轨迹的多种缺失掩码，这是缺失程度扫描的设计，不应简单去重后再作为主结果。
+3. 当前部分基线仍是历史 screening 结果；最终论文表应统一模型版本、checkpoint 规则、随机种子和评估脚本。
+4. 先插补后预测与 direct prediction 输入信息不同，应分表报告，不能直接混入同一 leaderboard。
+5. `GAST-Goal` 当前优势主要体现在 `minADE20` 与 `minFDE20`；其 mode 排序仍需通过第二种子和额外诊断确认，不能仅凭单次运行作强泛化结论。
+6. 当前正式指标只包括 `minADE20` 与 `minFDE20`，不定义综合分数。
 
-- The official Easy test reuses each trajectory 5 times with different missing levels and Hard 4 times; the Mixed test therefore contains repeated latent trajectories by construction. Metric results are still meaningful for the missing-level sweep, but sample counts in §4.3 are not unique original trajectories / 官方 Easy 测试每条轨迹按不同缺失程度复用 5 次、Hard 复用 4 次，因此 Mixed 测试按构造包含重复的潜在轨迹。指标对缺失程度扫描仍有意义，但 §4.3 的样本数不是独立原始轨迹数。
-- UNIV-M test is large (~219k focal samples); evaluation cost should be planned accordingly / UNIV-M 测试集很大（约 21.9 万 focal 样本），评估开销需提前规划。
-- Impute-then-predict pipelines are deliberately excluded from the leaderboard; compare them in a separate table with clearly separated calibre / 先插补后预测管线刻意排除在榜单之外；请在单独表中以明确区分的口径比较。
-- Clean complete-history results are quoted from the original literature, not re-run on this benchmark / Clean 完整历史结果引用原文献，不在本基准上重跑。
+## 7. 一句话定位
 
-## 9. Citation 引用
+> **TrajGap-Bench 将 TrajImpute 官方 Easy/Hard 的同一 train/val/test split 统一为 Mixed direct 协议，并以最终预测头的 `val_new_minFDE20` 选择 checkpoint，在五个场景上使用 `minADE20` 与 `minFDE20` 评估模型直接利用不完整历史进行未来轨迹预测的能力；本文最新模型为以 GAST 为底座的 GAST-Goal。**
 
-If you use TrajGap / TrajGap-Bench, please cite; 若使用 TrajGap / TrajGap-Bench，请引用：
+</details>
 
-```bibtex
-@misc{trajgap2026,
-  title  = {TrajGap-Bench: A Benchmark for Direct Trajectory Forecasting under Missing History},
-  author = {GAST-PF project},
-  year   = {2026},
-  note   = {Built on TrajImpute (arXiv:2411.00174)}
-}
+<details>
+<summary id="english-version">English Version</summary>
+
+[中文版](#中文版)
+
+## 1. Overview
+
+**TrajGap-Bench** is a benchmark for direct future trajectory forecasting from incomplete history. A method must consume the masked history directly and predict 12 future frames. External imputation followed by forecasting is reported separately and is not part of the direct leaderboard.
+
+The benchmark reuses the official TrajImpute Easy/Hard release. Its contribution is a fixed Mixed protocol with unified train/validation/test construction, a single checkpoint rule, and two transparent primary metrics. It does not regenerate trajectories or claim that the synthetic missingness exactly matches real tracker failures.
+
+### 1.1 Latest model
+
+The latest model in this document is **GAST-Goal**, built on the current **GAST** gap-aware encoder:
+
+- unidirectional Mamba temporal encoding;
+- OER spatial evidence routing;
+- EMC temporal evidence modulation;
+- EWHR evidence-weighted readout;
+- goal-conditioned future decoding;
+- final-consistent loss and mode-diversity regularization.
+
+`GAST-PF`, `GAST-PF-UniOER`, and `UT-ENC` are legacy names used by earlier experiments or output directories. The current terminology is `GAST` for the encoder and `GAST-Goal` for the complete latest model.
+
+## 2. Dataset and task
+
+TrajGap uses five scenes: `ETH-M`, `HOTEL-M`, `UNIV-M`, `ZARA1-M`, and `ZARA2-M`. Each sample contains 8 history frames at 0.4 s resolution (3.2 s total) and 12 complete future frames (4.8 s total). The model outputs `K=20` candidate futures. At least one history frame remains observed per sample, and `missing_mask=True` marks missing coordinates.
+
+For every scene and split:
+
+```text
+Mixed/train = Easy/train + Hard/train
+Mixed/val   = Easy/val   + Hard/val
+Mixed/test  = Easy/test  + Hard/test
 ```
 
-And the underlying data source; 以及底层数据来源：
+The merge is actor-centric sample concatenation. There is no re-windowing, re-sampling, or de-duplication. Easy/Hard labels are retained for audit only; the public protocol is `Mixed`.
 
-```bibtex
-@article{trajimpute2024,
-  title  = {TrajImpute: A Training-Free Approach for the Missing Trajectory Prediction},
-  journal = {arXiv preprint arXiv:2411.00174},
-  year   = {2024}
-}
-```
+| Scene | Mixed train | Mixed val | Mixed test |
+|---|---:|---:|---:|
+| `ETH-M` | 59,618 | 10,698 | 1,629 |
+| `HOTEL-M` | 58,304 | 10,272 | 9,477 |
+| `UNIV-M` | 18,462 | 5,416 | 219,006 |
+| `ZARA1-M` | 56,020 | 10,236 | 20,277 |
+| `ZARA2-M` | 51,014 | 8,346 | 52,497 |
+| **Total** | **243,418** | **44,968** | **302,886** |
+
+The test set preserves the official missing-level sweep: one latent trajectory may appear with multiple masks. Counts therefore are not counts of unique source trajectories. Statistical inference should cluster by original trajectory or use paired bootstrap.
+
+This is a controlled missing-history stress test. It should not be described as a measured real-world tracker-missingness distribution without external validation.
+
+## 3. Evaluation protocol
+
+- **Training:** use `Mixed-train`.
+- **Validation:** use one `Mixed-val` set for checkpoint selection.
+- **Testing:** report once on `Mixed-test`; test data must not affect tuning or model selection.
+- **Checkpoint:** use the final prediction head and `val_new_minFDE20` on `Mixed-val`.
+- **Task:** keep the 8→12 setting, direct input, `K=20`, and five scenes consistent.
+- **Primary metrics:** report `minADE20` and `minFDE20`, both lower-is-better; do not combine them into a composite score.
+- **Aggregates:** report per-scene values, five-scene macro average, sample-weighted micro average, and worst-scene when all five scenes are complete.
+
+Methods may use an internal latent completion mechanism, but external imputation before forecasting must be reported separately. Incomplete methods must not receive five-scene macro or micro averages.
+
+## 4. Comparison experiments
+
+The latest model is `GAST-Goal`, with `GAST` as its base encoder. Each table cell is `minADE20 / minFDE20` in meters. Lower is better; bold indicates the best available value per scene and metric. Macro averages compare only methods with all five scenes completed.
+
+| Method | `ETH-M` | `HOTEL-M` | `UNIV-M` | `ZARA1-M` | `ZARA2-M` | Macro Avg | Coverage |
+|---|---|---|---|---|---|---|---|
+| **GAST-Goal (latest model)** | **0.5852 / 0.8212** | 0.2541 / 0.3769 | **0.3200 / 0.5244** | 0.2510 / 0.4128 | 0.1738 / **0.2801** | **0.3168 / 0.4831** | 5/5 |
+| GAST (standard decoder; historical label: GAST-PF) | 0.6191 / 0.8544 | 0.2572 / 0.3877 | 0.3258 / 0.5292 | **0.2494 / 0.4014** | 0.1808 / 0.3004 | 0.3264 / 0.4946 | 5/5 |
+| MoFlow | 0.6819 / 0.9389 | 0.2777 / 0.4247 | 0.3478 / 0.5572 | 0.2566 / 0.4057 | 0.1839 / 0.2867 | 0.3496 / 0.5227 | 5/5 |
+| SocialLSTM | 0.8430 / 1.0456 | 0.2924 / 0.3871 | 0.4543 / 0.6512 | 0.4126 / 0.5650 | 0.2858 / 0.3907 | 0.4576 / 0.6079 | 5/5 |
+| AgentFormer | 0.7098 / 1.0436 | **0.2083 / 0.3316** | 0.4132 / 0.6796 | — | — | — | 3/5 |
+| Re | 0.9945 / 1.4262 | 0.7799 / 1.2808 | 0.5388 / 0.8408 | 0.4960 / 0.7470 | 0.3819 / 0.5928 | 0.6382 / 0.9775 | 5/5 |
+| MS-TIP | — | — | 1.3240 / 1.1566 | 0.8842 / 1.1720 | — | — | 2/5 |
+
+| Method | Macro `minADE20` | Macro `minFDE20` | Micro `minADE20` | Micro `minFDE20` |
+|---|---:|---:|---:|---:|
+| **GAST-Goal (latest model)** | **0.3168** | **0.4831** | **0.2894** | **0.4716** |
+| GAST (standard decoder; historical label: GAST-PF) | 0.3264 | 0.4946 | 0.2950 | 0.4783 |
+| MoFlow | 0.3496 | 0.5227 | 0.3129 | 0.4981 |
+| SocialLSTM | 0.4576 | 0.6079 | 0.4193 | 0.5941 |
+| AgentFormer | — | — | — | — |
+| Re | 0.6382 | 0.9775 | 0.5187 | 0.8085 |
+| MS-TIP | — | — | — | — |
+
+`GAST-Goal` uses seed 2024, 100 epochs, batch size 64, and the final-head checkpoint rule. Its five-scene numbers are single-seed screening results. The `GAST-Goal` results come from `outputs/trajgap_gast_goal_3gpu_retry/`; the other results are archived comparison runs. They should not be presented as a final v1.1 leaderboard until historical baselines are regenerated under the frozen checkpoint rule.
+
+## 5. Reproducibility and limitations
+
+The official release files are read-only. The Mixed adapter, training runner, evaluator, and model configuration are:
+
+| Function | Implementation |
+|---|---|
+| Mixed dataset | `src/datamodule/trajimpute_dataset.py::TrajGapDataset` |
+| Training and validation | `TrajImputeDataModule` |
+| Training runner | `scripts/训练与评估/run_trajimpute_experiments.py` |
+| Direct evaluator | `scripts/结果分析/evaluate_trajimpute_direct.py` |
+| Latest model config | `conf/model/gast_goal_model_forecast.yaml` |
+| Benchmark config | `conf/config_missing_aware_trajimpute.yaml` |
+
+Key limitations:
+
+1. TrajGap is a controlled missing-history protocol, not a confirmed real-world tracker-missingness distribution.
+2. The test set retains repeated latent trajectories with different masks; statistical analysis should account for this dependence.
+3. Some comparison results are historical screening runs. Final publication should align model revisions, checkpoint selection, seeds, and evaluation scripts.
+4. Impute-then-predict and direct prediction use different input information and should be reported separately.
+5. Add multi-seed confirmation, confidence intervals, trajectory-clustered paired statistics, and external validation before making strong generalization claims.
+
+</details>

@@ -3,7 +3,7 @@
 正式协议固定为 `--difficulty Mixed`：
   PYTHONPATH=. python scripts/结果分析/evaluate_trajimpute_direct.py \
       --checkpoint outputs/.../checkpoints/xxx.ckpt \
-      --scene ETH-M --difficulty Mixed --split test --K 20 --variant GAST-PF-UniOER
+      --scene ETH-M --difficulty Mixed --split test --K 20 --variant GAST
 
 输出：outputs/trajgap_bench/<scene>_Mixed_<split>_<variant>_seed<seed>/results.json
 层级：scene/split/missing_count/variant/seed；K 显式写入 meta；
@@ -28,13 +28,73 @@ from src.datamodule.trajimpute_dataset import (  # noqa: E402
 from src.evaluation.trajimpute_direct import DirectEvaluator, save_results  # noqa: E402
 
 VARIANTS = {
-    "M0": {"encoder_type": "m0"},
+    "M0": {
+        "encoder_type": "m0",
+        "loss_mode": "final_consistent",
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05,
+        "mode_diversity_margin": 0.5,
+        "classification_target_mode": "joint",
+    },
     "GAST-PF-Uni": {
         "encoder_type": "gast",
         "gast_depth": 4,
         "gast_gsm_operator": "max",
         "gast_temporal_direction": "unidirectional",
+        "gast_oer_spatial": False,
+        "gast_emc_temporal": False,
+        "gast_ewhr_readout": False,
+        "loss_mode": "final_consistent",
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05,
+        "mode_diversity_margin": 0.5,
+        "classification_target_mode": "joint",
     },
+    "GAST": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
+        "gast_oer_spatial": True,
+        "gast_emc_temporal": True,
+        "gast_ewhr_readout": True,
+        "loss_mode": "final_consistent",
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05,
+        "mode_diversity_margin": 0.5,
+        "classification_target_mode": "joint",
+    },
+    "GAST-Goal-TrajCls": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
+        "gast_oer_spatial": True,
+        "gast_emc_temporal": True,
+        "gast_ewhr_readout": True,
+        "gast_goal": True,
+        "loss_mode": "final_consistent",
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05,
+        "mode_diversity_margin": 0.5,
+        "classification_target_mode": "trajectory",
+    },
+    "GAST-Goal": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
+        "gast_oer_spatial": True,
+        "gast_emc_temporal": True,
+        "gast_ewhr_readout": True,
+        "gast_goal": True,
+        "loss_mode": "final_consistent",
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05,
+        "mode_diversity_margin": 0.5,
+        "classification_target_mode": "joint",
+    },
+    # Legacy experiment label kept for evaluating existing checkpoints.
     "GAST-PF-UniOER": {
         "encoder_type": "gast",
         "gast_depth": 4,
@@ -43,6 +103,11 @@ VARIANTS = {
         "gast_oer_spatial": True,
         "gast_emc_temporal": True,
         "gast_ewhr_readout": True,
+        "loss_mode": "final_consistent",
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05,
+        "mode_diversity_margin": 0.5,
+        "classification_target_mode": "joint",
     },
 }
 
@@ -57,19 +122,28 @@ def get_git_revision():
 
 def build_model(variant: str, num_modes: int):
     from src.model.trajectory_forecaster import TrajectoryForecaster
-    return TrajectoryForecaster(
-        embed_dim=128, future_steps=12, num_heads=8, mlp_ratio=4.0,
-        qkv_bias=False, drop_path=0.2, num_actor_types=1,
-        num_modes=num_modes, bimamba=False, dt=0.4, obs_len=8,
-        **VARIANTS[variant],
-    )
+    model_config = {
+        "embed_dim": 128,
+        "future_steps": 12,
+        "num_heads": 8,
+        "mlp_ratio": 4.0,
+        "qkv_bias": False,
+        "drop_path": 0.2,
+        "num_actor_types": 1,
+        "num_modes": num_modes,
+        "bimamba": False,
+        "dt": 0.4,
+        "obs_len": 8,
+    }
+    model_config.update(VARIANTS[variant])
+    return TrajectoryForecaster(**model_config)
 
 
 def load_checkpoint(model, ckpt_path):
     ckpt = torch.load(ckpt_path, map_location="cpu")
     model_config = ckpt.get("hyper_parameters", {}).get("model", {})
     checkpoint_modes = model_config.get("num_modes") if hasattr(model_config, "get") else None
-    expected_modes = model.future_decoder.num_modes
+    expected_modes = model.num_modes
     if checkpoint_modes is not None and int(checkpoint_modes) != expected_modes:
         raise ValueError(
             f"checkpoint num_modes={checkpoint_modes} 与评估 K={expected_modes} 不一致"
@@ -80,7 +154,7 @@ def load_checkpoint(model, ckpt_path):
             f"checkpoint variant metadata mismatch: {checkpoint_variant} vs "
             f"{model_config.get('model_version')}"
         )
-    # Encoder and UniOER module switches must match the selected variant.
+    # Encoder and GAST module switches must match the selected variant.
     checkpoint_encoder = model_config.get("encoder_type", "m0") if hasattr(model_config, "get") else "m0"
     expected_encoder = model.encoder_type
     if checkpoint_encoder != expected_encoder:
@@ -100,6 +174,52 @@ def load_checkpoint(model, ckpt_path):
             raise ValueError(
                 f"checkpoint {switch}={ckpt_switch} does not match "
                 f"variant {switch}={model_switch}"
+            )
+    checkpoint_goal = (
+        bool(model_config.get("gast_goal", False))
+        if hasattr(model_config, "get") else False
+    )
+    if checkpoint_goal != model.gast_goal:
+        raise ValueError(
+            f"checkpoint gast_goal={checkpoint_goal} does not match "
+            f"variant gast_goal={model.gast_goal}"
+        )
+    checkpoint_loss_mode = (
+        model_config.get("loss_mode")
+        if hasattr(model_config, "get") else None
+    )
+    if checkpoint_loss_mode is not None and checkpoint_loss_mode != model.loss_mode:
+        raise ValueError(
+            f"checkpoint loss_mode={checkpoint_loss_mode} does not match "
+            f"variant loss_mode={model.loss_mode}"
+        )
+    checkpoint_classification_target = (
+        model_config.get("classification_target_mode")
+        if hasattr(model_config, "get") else None
+    )
+    if (
+        checkpoint_classification_target is not None
+        and checkpoint_classification_target != model.classification_target_mode
+    ):
+        raise ValueError(
+            "checkpoint classification_target_mode="
+            f"{checkpoint_classification_target} does not match variant "
+            f"classification_target_mode={model.classification_target_mode}"
+        )
+    for key in (
+        "goal_endpoint_loss_weight",
+        "mode_diversity_loss_weight",
+        "mode_diversity_margin",
+    ):
+        checkpoint_value = (
+            model_config.get(key) if hasattr(model_config, "get") else None
+        )
+        if checkpoint_value is not None and float(checkpoint_value) != float(
+            getattr(model, key)
+        ):
+            raise ValueError(
+                f"checkpoint {key}={checkpoint_value} does not match "
+                f"variant {key}={getattr(model, key)}"
             )
     checkpoint_direction = (
         model_config.get("gast_temporal_direction", "unidirectional")
@@ -181,7 +301,7 @@ def main():
     ap.add_argument("--difficulty", default="Mixed", choices=["Mixed"],
                     help="TrajGap-Bench 正式主协议固定为 Mixed")
     ap.add_argument("--split", default="test", choices=["train", "val", "test"])
-    ap.add_argument("--variant", default="GAST-PF-UniOER", choices=list(VARIANTS))
+    ap.add_argument("--variant", default="GAST", choices=list(VARIANTS))
     ap.add_argument("--K", type=int, default=20)
     ap.add_argument("--seed", type=int, default=2024)
     ap.add_argument("--batch-size", type=int, default=64)
