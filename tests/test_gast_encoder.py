@@ -120,15 +120,29 @@ def test_training_and_evaluation_expose_only_selected_variants():
     assert DEFAULT_VARIANT == "GAST"
     assert set(train_variants) == {
         "M0", "GAST-PF-Uni", "GAST", "GAST-Goal",
-        "GAST-Goal-TrajCls", "GAST-PF-UniOER",
+        "GAST-Goal-Joint", "GAST-Goal-TrajCls", "GAST-PF-UniOER",
     }
     assert train_variants.keys() == eval_variants.keys()
     assert train_variants["GAST"] == eval_variants["GAST"]
     assert train_variants["GAST-Goal"] == eval_variants["GAST-Goal"]
+    assert train_variants["GAST-Goal"]["classification_target_mode"] == "trajectory"
+    assert train_variants["GAST-Goal-Joint"] == eval_variants["GAST-Goal-Joint"]
+    assert train_variants["GAST-Goal-Joint"]["classification_target_mode"] == "joint"
     assert train_variants["GAST-Goal-TrajCls"] == eval_variants["GAST-Goal-TrajCls"]
-    assert train_variants["GAST-Goal"]["classification_target_mode"] == "joint"
     assert train_variants["GAST-Goal-TrajCls"]["classification_target_mode"] == "trajectory"
     assert train_variants["GAST-PF-UniOER"] == eval_variants["GAST-PF-UniOER"]
+
+
+def test_gast_goal_yaml_uses_trajectory_target_by_default():
+    import yaml
+
+    config = yaml.safe_load(
+        (REPO / "conf/model/gast_goal_model_forecast.yaml").read_text()
+    )
+    assert (
+        config["target"]["model"]["classification_target_mode"]
+        == "trajectory"
+    )
 
 
 def test_forecaster_registers_unioer_and_preserves_m0_state_dict():

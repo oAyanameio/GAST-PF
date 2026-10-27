@@ -64,6 +64,8 @@ VARIANTS = {
         "mode_diversity_margin": 0.5,
         "classification_target_mode": "joint",
     },
+    # Legacy alias for completed TrajCls checkpoints; new evaluations use
+    # GAST-Goal.
     "GAST-Goal-TrajCls": {
         "encoder_type": "gast",
         "gast_depth": 4,
@@ -80,6 +82,23 @@ VARIANTS = {
         "classification_target_mode": "trajectory",
     },
     "GAST-Goal": {
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_temporal_direction": "unidirectional",
+        "gast_oer_spatial": True,
+        "gast_emc_temporal": True,
+        "gast_ewhr_readout": True,
+        "gast_goal": True,
+        "loss_mode": "final_consistent",
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05,
+        "mode_diversity_margin": 0.5,
+        "classification_target_mode": "trajectory",
+    },
+    # Explicit joint-target ablation and compatibility entry point for the
+    # former GAST-Goal base configuration.
+    "GAST-Goal-Joint": {
         "encoder_type": "gast",
         "gast_depth": 4,
         "gast_gsm_operator": "max",

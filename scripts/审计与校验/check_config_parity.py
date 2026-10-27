@@ -57,13 +57,15 @@ def main():
         problems.append("training and evaluation variant registries differ")
     if set(TRAIN_VARIANTS) != {
         "M0", "GAST-PF-Uni", "GAST", "GAST-Goal",
-        "GAST-Goal-TrajCls", "GAST-PF-UniOER"
+        "GAST-Goal-Joint", "GAST-Goal-TrajCls", "GAST-PF-UniOER"
     }:
         problems.append(f"unexpected active variants: {sorted(TRAIN_VARIANTS)}")
     if TRAIN_VARIANTS.get("GAST") != EVAL_VARIANTS.get("GAST"):
         problems.append("GAST training and evaluation loss/model settings differ")
     if TRAIN_VARIANTS.get("GAST-Goal") != EVAL_VARIANTS.get("GAST-Goal"):
         problems.append("GAST-Goal training and evaluation loss/model settings differ")
+    if TRAIN_VARIANTS.get("GAST-Goal-Joint") != EVAL_VARIANTS.get("GAST-Goal-Joint"):
+        problems.append("GAST-Goal-Joint training and evaluation settings differ")
     if TRAIN_VARIANTS.get("GAST-Goal-TrajCls") != EVAL_VARIANTS.get("GAST-Goal-TrajCls"):
         problems.append("GAST-Goal-TrajCls training and evaluation settings differ")
     if TRAIN_VARIANTS.get("M0") != EVAL_VARIANTS.get("M0"):
