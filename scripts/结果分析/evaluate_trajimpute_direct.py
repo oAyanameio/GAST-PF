@@ -30,9 +30,8 @@ from src.evaluation.trajimpute_direct import DirectEvaluator, save_results  # no
 VARIANTS = {
     "M0": {
         "encoder_type": "m0",
-        "gast_oer_spatial": False,
-        "gast_emc_temporal": False,
-        "gast_ewhr_readout": False,
+        "gast_gere_spatial": False,
+        "gast_ecta": False,
         "gast_goal": False,
         "loss_mode": "final_consistent",
         "goal_endpoint_loss_weight": 1.0,
@@ -45,9 +44,8 @@ VARIANTS = {
         "gast_depth": 4,
         "gast_gsm_operator": "max",
         "gast_temporal_direction": "unidirectional",
-        "gast_oer_spatial": True,
-        "gast_emc_temporal": True,
-        "gast_ewhr_readout": True,
+        "gast_gere_spatial": True,
+        "gast_ecta": True,
         "gast_goal": True,
         "loss_mode": "final_consistent",
         "goal_endpoint_loss_weight": 1.0,
@@ -124,12 +122,15 @@ def load_checkpoint(model, ckpt_path):
             f"variant encoder_type={expected_encoder}"
         )
     switch_specs = {
-        "gast_oer_spatial": "gast_oer_spatial",
-        "gast_emc_temporal": "gast_emc_temporal",
-        "gast_ewhr_readout": "gast_ewhr_readout",
+        "gast_gere_spatial": "gast_gere_spatial",
+        "gast_ecta": "gast_ecta",
     }
     for switch, config_key in switch_specs.items():
-        ckpt_switch = bool(model_config.get(config_key, False)) if hasattr(model_config, "get") else False
+        ckpt_switch = (
+            bool(model_config.get(config_key, False))
+            if hasattr(model_config, "get")
+            else False
+        )
         model_switch = bool(getattr(model, switch, False))
         if ckpt_switch != model_switch:
             raise ValueError(

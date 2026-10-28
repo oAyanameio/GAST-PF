@@ -133,15 +133,15 @@ def relative_geometry_features(positions: torch.Tensor, valid_mask: torch.Tensor
     return features
 
 
-def evidence_pooled_history_readout(
+def evidence_weighted_state_aggregation(
     hidden: torch.Tensor,
     reliability: torch.Tensor,
-    scores: torch.Tensor,
+    content_scores: torch.Tensor,
     beta: torch.Tensor | float = 1.0,
     eps: float = 1e-8,
 ):
-    """Pool temporal states according to their available evidence."""
-    logits = scores.squeeze(-1) + torch.as_tensor(
+    """Aggregate temporal states using content scores and observation evidence."""
+    logits = content_scores.squeeze(-1) + torch.as_tensor(
         beta, dtype=hidden.dtype, device=hidden.device
     ) * torch.log(reliability.to(hidden.dtype).clamp_min(eps))
     weights = torch.softmax(logits, dim=-1)
@@ -169,13 +169,15 @@ class GSMAttnBlock(nn.Module):
         num_heads: int,
         operator: str = "max",
         p_dropout: float = 0.2,
-        observation_evidence_spatial: bool = False,
+        geometry_evidence_relational_encoding: bool = False,
     ):
         super().__init__()
         if operator not in {"mean", "sum", "max"}:
             raise ValueError(f"unsupported GSM operator={operator!r}")
         self.operator = operator
-        self.observation_evidence_spatial = bool(observation_evidence_spatial)
+        self.geometry_evidence_relational_encoding = bool(
+            geometry_evidence_relational_encoding
+        )
         self.patch_embed = nn.Sequential(
             nn.Linear(input_dim, model_dim, bias=False),
             nn.LayerNorm(model_dim),
@@ -203,7 +205,7 @@ class GSMAttnBlock(nn.Module):
             nn.LeakyReLU(),
             nn.Dropout(p_dropout),
         )
-        if self.observation_evidence_spatial:
+        if self.geometry_evidence_relational_encoding:
             self.geometry_bias = nn.Sequential(
                 nn.Linear(7, max(model_dim // 4, 16)),
                 nn.GELU(),
@@ -212,7 +214,7 @@ class GSMAttnBlock(nn.Module):
             nn.init.zeros_(self.geometry_bias[-1].weight)
             nn.init.zeros_(self.geometry_bias[-1].bias)
         self.apply(self._init_weights)
-        if self.observation_evidence_spatial:
+        if self.geometry_evidence_relational_encoding:
             nn.init.zeros_(self.geometry_bias[-1].weight)
             nn.init.zeros_(self.geometry_bias[-1].bias)
 
@@ -270,10 +272,10 @@ class GSMAttnBlock(nn.Module):
         attn_key_padding = torch.cat(
             [torch.zeros(B * T, 1, dtype=torch.bool, device=x.device),
              key_padding.unsqueeze(1).expand(B, T, N).reshape(B * T, N)], dim=1)
-        if self.observation_evidence_spatial:
+        if self.geometry_evidence_relational_encoding:
             if positions is None or source_eligibility is None:
                 raise ValueError(
-                    "OER-GSM requires positions and source eligibility"
+                    "GERE requires positions and source eligibility"
                 )
             geometry = relative_geometry_features(
                 positions, source_eligibility.bool()
@@ -321,10 +323,10 @@ class GSMAttnBlock(nn.Module):
 
 
 class GeometryEvidenceRelationalGSM(GSMAttnBlock):
-    """OER spatial stage: geometry- and evidence-conditioned GSM."""
+    """GERE spatial stage: geometry- and evidence-conditioned GSM."""
 
     def __init__(self, *args, **kwargs):
-        kwargs["observation_evidence_spatial"] = True
+        kwargs["geometry_evidence_relational_encoding"] = True
         super().__init__(*args, **kwargs)
 
 
@@ -376,7 +378,57 @@ class TemporalEncoder(nn.Module):
 
 
 class ReliabilityModulatedCausalMamba(TemporalEncoder):
-    """Reliability-modulated temporal stage used by GAST."""
+    """Reliability-modulated causal temporal encoder used by GAST."""
+
+
+class EvidenceWeightedStateAggregation(nn.Module):
+    """Aggregate temporal states according to content and evidence strength."""
+
+    def __init__(self, embed_dim: int):
+        super().__init__()
+        self.score = nn.Linear(embed_dim, 1)
+        nn.init.zeros_(self.score.weight)
+        nn.init.zeros_(self.score.bias)
+        self.register_buffer("beta", torch.tensor(1.0))
+
+    def forward(self, hidden: torch.Tensor, reliability: torch.Tensor):
+        return evidence_weighted_state_aggregation(
+            hidden,
+            reliability,
+            self.score(hidden),
+            beta=self.beta,
+        )
+
+
+class EvidenceConditionedCausalTemporalAggregation(nn.Module):
+    """Compose reliability-modulated Mamba and evidence-weighted aggregation."""
+
+    def __init__(
+        self,
+        embed_dim: int,
+        depth: int,
+        p_dropout: float = 0.2,
+        drop_path: float = 0.2,
+    ):
+        super().__init__()
+        self.temporal_mamba = ReliabilityModulatedCausalMamba(
+            embed_dim,
+            depth=depth,
+            p_dropout=p_dropout,
+            drop_path=drop_path,
+        )
+        self.state_aggregation = EvidenceWeightedStateAggregation(embed_dim)
+
+    def forward(
+        self,
+        spatial_states: torch.Tensor,
+        reliability: torch.Tensor,
+    ):
+        hidden = self.temporal_mamba(
+            spatial_states,
+            reliability=reliability,
+        )
+        return self.state_aggregation(hidden, reliability)
 
 
 class TemporalDecay(nn.Module):
@@ -399,7 +451,7 @@ class TemporalDecay(nn.Module):
 
 
 class GASTEncoder(nn.Module):
-    """Unidirectional GAST encoder with observation-evidence modules."""
+    """Unidirectional GAST encoder with GERE and ECTA."""
 
     def __init__(
         self,
@@ -410,35 +462,29 @@ class GASTEncoder(nn.Module):
         operator: str = "max",
         p_dropout: float = 0.2,
         drop_path: float = 0.2,
-        observation_evidence_spatial: bool = False,
-        evidence_modulated_temporal: bool = False,
-        evidence_weighted_readout: bool = False,
+        geometry_evidence_relational_encoding: bool = False,
+        evidence_conditioned_causal_temporal_aggregation: bool = False,
     ):
         super().__init__()
-        self.observation_evidence_spatial = bool(observation_evidence_spatial)
-        self.evidence_modulated_temporal = bool(evidence_modulated_temporal)
-        self.evidence_weighted_readout = bool(evidence_weighted_readout)
-        self.evidence_enabled = any(
-            (
-                self.observation_evidence_spatial,
-                self.evidence_modulated_temporal,
-                self.evidence_weighted_readout,
-            )
+        self.geometry_evidence_relational_encoding = bool(
+            geometry_evidence_relational_encoding
         )
-        if any((
-            self.observation_evidence_spatial,
-            self.evidence_modulated_temporal,
-            self.evidence_weighted_readout,
-        )) and not all((
-            self.observation_evidence_spatial,
-            self.evidence_modulated_temporal,
-            self.evidence_weighted_readout,
-        )):
-            raise ValueError("GAST enables all three evidence modules together")
+        self.evidence_conditioned_causal_temporal_aggregation = bool(
+            evidence_conditioned_causal_temporal_aggregation
+        )
+        self.evidence_enabled = (
+            self.geometry_evidence_relational_encoding
+            or self.evidence_conditioned_causal_temporal_aggregation
+        )
+        if (
+            self.geometry_evidence_relational_encoding
+            != self.evidence_conditioned_causal_temporal_aggregation
+        ):
+            raise ValueError("GAST enables GERE and ECTA together")
 
         spatial_cls = (
             GeometryEvidenceRelationalGSM
-            if self.observation_evidence_spatial else GSMAttnBlock
+            if self.geometry_evidence_relational_encoding else GSMAttnBlock
         )
         self.spatial = spatial_cls(
             input_dim,
@@ -447,24 +493,24 @@ class GASTEncoder(nn.Module):
             operator=operator,
             p_dropout=p_dropout,
         )
-        temporal_cls = (
-            ReliabilityModulatedCausalMamba
-            if self.evidence_modulated_temporal else TemporalEncoder
-        )
-        self.temporal = temporal_cls(
-            embed_dim,
-            depth=depth,
-            p_dropout=p_dropout,
-            drop_path=drop_path,
-        )
         if self.evidence_enabled:
             self.evidence_tau_logit = nn.Parameter(torch.tensor(-2.2521685))
-        if self.evidence_weighted_readout:
-            self.readout_score = nn.Linear(embed_dim, 1)
-            nn.init.zeros_(self.readout_score.weight)
-            nn.init.zeros_(self.readout_score.bias)
-            self.register_buffer("readout_beta", torch.tensor(1.0))
-        if not self.evidence_modulated_temporal:
+        if self.evidence_conditioned_causal_temporal_aggregation:
+            self.temporal_aggregation = (
+                EvidenceConditionedCausalTemporalAggregation(
+                    embed_dim,
+                    depth=depth,
+                    p_dropout=p_dropout,
+                    drop_path=drop_path,
+                )
+            )
+        else:
+            self.temporal = TemporalEncoder(
+                embed_dim,
+                depth=depth,
+                p_dropout=p_dropout,
+                drop_path=drop_path,
+            )
             self.temporal_decay = TemporalDecay(embed_dim, delta_dim=2)
 
     @property
@@ -501,10 +547,10 @@ class GASTEncoder(nn.Module):
         else:
             source_eligibility = reliability = None
 
-        if self.observation_evidence_spatial:
+        if self.geometry_evidence_relational_encoding:
             if positions is None:
                 raise ValueError(
-                    "OER-GSM requires observed positions for relational attention"
+                    "GERE requires observed positions for relational attention"
                 )
             x_spa = self.spatial(
                 x,
@@ -516,12 +562,8 @@ class GASTEncoder(nn.Module):
         else:
             x_spa = self.spatial(x, mask, padding)
 
-        if self.evidence_modulated_temporal:
-            y = self.temporal(x_spa, reliability=reliability)
-            scores = self.readout_score(y)
-            output, _ = evidence_pooled_history_readout(
-                y, reliability, scores, beta=self.readout_beta
-            )
+        if self.evidence_conditioned_causal_temporal_aggregation:
+            output, _ = self.temporal_aggregation(x_spa, reliability)
         else:
             output = self._regular_temporal_readout(x_spa, valid_mask)
 

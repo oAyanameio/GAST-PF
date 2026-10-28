@@ -66,13 +66,13 @@
         </mxCell>
 
         <!-- GAST encoder -->
-        <mxCell id="oer_gsm" value="OER-GSM&lt;br&gt;geometry-biased actor attention" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#E8DAEF;strokeColor=#6C4A8A;fontColor=#3A2560;fontFamily=Times New Roman;fontSize=10;fontStyle=1;align=center;verticalAlign=middle;spacing=4;" vertex="1" parent="1">
+        <mxCell id="gere_gsm" value="GERE&lt;br&gt;geometry-biased actor attention" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#E8DAEF;strokeColor=#6C4A8A;fontColor=#3A2560;fontFamily=Times New Roman;fontSize=10;fontStyle=1;align=center;verticalAlign=middle;spacing=4;" vertex="1" parent="1">
           <mxGeometry x="285" y="170" width="125" height="54" as="geometry"/>
         </mxCell>
         <mxCell id="causal_mamba" value="Reliability-Modulated&lt;br&gt;Causal Uni-Mamba ×4" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#D5F0DC;strokeColor=#1E8449;fontColor=#145A32;fontFamily=Times New Roman;fontSize=10;fontStyle=1;align=center;verticalAlign=middle;spacing=4;" vertex="1" parent="1">
           <mxGeometry x="430" y="170" width="125" height="54" as="geometry"/>
         </mxCell>
-        <mxCell id="ewhr" value="EWHR&lt;br&gt;evidence-weighted history readout" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FBE5C6;strokeColor=#B0651A;fontColor=#6E3D0A;fontFamily=Times New Roman;fontSize=9;fontStyle=1;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
+        <mxCell id="ewsa" value="EWSA&lt;br&gt;evidence-weighted state aggregation" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FBE5C6;strokeColor=#B0651A;fontColor=#6E3D0A;fontFamily=Times New Roman;fontSize=9;fontStyle=1;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
           <mxGeometry x="355" y="295" width="165" height="54" as="geometry"/>
         </mxCell>
         <mxCell id="actor_encoding" value="GAST actor encoding&lt;br&gt;[B, N, d] · focal at index 0" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#DCE9F7;strokeColor=#3A5A8A;fontColor=#1B2A3B;fontFamily=Times New Roman;fontSize=10;fontStyle=1;align=center;verticalAlign=middle;spacing=4;" vertex="1" parent="1">
@@ -176,27 +176,27 @@
           <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="240" y="256"/><mxPoint x="240" y="430"/><mxPoint x="176" y="430"/></Array></mxGeometry>
         </mxCell>
 
-        <mxCell id="e_feature_oer" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5F6368;strokeWidth=1.4;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.67;entryDx=0;entryDy=0;" edge="1" parent="1" source="feature_build" target="oer_gsm">
+        <mxCell id="e_feature_gere" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5F6368;strokeWidth=1.4;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.67;entryDx=0;entryDy=0;" edge="1" parent="1" source="feature_build" target="gere_gsm">
           <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="260" y="391"/><mxPoint x="260" y="206"/></Array></mxGeometry>
         </mxCell>
-        <mxCell id="e_positions_oer" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#9AA0A6;strokeWidth=1.1;dashed=1;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="positions" target="oer_gsm">
+        <mxCell id="e_positions_gere" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#9AA0A6;strokeWidth=1.1;dashed=1;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="positions" target="gere_gsm">
           <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="245" y="316"/><mxPoint x="245" y="140"/><mxPoint x="347" y="140"/></Array></mxGeometry>
         </mxCell>
-        <mxCell id="e_evidence_oer" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#9AA0A6;strokeWidth=1.1;dashed=1;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.33;entryDx=0;entryDy=0;" edge="1" parent="1" source="evidence_state" target="oer_gsm">
+        <mxCell id="e_evidence_gere" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#9AA0A6;strokeWidth=1.1;dashed=1;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.33;entryDx=0;entryDy=0;" edge="1" parent="1" source="evidence_state" target="gere_gsm">
           <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="265" y="464"/><mxPoint x="265" y="188"/></Array></mxGeometry>
         </mxCell>
-        <mxCell id="e_oer_mamba" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5F6368;strokeWidth=1.4;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="oer_gsm" target="causal_mamba">
+        <mxCell id="e_gere_mamba" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5F6368;strokeWidth=1.4;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="gere_gsm" target="causal_mamba">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="e_evidence_mamba" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#9AA0A6;strokeWidth=1.1;dashed=1;endArrow=block;endFill=1;exitX=1;exitY=0.8;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="evidence_state" target="causal_mamba">
           <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="270" y="478"/><mxPoint x="270" y="150"/><mxPoint x="492" y="150"/></Array></mxGeometry>
         </mxCell>
 
-        <mxCell id="e_mamba_ewhr" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5F6368;strokeWidth=1.4;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="causal_mamba" target="ewhr">
+        <mxCell id="e_mamba_ewsa" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5F6368;strokeWidth=1.4;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="causal_mamba" target="ewsa">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
 
-        <mxCell id="e_ewhr_actor" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5F6368;strokeWidth=1.4;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="ewhr" target="actor_encoding">
+        <mxCell id="e_ewsa_actor" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5F6368;strokeWidth=1.4;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="ewsa" target="actor_encoding">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="e_actor_focal" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C0762C;strokeWidth=2.2;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="actor_encoding" target="focal_encoding">

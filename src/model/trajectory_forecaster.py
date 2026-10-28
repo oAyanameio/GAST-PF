@@ -30,9 +30,8 @@ class TrajectoryForecaster(nn.Module):
         encoder_type: str = "m0",
         gast_depth: int = 4,
         gast_gsm_operator: str = "max",
-        gast_oer_spatial: bool = False,
-        gast_emc_temporal: bool = False,
-        gast_ewhr_readout: bool = False,
+        gast_gere_spatial: bool = False,
+        gast_ecta: bool = False,
         gast_temporal_direction: str = "unidirectional",
         gast_goal=None,
         goal_endpoint_loss_weight: float = 1.0,
@@ -69,16 +68,14 @@ class TrajectoryForecaster(nn.Module):
         self.gast_temporal_direction = gast_temporal_direction
         if self.gast_temporal_direction != "unidirectional":
             raise ValueError("GAST supports only unidirectional temporal encoding")
-        self.gast_oer_spatial = bool(gast_oer_spatial) and encoder_type == "gast"
-        self.gast_emc_temporal = bool(gast_emc_temporal) and encoder_type == "gast"
-        self.gast_ewhr_readout = bool(gast_ewhr_readout) and encoder_type == "gast"
+        self.gast_gere_spatial = bool(gast_gere_spatial) and encoder_type == "gast"
+        self.gast_ecta = bool(gast_ecta) and encoder_type == "gast"
         evidence_switches = (
-            self.gast_oer_spatial,
-            self.gast_emc_temporal,
-            self.gast_ewhr_readout,
+            self.gast_gere_spatial,
+            self.gast_ecta,
         )
         if any(evidence_switches) and not all(evidence_switches):
-            raise ValueError("GAST enables OER, EMC, and EWHR together")
+            raise ValueError("GAST enables GERE and ECTA together")
         if gast_goal is None:
             gast_goal = encoder_type == "gast" and all(evidence_switches)
         self.gast_goal = bool(gast_goal)
@@ -164,9 +161,8 @@ class TrajectoryForecaster(nn.Module):
                 operator=gast_gsm_operator,
                 p_dropout=0.2,
                 drop_path=drop_path,
-                observation_evidence_spatial=self.gast_oer_spatial,
-                evidence_modulated_temporal=self.gast_emc_temporal,
-                evidence_weighted_readout=self.gast_ewhr_readout,
+                geometry_evidence_relational_encoding=self.gast_gere_spatial,
+                evidence_conditioned_causal_temporal_aggregation=self.gast_ecta,
             )
             torch.random.set_rng_state(rng_state)
 
@@ -244,8 +240,9 @@ class TrajectoryForecaster(nn.Module):
                 if migrated.startswith(old):
                     migrated = new + migrated[len(old):]
                     break
-            for old, new in head_replacements:
-                migrated = migrated.replace(old, new)
+            if migrated.startswith("future_decoder."):
+                for old, new in head_replacements:
+                    migrated = migrated.replace(old, new)
             if migrated != relative:
                 state_dict[prefix + migrated] = state_dict.pop(key)
         super()._load_from_state_dict(
@@ -271,7 +268,11 @@ class TrajectoryForecaster(nn.Module):
                 hist_feat,
                 hist_valid_mask,
                 ~hist_key_valid_mask,
-                positions=data["x_positions"] if self.gast_oer_spatial else None,
+                positions=(
+                    data["x_positions"]
+                    if self.gast_gere_spatial
+                    else None
+                ),
             )
         else:
             # unidirectional mamba（M0 原版路径）

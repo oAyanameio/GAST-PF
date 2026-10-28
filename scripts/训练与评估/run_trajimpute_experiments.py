@@ -46,9 +46,8 @@ OPTIMIZER_POLICY = "adamw_complete_module_local_v1"
 VARIANTS = {
     "M0": {
         "encoder_type": "m0",
-        "gast_oer_spatial": False,
-        "gast_emc_temporal": False,
-        "gast_ewhr_readout": False,
+        "gast_gere_spatial": False,
+        "gast_ecta": False,
         "gast_goal": False,
         "loss_mode": "final_consistent",
         "goal_endpoint_loss_weight": 1.0,
@@ -61,9 +60,8 @@ VARIANTS = {
         "gast_depth": 4,
         "gast_gsm_operator": "max",
         "gast_temporal_direction": "unidirectional",
-        "gast_oer_spatial": True,
-        "gast_emc_temporal": True,
-        "gast_ewhr_readout": True,
+        "gast_gere_spatial": True,
+        "gast_ecta": True,
         "gast_goal": True,
         "loss_mode": "final_consistent",
         "goal_endpoint_loss_weight": 1.0,

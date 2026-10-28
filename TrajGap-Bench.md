@@ -21,16 +21,17 @@
 GAST
 ├── GAST gap-aware encoder
 │   ├── 单向 Mamba 时序编码
-│   ├── OER 空间证据路由
-│   ├── EMC 时间证据调制
-│   └── EWHR 证据加权读出
+│   ├── GERE 逐帧几何证据关系编码
+│   └── ECTA 观测证据条件化因果时间聚合
+│       ├── RMCM 可靠度调制的因果 Mamba
+│       └── EWSA 证据加权状态聚合
 └── Goal-conditioned future decoder
     ├── 终点条件化
     ├── final-consistent loss
     └── mode diversity regularization
 ```
 
-goal 条件解码和轨迹级模式排序是 GAST 的内置设计，不单独注册为第二个模型。旧实验中的 `GAST-PF`、`GAST-PF-UniOER`、`GAST-Goal` 和 `UT-ENC` 仅是历史标签或产物目录名。
+goal 条件解码和轨迹级模式排序是 GAST 的内置设计，不单独注册为第二个模型。实验配置统一使用 GAST，M0 仅作为历史对照。
 
 ### 1.2 研究问题
 
@@ -205,7 +206,7 @@ Micro average 按测试样本数加权。结果来源：当前 GAST 的五场景
 | 项目 | `GAST` |
 |---|---|
 | Encoder | `GAST`，单向 gap-aware Mamba |
-| Evidence routing | OER + EMC + EWHR |
+| Evidence-conditioned encoding | GERE + ECTA (RMCM + EWSA) |
 | Decoder | GAST 内置 goal-conditioned future decoder |
 | Mode ranking | GAST 内置 trajectory-aware classification |
 | Prediction modes | `K=20` |
@@ -291,13 +292,13 @@ The benchmark reuses the official TrajImpute Easy/Hard release. Its contribution
 The complete method in this document is **GAST**:
 
 - unidirectional Mamba temporal encoding;
-- OER spatial evidence routing;
-- EMC temporal evidence modulation;
-- EWHR evidence-weighted readout;
+- GERE frame-wise geometric evidence encoding;
+- RMCM reliability-modulated causal temporal encoding;
+- EWSA evidence-weighted state aggregation;
 - goal-conditioned future decoding;
 - final-consistent loss and mode-diversity regularization.
 
-Goal-conditioned decoding and trajectory-aware mode ranking are internal components of GAST, not separate model names. `GAST-PF`, `GAST-PF-UniOER`, `GAST-Goal`, and `UT-ENC` are legacy labels used only for historical artifacts.
+Goal-conditioned decoding and trajectory-aware mode ranking are internal components of GAST, not separate model names. Experimental configurations use GAST consistently, with M0 retained only as the historical reference.
 
 ## 2. Dataset and task
 

@@ -23,9 +23,8 @@ def test_gast_forward_uses_goal_decoder_as_base_design():
         dt=0.4,
         obs_len=8,
         encoder_type="gast",
-        gast_oer_spatial=True,
-        gast_emc_temporal=True,
-        gast_ewhr_readout=True,
+        gast_gere_spatial=True,
+        gast_ecta=True,
         loss_mode="final_consistent",
     ).cuda().eval()
     data = {

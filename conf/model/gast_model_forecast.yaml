@@ -20,9 +20,8 @@ target:
     gast_depth: 4
     gast_gsm_operator: 'max'
     gast_temporal_direction: 'unidirectional'
-    gast_oer_spatial: true
-    gast_emc_temporal: true
-    gast_ewhr_readout: true
+    gast_gere_spatial: true
+    gast_ecta: true
     # Goal-conditioned decoding and trajectory-aware mode ranking are
     # intrinsic parts of GAST, not a separate model variant.
     gast_goal: true

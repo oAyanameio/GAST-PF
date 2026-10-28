@@ -44,10 +44,14 @@ def _seed_grads(module, scale=1.0):
 
 def test_group_of_maps_modules():
     assert group_of("gast_encoder.spatial.patch_embed.0.weight") == "enc.spatial"
-    assert group_of("gast_encoder.temporal.ssm_forw.0.mixer.A_log") == "enc.temporal"
+    assert group_of(
+        "gast_encoder.temporal_aggregation.temporal_mamba.ssm_forw.0.mixer.A_log"
+    ) == "enc.aggregation"
     assert group_of("gast_encoder.temporal_decay.mlp.weight") == "enc.temporal_decay"
     assert group_of("gast_encoder.evidence_tau_logit") == "enc.readout"
-    assert group_of("gast_encoder.readout_score.weight") == "enc.readout"
+    assert group_of(
+        "gast_encoder.temporal_aggregation.state_aggregation.score.weight"
+    ) == "enc.aggregation"
     assert group_of("future_decoder.x.weight") == "decoder"
     assert group_of("neighbor_prediction_head.0.weight") == "aux.neighbor_head"
     assert group_of("future_time_embedding.0.weight") == "aux.time_embed"
