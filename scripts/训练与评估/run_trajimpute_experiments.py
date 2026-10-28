@@ -41,26 +41,15 @@ DEFAULT_PROTOCOL = "mixed-direct"
 DEFAULT_VARIANT = "GAST"
 OPTIMIZER_POLICY = "adamw_complete_module_local_v1"
 
-# Keep the M0 reference, Uni attribution control, selected GAST model, and the
-# GAST-Goal base design. Trajectory-aware mode classification is an internal
-# design choice of GAST-Goal, not a separate headline variant.
+# Keep one proposed method name. Goal-conditioned decoding and trajectory-aware
+# mode ranking are built into GAST; M0 remains the historical reference.
 VARIANTS = {
     "M0": {
         "encoder_type": "m0",
-        "loss_mode": "final_consistent",
-        "goal_endpoint_loss_weight": 1.0,
-        "mode_diversity_loss_weight": 0.05,
-        "mode_diversity_margin": 0.5,
-        "classification_target_mode": "joint",
-    },
-    "GAST-PF-Uni": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
         "gast_oer_spatial": False,
         "gast_emc_temporal": False,
         "gast_ewhr_readout": False,
+        "gast_goal": False,
         "loss_mode": "final_consistent",
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05,
@@ -75,74 +64,12 @@ VARIANTS = {
         "gast_oer_spatial": True,
         "gast_emc_temporal": True,
         "gast_ewhr_readout": True,
-        "loss_mode": "final_consistent",
-        "goal_endpoint_loss_weight": 1.0,
-        "mode_diversity_loss_weight": 0.05,
-        "mode_diversity_margin": 0.5,
-        "classification_target_mode": "joint",
-    },
-    # Legacy alias for completed TrajCls runs; new experiments use GAST-Goal.
-    "GAST-Goal-TrajCls": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_oer_spatial": True,
-        "gast_emc_temporal": True,
-        "gast_ewhr_readout": True,
         "gast_goal": True,
         "loss_mode": "final_consistent",
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05,
         "mode_diversity_margin": 0.5,
         "classification_target_mode": "trajectory",
-    },
-    "GAST-Goal": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_oer_spatial": True,
-        "gast_emc_temporal": True,
-        "gast_ewhr_readout": True,
-        "gast_goal": True,
-        "loss_mode": "final_consistent",
-        "goal_endpoint_loss_weight": 1.0,
-        "mode_diversity_loss_weight": 0.05,
-        "mode_diversity_margin": 0.5,
-        "classification_target_mode": "trajectory",
-    },
-    # Explicit joint-target ablation and compatibility entry point for the
-    # former GAST-Goal base configuration.
-    "GAST-Goal-Joint": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_oer_spatial": True,
-        "gast_emc_temporal": True,
-        "gast_ewhr_readout": True,
-        "gast_goal": True,
-        "loss_mode": "final_consistent",
-        "goal_endpoint_loss_weight": 1.0,
-        "mode_diversity_loss_weight": 0.05,
-        "mode_diversity_margin": 0.5,
-        "classification_target_mode": "joint",
-    },
-    # Legacy experiment label kept for loading and reproducing existing runs.
-    "GAST-PF-UniOER": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_oer_spatial": True,
-        "gast_emc_temporal": True,
-        "gast_ewhr_readout": True,
-        "loss_mode": "final_consistent",
-        "goal_endpoint_loss_weight": 1.0,
-        "mode_diversity_loss_weight": 0.05,
-        "mode_diversity_margin": 0.5,
-        "classification_target_mode": "joint",
     },
 }
 
@@ -321,11 +248,11 @@ def _model_config(args):
         "encoder_type": "gast", "gast_depth": 4,
         "gast_gsm_operator": "max",
         "gast_temporal_direction": "unidirectional",
-        "gast_goal": False,
+        "gast_goal": True,
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05,
         "mode_diversity_margin": 0.5,
-        "classification_target_mode": "joint",
+        "classification_target_mode": "trajectory",
         "loss_mode": "final_consistent",
     }
     config.update(VARIANTS[args.variant])

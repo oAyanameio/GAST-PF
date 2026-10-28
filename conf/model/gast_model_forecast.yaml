@@ -1,4 +1,4 @@
-name: missing_aware_ethucy
+name: gast
 phase: actor-only
 
 target:
@@ -15,22 +15,21 @@ target:
     num_modes: 20
     dt: 0.4
     obs_len: 8
-    # bimamba 仅用于 M0 对照；GAST 固定使用因果单向 Mamba。
     bimamba: ${bimamba}
-    # 当前主模型：GAST；M0 由对照实验显式指定。
     encoder_type: 'gast'
     gast_depth: 4
     gast_gsm_operator: 'max'
-    # GAST：OER 空间关系 + 单向证据调制 Mamba + 证据加权历史读出。
     gast_temporal_direction: 'unidirectional'
     gast_oer_spatial: true
     gast_emc_temporal: true
     gast_ewhr_readout: true
-    gast_goal: false
+    # Goal-conditioned decoding and trajectory-aware mode ranking are
+    # intrinsic parts of GAST, not a separate model variant.
+    gast_goal: true
     goal_endpoint_loss_weight: 1.0
     mode_diversity_loss_weight: 0.05
     mode_diversity_margin: 0.5
-    classification_target_mode: 'joint'
+    classification_target_mode: 'trajectory'
     loss_mode: 'final_consistent'
   pretrained_weights: ${pretrained_weights}
   lr: ${lr}

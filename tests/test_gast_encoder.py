@@ -118,31 +118,22 @@ def test_training_and_evaluation_expose_only_selected_variants():
     from scripts.结果分析.evaluate_trajimpute_direct import VARIANTS as eval_variants
 
     assert DEFAULT_VARIANT == "GAST"
-    assert set(train_variants) == {
-        "M0", "GAST-PF-Uni", "GAST", "GAST-Goal",
-        "GAST-Goal-Joint", "GAST-Goal-TrajCls", "GAST-PF-UniOER",
-    }
+    assert set(train_variants) == {"M0", "GAST"}
     assert train_variants.keys() == eval_variants.keys()
     assert train_variants["GAST"] == eval_variants["GAST"]
-    assert train_variants["GAST-Goal"] == eval_variants["GAST-Goal"]
-    assert train_variants["GAST-Goal"]["classification_target_mode"] == "trajectory"
-    assert train_variants["GAST-Goal-Joint"] == eval_variants["GAST-Goal-Joint"]
-    assert train_variants["GAST-Goal-Joint"]["classification_target_mode"] == "joint"
-    assert train_variants["GAST-Goal-TrajCls"] == eval_variants["GAST-Goal-TrajCls"]
-    assert train_variants["GAST-Goal-TrajCls"]["classification_target_mode"] == "trajectory"
-    assert train_variants["GAST-PF-UniOER"] == eval_variants["GAST-PF-UniOER"]
+    assert train_variants["GAST"]["gast_goal"] is True
+    assert train_variants["GAST"]["classification_target_mode"] == "trajectory"
 
 
-def test_gast_goal_yaml_uses_trajectory_target_by_default():
+def test_gast_yaml_uses_trajectory_target_and_goal_decoder_by_default():
     import yaml
 
     config = yaml.safe_load(
-        (REPO / "conf/model/gast_goal_model_forecast.yaml").read_text()
+        (REPO / "conf/model/gast_model_forecast.yaml").read_text()
     )
-    assert (
-        config["target"]["model"]["classification_target_mode"]
-        == "trajectory"
-    )
+    model = config["target"]["model"]
+    assert model["gast_goal"] is True
+    assert model["classification_target_mode"] == "trajectory"
 
 
 def test_forecaster_registers_unioer_and_preserves_m0_state_dict():
@@ -164,3 +155,53 @@ def test_forecaster_registers_unioer_and_preserves_m0_state_dict():
     assert model.gast_method_name == "GAST"
     assert not hasattr(model, "gast_scene_tail")
     assert not any(key.startswith("history_input_projection.") for key in model.state_dict())
+
+
+def test_legacy_gast_goal_checkpoint_loads_as_gast(tmp_path):
+    from scripts.结果分析.evaluate_trajimpute_direct import (
+        build_model,
+        load_checkpoint,
+    )
+    from src.model.trajectory_forecaster import TrajectoryForecaster
+
+    legacy_config = {
+        "embed_dim": 128,
+        "future_steps": 12,
+        "num_heads": 8,
+        "mlp_ratio": 4.0,
+        "qkv_bias": False,
+        "drop_path": 0.2,
+        "num_actor_types": 1,
+        "num_modes": 4,
+        "bimamba": False,
+        "dt": 0.4,
+        "obs_len": 8,
+        "encoder_type": "gast",
+        "gast_depth": 4,
+        "gast_gsm_operator": "max",
+        "gast_oer_spatial": True,
+        "gast_emc_temporal": True,
+        "gast_ewhr_readout": True,
+        "gast_temporal_direction": "unidirectional",
+        "gast_goal": True,
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05,
+        "mode_diversity_margin": 0.5,
+        "classification_target_mode": "trajectory",
+        "loss_mode": "final_consistent",
+    }
+    legacy_model = TrajectoryForecaster(**legacy_config)
+    checkpoint = {
+        "state_dict": {
+            f"net.{key}": value for key, value in legacy_model.state_dict().items()
+        },
+        "hyper_parameters": {"model": legacy_config},
+        "meta": {"variant": "GAST-Goal"},
+    }
+    checkpoint_path = tmp_path / "legacy_gast_goal.ckpt"
+    torch.save(checkpoint, checkpoint_path)
+
+    current_model = build_model("GAST", num_modes=4)
+    missing, unexpected = load_checkpoint(current_model, checkpoint_path)
+    assert missing == []
+    assert unexpected == []

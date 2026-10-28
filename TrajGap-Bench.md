@@ -15,10 +15,10 @@
 
 ### 1.1 当前本文模型
 
-当前本文模型使用最新的 **GAST-Goal**，其底座为正式命名的 **GAST（Gap-Aware Spatio-Temporal Pedestrian Forecaster）编码器**：
+当前本文完整方法统一命名为 **GAST（Gap-Aware Spatio-Temporal Pedestrian Forecaster）**：
 
 ```text
-GAST-Goal
+GAST
 ├── GAST gap-aware encoder
 │   ├── 单向 Mamba 时序编码
 │   ├── OER 空间证据路由
@@ -30,7 +30,7 @@ GAST-Goal
     └── mode diversity regularization
 ```
 
-旧实验中的 `GAST-PF`、`GAST-PF-UniOER` 和 `UT-ENC` 是历史标签或产物目录名。本文统一将当前编码器称为 `GAST`，将最新完整模型称为 `GAST-Goal`，避免把旧标签误解为另一套方法。
+goal 条件解码和轨迹级模式排序是 GAST 的内置设计，不单独注册为第二个模型。旧实验中的 `GAST-PF`、`GAST-PF-UniOER`、`GAST-Goal` 和 `UT-ENC` 仅是历史标签或产物目录名。
 
 ### 1.2 研究问题
 
@@ -39,7 +39,7 @@ GAST-Goal
 1. 模型能否直接利用不完整历史，而不是依赖外部插补？
 2. 在相同缺失数量下，缺失位置和时间结构是否会改变预测难度？
 3. 模型性能是否能在可观测证据减少时平稳退化？
-4. goal 条件化是否能改善缺失历史下的多模态未来覆盖？
+4. GAST 的 goal 条件化是否能改善缺失历史下的多模态未来覆盖？
 
 ## 2. 数据集与任务
 
@@ -170,16 +170,16 @@ TrajGap-Bench 正式主榜只报告两个指标：
 
 下面的表格汇总当前仓库中已经完成或已有可审计产物的 direct 对比结果，单位为米，单元格格式为 `minADE20 / minFDE20`，所有指标均越低越好。
 
-**本文最新模型为 `GAST-Goal`，使用 `GAST` 编码器作为底座。** 表中同时保留标准解码器版本 `GAST`（历史实验标签为 `GAST-PF`）作为上一代内部对照；`MoFlow`、`SocialLSTM`、`AgentFormer`、`Re` 和 `MS-TIP` 是外部对照或外部复现结果。
+**本文正式方法为 `GAST`。** goal 条件解码和轨迹级模式排序属于 GAST 内部设计；旧标准 decoder 结果只作为“GAST 消融（不含 goal 条件解码）”的内部参考，不构成第二个正式方法。`MoFlow`、`SocialLSTM`、`AgentFormer`、`Re` 和 `MS-TIP` 是外部对照或外部复现结果。
 
-需要注意：`GAST-Goal` 五场景结果已经按最终预测头 `val_new_minFDE20` 完成；部分历史对照仍来自早期 screening 产物，正式投稿前应将所有方法统一重跑到同一 checkpoint 规则。表格因此用于当前研究对照，不应在重跑前称为最终 v1.1 leaderboard。
+需要注意：GAST 五场景结果已按最终预测头 `val_new_minFDE20` 完成；部分历史对照仍来自早期 screening 产物，正式投稿前应将所有方法统一重跑到同一 checkpoint 规则。表格因此用于当前研究对照，不应在重跑前称为最终 v1.1 leaderboard。
 
 ### 4.2 五场景对照表
 
 | 方法 | `ETH-M` | `HOTEL-M` | `UNIV-M` | `ZARA1-M` | `ZARA2-M` | Macro Avg | 完成度 |
 |---|---|---|---|---|---|---|---|
-| **GAST-Goal（本文最新模型）** | **0.5852 / 0.8212** | 0.2541 / 0.3769 | **0.3200 / 0.5244** | 0.2510 / 0.4128 | 0.1738 / **0.2801** | **0.3168 / 0.4831** | 5/5 |
-| GAST（标准解码器；历史标签 GAST-PF） | 0.6191 / 0.8544 | 0.2572 / 0.3877 | 0.3258 / 0.5292 | **0.2494 / 0.4014** | 0.1808 / 0.3004 | 0.3264 / 0.4946 | 5/5 |
+| **GAST（本文方法，完整设计）** | **0.5852 / 0.8212** | 0.2541 / 0.3769 | **0.3200 / 0.5244** | 0.2510 / 0.4128 | 0.1738 / **0.2801** | **0.3168 / 0.4831** | 5/5 |
+| GAST 消融（标准 decoder，不含 goal 条件解码） | 0.6191 / 0.8544 | 0.2572 / 0.3877 | 0.3258 / 0.5292 | **0.2494 / 0.4014** | 0.1808 / 0.3004 | 0.3264 / 0.4946 | 5/5 |
 | MoFlow | 0.6819 / 0.9389 | 0.2777 / 0.4247 | 0.3478 / 0.5572 | 0.2566 / 0.4057 | 0.1839 / 0.2867 | 0.3496 / 0.5227 | 5/5 |
 | SocialLSTM | 0.8430 / 1.0456 | 0.2924 / 0.3871 | 0.4543 / 0.6512 | 0.4126 / 0.5650 | 0.2858 / 0.3907 | 0.4576 / 0.6079 | 5/5 |
 | AgentFormer | 0.7098 / 1.0436 | **0.2083 / 0.3316** | 0.4132 / 0.6796 | — | — | — | 3/5 |
@@ -190,23 +190,24 @@ TrajGap-Bench 正式主榜只报告两个指标：
 
 | 方法 | Macro `minADE20` | Macro `minFDE20` | Micro `minADE20` | Micro `minFDE20` |
 |---|---:|---:|---:|---:|
-| **GAST-Goal（本文最新模型）** | **0.3168** | **0.4831** | **0.2894** | **0.4716** |
-| GAST（标准解码器；历史标签 GAST-PF） | 0.3264 | 0.4946 | 0.2950 | 0.4783 |
+| **GAST（本文方法，完整设计）** | **0.3168** | **0.4831** | **0.2894** | **0.4716** |
+| GAST 消融（标准 decoder，不含 goal 条件解码） | 0.3264 | 0.4946 | 0.2950 | 0.4783 |
 | MoFlow | 0.3496 | 0.5227 | 0.3129 | 0.4981 |
 | SocialLSTM | 0.4576 | 0.6079 | 0.4193 | 0.5941 |
 | AgentFormer | — | — | — | — |
 | Re | 0.6382 | 0.9775 | 0.5187 | 0.8085 |
 | MS-TIP | — | — | — | — |
 
-Micro average 按测试样本数加权。结果来源：`GAST-Goal` 为 `outputs/trajgap_gast_goal_3gpu_retry/` 下五场景 Mixed-test 结果；其余模型数字来自仓库已归档的 `docs/results/trajgap_bench_leaderboard.md`。其中未完成五场景的方法不计算聚合结果。
+Micro average 按测试样本数加权。结果来源：当前 GAST 的五场景结果来自历史 `outputs/trajgap_gast_goal_3gpu_retry/` 产物；其余模型数字来自仓库已归档的 `docs/results/trajgap_bench_leaderboard.md`。其中未完成五场景的方法不计算聚合结果。
 
 ### 4.3 本文模型配置
 
-| 项目 | `GAST-Goal` |
+| 项目 | `GAST` |
 |---|---|
 | Encoder | `GAST`，单向 gap-aware Mamba |
 | Evidence routing | OER + EMC + EWHR |
-| Decoder | Goal-conditioned future decoder |
+| Decoder | GAST 内置 goal-conditioned future decoder |
+| Mode ranking | GAST 内置 trajectory-aware classification |
 | Prediction modes | `K=20` |
 | Loss | `final_consistent` |
 | Checkpoint | Mixed-val `val_new_minFDE20` |
@@ -214,7 +215,7 @@ Micro average 按测试样本数加权。结果来源：`GAST-Goal` 为 `outputs
 | Epochs | 100 |
 | Batch size | 64 |
 
-当前 `GAST-Goal` 的五场景结果为单种子 screening 结果。它可作为最新滚动基线，但定稿时仍应补充第二随机种子、置信区间以及按原始轨迹聚类的配对统计。
+当前 GAST 的五场景结果为单种子 screening 结果。它可作为当前滚动基线，但定稿时仍应补充第二随机种子、置信区间以及按原始轨迹聚类的配对统计。
 
 ## 5. 代码与复现
 
@@ -225,11 +226,11 @@ PYTHONNOUSERSITE=1 PYTHONPATH=. \
 /home/lbh/.conda/envs/gast-pf/bin/python \
 scripts/训练与评估/run_trajimpute_experiments.py \
   --protocol mixed-direct \
-  --variant GAST-Goal \
+  --variant GAST \
   --scenes ETH-M HOTEL-M UNIV-M ZARA1-M ZARA2-M \
   --seed 2024 \
   --gpu 0 \
-  --output-root outputs/trajgap_bench_gast_goal_seed2024
+  --output-root outputs/trajgap_bench_gast_seed2024
 ```
 
 ### 5.2 评估
@@ -241,7 +242,7 @@ scripts/结果分析/evaluate_trajimpute_direct.py \
   --scene ETH-M \
   --difficulty Mixed \
   --split test \
-  --variant GAST-Goal \
+  --variant GAST \
   --K 20 \
   --seed 2024 \
   --checkpoint <path/to/checkpoint.ckpt> \
@@ -256,7 +257,7 @@ scripts/结果分析/evaluate_trajimpute_direct.py \
 | Mixed 训练/验证 | `TrajImputeDataModule` |
 | 统一训练入口 | `scripts/训练与评估/run_trajimpute_experiments.py` |
 | 统一 direct 评估 | `scripts/结果分析/evaluate_trajimpute_direct.py` |
-| 最新模型配置 | `conf/model/gast_goal_model_forecast.yaml` |
+| 最新模型配置 | `conf/model/gast_model_forecast.yaml` |
 | 主协议配置 | `conf/config_missing_aware_trajimpute.yaml` |
 
 ## 6. 限制与论文使用边界
@@ -265,12 +266,12 @@ scripts/结果分析/evaluate_trajimpute_direct.py \
 2. 测试集保留同一潜在轨迹的多种缺失掩码，这是缺失程度扫描的设计，不应简单去重后再作为主结果。
 3. 当前部分基线仍是历史 screening 结果；最终论文表应统一模型版本、checkpoint 规则、随机种子和评估脚本。
 4. 先插补后预测与 direct prediction 输入信息不同，应分表报告，不能直接混入同一 leaderboard。
-5. `GAST-Goal` 当前优势主要体现在 `minADE20` 与 `minFDE20`；其 mode 排序仍需通过第二种子和额外诊断确认，不能仅凭单次运行作强泛化结论。
+5. GAST 当前优势主要体现在 `minADE20` 与 `minFDE20`；其 mode 排序仍需通过第二种子和额外诊断确认，不能仅凭单次运行作强泛化结论。
 6. 当前正式指标只包括 `minADE20` 与 `minFDE20`，不定义综合分数。
 
 ## 7. 一句话定位
 
-> **TrajGap-Bench 将 TrajImpute 官方 Easy/Hard 的同一 train/val/test split 统一为 Mixed direct 协议，并以最终预测头的 `val_new_minFDE20` 选择 checkpoint，在五个场景上使用 `minADE20` 与 `minFDE20` 评估模型直接利用不完整历史进行未来轨迹预测的能力；本文最新模型为以 GAST 为底座的 GAST-Goal。**
+> **TrajGap-Bench 将 TrajImpute 官方 Easy/Hard 的同一 train/val/test split 统一为 Mixed direct 协议，并以最终预测头的 `val_new_minFDE20` 选择 checkpoint，在五个场景上使用 `minADE20` 与 `minFDE20` 评估模型直接利用不完整历史进行未来轨迹预测的能力；本文完整方法统一命名为 GAST。**
 
 </details>
 
@@ -287,7 +288,7 @@ The benchmark reuses the official TrajImpute Easy/Hard release. Its contribution
 
 ### 1.1 Latest model
 
-The latest model in this document is **GAST-Goal**, built on the current **GAST** gap-aware encoder:
+The complete method in this document is **GAST**:
 
 - unidirectional Mamba temporal encoding;
 - OER spatial evidence routing;
@@ -296,7 +297,7 @@ The latest model in this document is **GAST-Goal**, built on the current **GAST*
 - goal-conditioned future decoding;
 - final-consistent loss and mode-diversity regularization.
 
-`GAST-PF`, `GAST-PF-UniOER`, and `UT-ENC` are legacy names used by earlier experiments or output directories. The current terminology is `GAST` for the encoder and `GAST-Goal` for the complete latest model.
+Goal-conditioned decoding and trajectory-aware mode ranking are internal components of GAST, not separate model names. `GAST-PF`, `GAST-PF-UniOER`, `GAST-Goal`, and `UT-ENC` are legacy labels used only for historical artifacts.
 
 ## 2. Dataset and task
 
@@ -339,12 +340,12 @@ Methods may use an internal latent completion mechanism, but external imputation
 
 ## 4. Comparison experiments
 
-The latest model is `GAST-Goal`, with `GAST` as its base encoder. Each table cell is `minADE20 / minFDE20` in meters. Lower is better; bold indicates the best available value per scene and metric. Macro averages compare only methods with all five scenes completed.
+The complete method is `GAST`. Each table cell is `minADE20 / minFDE20` in meters. Lower is better; bold indicates the best available value per scene and metric. Macro averages compare only methods with all five scenes completed.
 
 | Method | `ETH-M` | `HOTEL-M` | `UNIV-M` | `ZARA1-M` | `ZARA2-M` | Macro Avg | Coverage |
 |---|---|---|---|---|---|---|---|
-| **GAST-Goal (latest model)** | **0.5852 / 0.8212** | 0.2541 / 0.3769 | **0.3200 / 0.5244** | 0.2510 / 0.4128 | 0.1738 / **0.2801** | **0.3168 / 0.4831** | 5/5 |
-| GAST (standard decoder; historical label: GAST-PF) | 0.6191 / 0.8544 | 0.2572 / 0.3877 | 0.3258 / 0.5292 | **0.2494 / 0.4014** | 0.1808 / 0.3004 | 0.3264 / 0.4946 | 5/5 |
+| **GAST (complete method)** | **0.5852 / 0.8212** | 0.2541 / 0.3769 | **0.3200 / 0.5244** | 0.2510 / 0.4128 | 0.1738 / **0.2801** | **0.3168 / 0.4831** | 5/5 |
+| GAST ablation (standard decoder, without goal conditioning) | 0.6191 / 0.8544 | 0.2572 / 0.3877 | 0.3258 / 0.5292 | **0.2494 / 0.4014** | 0.1808 / 0.3004 | 0.3264 / 0.4946 | 5/5 |
 | MoFlow | 0.6819 / 0.9389 | 0.2777 / 0.4247 | 0.3478 / 0.5572 | 0.2566 / 0.4057 | 0.1839 / 0.2867 | 0.3496 / 0.5227 | 5/5 |
 | SocialLSTM | 0.8430 / 1.0456 | 0.2924 / 0.3871 | 0.4543 / 0.6512 | 0.4126 / 0.5650 | 0.2858 / 0.3907 | 0.4576 / 0.6079 | 5/5 |
 | AgentFormer | 0.7098 / 1.0436 | **0.2083 / 0.3316** | 0.4132 / 0.6796 | — | — | — | 3/5 |
@@ -353,15 +354,15 @@ The latest model is `GAST-Goal`, with `GAST` as its base encoder. Each table cel
 
 | Method | Macro `minADE20` | Macro `minFDE20` | Micro `minADE20` | Micro `minFDE20` |
 |---|---:|---:|---:|---:|
-| **GAST-Goal (latest model)** | **0.3168** | **0.4831** | **0.2894** | **0.4716** |
-| GAST (standard decoder; historical label: GAST-PF) | 0.3264 | 0.4946 | 0.2950 | 0.4783 |
+| **GAST (complete method)** | **0.3168** | **0.4831** | **0.2894** | **0.4716** |
+| GAST ablation (standard decoder, without goal conditioning) | 0.3264 | 0.4946 | 0.2950 | 0.4783 |
 | MoFlow | 0.3496 | 0.5227 | 0.3129 | 0.4981 |
 | SocialLSTM | 0.4576 | 0.6079 | 0.4193 | 0.5941 |
 | AgentFormer | — | — | — | — |
 | Re | 0.6382 | 0.9775 | 0.5187 | 0.8085 |
 | MS-TIP | — | — | — | — |
 
-`GAST-Goal` uses seed 2024, 100 epochs, batch size 64, and the final-head checkpoint rule. Its five-scene numbers are single-seed screening results. The `GAST-Goal` results come from `outputs/trajgap_gast_goal_3gpu_retry/`; the other results are archived comparison runs. They should not be presented as a final v1.1 leaderboard until historical baselines are regenerated under the frozen checkpoint rule.
+GAST uses seed 2024, 100 epochs, batch size 64, and the final-head checkpoint rule. Its five-scene numbers are single-seed screening results from the historical `outputs/trajgap_gast_goal_3gpu_retry/` directory. The other results are archived comparison runs. They should not be presented as a final v1.1 leaderboard until historical baselines are regenerated under the frozen checkpoint rule.
 
 ## 5. Reproducibility and limitations
 
@@ -373,7 +374,7 @@ The official release files are read-only. The Mixed adapter, training runner, ev
 | Training and validation | `TrajImputeDataModule` |
 | Training runner | `scripts/训练与评估/run_trajimpute_experiments.py` |
 | Direct evaluator | `scripts/结果分析/evaluate_trajimpute_direct.py` |
-| Latest model config | `conf/model/gast_goal_model_forecast.yaml` |
+| Latest model config | `conf/model/gast_model_forecast.yaml` |
 | Benchmark config | `conf/config_missing_aware_trajimpute.yaml` |
 
 Key limitations:

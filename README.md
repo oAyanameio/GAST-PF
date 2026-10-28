@@ -2,7 +2,7 @@
 
 GAST-PF（Gap-Aware Spatio-Temporal Pedestrian Forecaster）是面向不完整历史观测的行人未来轨迹预测研究代码库，当前覆盖 ETH/UCY、SDD 和 TrajImpute 缺失历史数据协议，采用无地图/车道的 actor-only 预测设置。
 
-- 模型：当前主模型正式命名为 `GAST`，由 `TrajectoryForecaster` 和 `FutureDistributionDecoder` 组成；GAST 编码器固定使用单向 Mamba，M0 保留原始场景交互基线。旧实验标签 `GAST-PF-UniOER` 仍可用于复现实验产物
+- 方法：完整方法统一命名为 `GAST`，由缺失证据感知编码器与 goal 条件化结构解码器组成；轨迹级模式排序属于 GAST 的内置训练设计。`M0` 保留为同协议历史基线。
 - 数据：ETH/UCY 5 折留一（LOO）+ SDD 原始协议；缺失历史主线使用 TrajImpute 官方 Easy/Hard release
 - 研究范围：缺失历史条件下的直接未来预测，不执行历史轨迹插补
 
@@ -78,6 +78,7 @@ docs/                 研究文档、实验结果、审计报告、数据集说�
 ```text
 GAST = Gap-Aware Spatio-Temporal Pedestrian Forecaster
 中文：缺失间隔感知时空行人轨迹预测模型
+当前完整模型、编码器与解码器共同构成同一个方法：GAST
 旧仓库名：GAST-PF（仅作为代码仓库与历史产物前缀保留）
 ```
 

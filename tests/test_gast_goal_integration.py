@@ -6,7 +6,7 @@ import torch
     not torch.cuda.is_available(),
     reason="GAST Mamba forward requires CUDA",
 )
-def test_gast_goal_forward_uses_only_goal_decoder():
+def test_gast_forward_uses_goal_decoder_as_base_design():
     try:
         import selective_scan_cuda
     except (ImportError, OSError) as error:
@@ -26,7 +26,6 @@ def test_gast_goal_forward_uses_only_goal_decoder():
         gast_oer_spatial=True,
         gast_emc_temporal=True,
         gast_ewhr_readout=True,
-        gast_goal=True,
         loss_mode="final_consistent",
     ).cuda().eval()
     data = {

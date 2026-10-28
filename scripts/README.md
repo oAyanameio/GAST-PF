@@ -4,7 +4,7 @@
 
 | 子目录 | 内容 |
 |---|---|
-| `训练与评估/` | TrajGap-Bench Mixed direct 训练评估：`run_trajimpute_experiments.py`（支持 M0、GAST、GAST-PF-Uni；保留 `GAST-PF-UniOER` 旧标签） |
+| `训练与评估/` | TrajGap-Bench Mixed direct 训练评估：`run_trajimpute_experiments.py`（当前仅注册 M0 和 GAST） |
 | `审计与校验/` | 当前模型与配置的静态检查 |
 | `结果分析/` | TrajImpute direct 评估与汇总：`evaluate_trajimpute_direct.py`（Mixed direct 分组评估）、`summarize_trajimpute.py`（重训结果汇总） |
 
@@ -14,4 +14,4 @@
 
 - checkpoint 文件名含 `=`（如 `epoch=73.ckpt`）时，Hydra override 必须整体加引号：`"checkpoint='outputs/.../epoch=73.ckpt'"`。
 - eval 输出目录已存在 `model.log` 会 FileExistsError，重跑前先删整个 eval 目录。
-- 当前正式模型入口为 `GAST`；`GAST-PF-Uni` 用于单向 Mamba 归因，`M0` 用于同协议基线对照。`GAST-PF-UniOER` 仅作为旧实验标签兼容保留。
+- 当前完整方法唯一名称为 `GAST`，goal 条件解码和轨迹级模式排序均为其内置设计；`M0` 是同协议历史基线。新训练与评估只注册 `GAST`、`M0`，旧实验目录名只用于结果溯源。

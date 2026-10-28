@@ -6,7 +6,7 @@
 #     hydra.run.dir=outputs/trajgap_smoke/GAST_ETH-M
 defaults:
   - datamodule: trajimpute
-  - model: missing_aware_ethucy_model_forecast
+  - model: gast_model_forecast
   - _self_
 
 hydra:

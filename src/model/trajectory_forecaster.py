@@ -34,11 +34,11 @@ class TrajectoryForecaster(nn.Module):
         gast_emc_temporal: bool = False,
         gast_ewhr_readout: bool = False,
         gast_temporal_direction: str = "unidirectional",
-        gast_goal: bool = False,
+        gast_goal=None,
         goal_endpoint_loss_weight: float = 1.0,
         mode_diversity_loss_weight: float = 0.05,
         mode_diversity_margin: float = 0.5,
-        classification_target_mode: str = "joint",
+        classification_target_mode=None,
         loss_mode: str = "legacy",
     ) -> None:
         super().__init__()
@@ -47,10 +47,13 @@ class TrajectoryForecaster(nn.Module):
         self.dt = dt
         self.num_actor_types = num_actor_types
         self.obs_len = obs_len
-        self.gast_goal = bool(gast_goal)
         self.goal_endpoint_loss_weight = float(goal_endpoint_loss_weight)
         self.mode_diversity_loss_weight = float(mode_diversity_loss_weight)
         self.mode_diversity_margin = float(mode_diversity_margin)
+        if classification_target_mode is None:
+            classification_target_mode = (
+                "trajectory" if encoder_type == "gast" else "joint"
+            )
         if classification_target_mode not in {"joint", "trajectory"}:
             raise ValueError(
                 "classification_target_mode must be 'joint' or 'trajectory', "
@@ -65,7 +68,7 @@ class TrajectoryForecaster(nn.Module):
         self.encoder_type = encoder_type
         self.gast_temporal_direction = gast_temporal_direction
         if self.gast_temporal_direction != "unidirectional":
-            raise ValueError("GAST-PF supports only unidirectional temporal encoding")
+            raise ValueError("GAST supports only unidirectional temporal encoding")
         self.gast_oer_spatial = bool(gast_oer_spatial) and encoder_type == "gast"
         self.gast_emc_temporal = bool(gast_emc_temporal) and encoder_type == "gast"
         self.gast_ewhr_readout = bool(gast_ewhr_readout) and encoder_type == "gast"
@@ -76,19 +79,17 @@ class TrajectoryForecaster(nn.Module):
         )
         if any(evidence_switches) and not all(evidence_switches):
             raise ValueError("GAST enables OER, EMC, and EWHR together")
+        if gast_goal is None:
+            gast_goal = encoder_type == "gast" and all(evidence_switches)
+        self.gast_goal = bool(gast_goal)
         if self.gast_goal and (encoder_type != "gast" or not all(evidence_switches)):
-            raise ValueError("GAST-Goal requires the complete GAST encoder")
-        if self.gast_goal:
-            self.gast_method_name = "GAST-Goal"
-        elif all(evidence_switches):
-            self.gast_method_name = "GAST"
-        else:
-            self.gast_method_name = "GAST-PF-Uni" if encoder_type == "gast" else "M0"
+            raise ValueError("GAST requires the complete GAST encoder")
+        self.gast_method_name = "GAST" if encoder_type == "gast" else "M0"
         hist_input_dim = 4
 
         if self.encoder_type == "m0":
             # M0 history encoder. These modules are deliberately absent from
-            # the GAST-PF model so a full replacement has no dead parameters.
+            # GAST so a full replacement has no dead parameters.
             self.history_input_projection = nn.Sequential(
                 nn.Linear(hist_input_dim, 64),
                 nn.GELU(),
@@ -152,7 +153,7 @@ class TrajectoryForecaster(nn.Module):
 
         if self.encoder_type == "gast":
             # Isolate encoder initialization from decoder architecture so GAST
-            # and GAST-Goal share identical encoder weights under the same seed.
+            # Keep encoder initialization independent from the decoder choice.
             rng_state = torch.random.get_rng_state()
             torch.random.set_rng_state(gast_encoder_rng_state)
             self.gast_encoder = GASTEncoder(

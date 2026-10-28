@@ -30,20 +30,10 @@ from src.evaluation.trajimpute_direct import DirectEvaluator, save_results  # no
 VARIANTS = {
     "M0": {
         "encoder_type": "m0",
-        "loss_mode": "final_consistent",
-        "goal_endpoint_loss_weight": 1.0,
-        "mode_diversity_loss_weight": 0.05,
-        "mode_diversity_margin": 0.5,
-        "classification_target_mode": "joint",
-    },
-    "GAST-PF-Uni": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
         "gast_oer_spatial": False,
         "gast_emc_temporal": False,
         "gast_ewhr_readout": False,
+        "gast_goal": False,
         "loss_mode": "final_consistent",
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05,
@@ -58,77 +48,23 @@ VARIANTS = {
         "gast_oer_spatial": True,
         "gast_emc_temporal": True,
         "gast_ewhr_readout": True,
-        "loss_mode": "final_consistent",
-        "goal_endpoint_loss_weight": 1.0,
-        "mode_diversity_loss_weight": 0.05,
-        "mode_diversity_margin": 0.5,
-        "classification_target_mode": "joint",
-    },
-    # Legacy alias for completed TrajCls checkpoints; new evaluations use
-    # GAST-Goal.
-    "GAST-Goal-TrajCls": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_oer_spatial": True,
-        "gast_emc_temporal": True,
-        "gast_ewhr_readout": True,
         "gast_goal": True,
         "loss_mode": "final_consistent",
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05,
         "mode_diversity_margin": 0.5,
         "classification_target_mode": "trajectory",
-    },
-    "GAST-Goal": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_oer_spatial": True,
-        "gast_emc_temporal": True,
-        "gast_ewhr_readout": True,
-        "gast_goal": True,
-        "loss_mode": "final_consistent",
-        "goal_endpoint_loss_weight": 1.0,
-        "mode_diversity_loss_weight": 0.05,
-        "mode_diversity_margin": 0.5,
-        "classification_target_mode": "trajectory",
-    },
-    # Explicit joint-target ablation and compatibility entry point for the
-    # former GAST-Goal base configuration.
-    "GAST-Goal-Joint": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_oer_spatial": True,
-        "gast_emc_temporal": True,
-        "gast_ewhr_readout": True,
-        "gast_goal": True,
-        "loss_mode": "final_consistent",
-        "goal_endpoint_loss_weight": 1.0,
-        "mode_diversity_loss_weight": 0.05,
-        "mode_diversity_margin": 0.5,
-        "classification_target_mode": "joint",
-    },
-    # Legacy experiment label kept for evaluating existing checkpoints.
-    "GAST-PF-UniOER": {
-        "encoder_type": "gast",
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_oer_spatial": True,
-        "gast_emc_temporal": True,
-        "gast_ewhr_readout": True,
-        "loss_mode": "final_consistent",
-        "goal_endpoint_loss_weight": 1.0,
-        "mode_diversity_loss_weight": 0.05,
-        "mode_diversity_margin": 0.5,
-        "classification_target_mode": "joint",
     },
 }
+
+LEGACY_VARIANT_ALIASES = {
+    "GAST-Goal": "GAST",
+    "GAST-Goal-TrajCls": "GAST",
+}
+
+
+def canonical_variant(variant: str) -> str:
+    return LEGACY_VARIANT_ALIASES.get(variant, variant)
 
 
 def get_git_revision():
@@ -168,10 +104,16 @@ def load_checkpoint(model, ckpt_path):
             f"checkpoint num_modes={checkpoint_modes} 与评估 K={expected_modes} 不一致"
         )
     checkpoint_variant = ckpt.get("meta", {}).get("variant")
-    if checkpoint_variant and checkpoint_variant != model_config.get("model_version", checkpoint_variant):
+    checkpoint_variant = (
+        canonical_variant(checkpoint_variant) if checkpoint_variant else None
+    )
+    expected_variant = canonical_variant(
+        model_config.get("model_version", checkpoint_variant)
+    )
+    if checkpoint_variant and checkpoint_variant != expected_variant:
         raise ValueError(
             f"checkpoint variant metadata mismatch: {checkpoint_variant} vs "
-            f"{model_config.get('model_version')}"
+            f"{expected_variant}"
         )
     # Encoder and GAST module switches must match the selected variant.
     checkpoint_encoder = model_config.get("encoder_type", "m0") if hasattr(model_config, "get") else "m0"
@@ -195,8 +137,8 @@ def load_checkpoint(model, ckpt_path):
                 f"variant {switch}={model_switch}"
             )
     checkpoint_goal = (
-        bool(model_config.get("gast_goal", False))
-        if hasattr(model_config, "get") else False
+        bool(model_config.get("gast_goal", model.encoder_type == "gast"))
+        if hasattr(model_config, "get") else model.encoder_type == "gast"
     )
     if checkpoint_goal != model.gast_goal:
         raise ValueError(
