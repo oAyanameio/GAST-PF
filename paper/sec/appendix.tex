@@ -1,0 +1,92 @@
+\appendix
+\section{Objective and Implementation Details}
+\label{app:impl}
+
+\subsection{Explicit form of the auxiliary terms}
+\label{app:loss}
+
+Let $y\in\mathbb{R}^{H\times2}$ be the future of the focal pedestrian, $\hat{y}_{k}$ the $k$-th candidate and $\pi\in\Delta^{K-1}$ the mode distribution. With per-step errors $e_{k,t}=\|\hat{y}_{k,t}-y_{t}\|$, $d_{k}=\frac{1}{H}\sum_{t}e_{k,t}$ and $d^{\mathrm{end}}_{k}=\|\hat{y}_{k,H}-y_{H}\|$, the terms of \eqref{eq:loss} that are not written out in the main text are
+\begin{equation}
+\begin{aligned}
+\mathcal{L}_{\mathrm{NLL}}=\ &\frac{1}{2H}\sum_{t,c}\Big[\log\big(2\sigma_{k^{\ast},t,c}\big)+\frac{|y_{t,c}-\hat{y}_{k^{\ast},t,c}|}{\sigma_{k^{\ast},t,c}}\Big]\\
+&-\frac{1}{2}\sum_{k}\tilde{\pi}_{k}\log\pi_{k},
+\end{aligned}
+\label{eq:nll}
+\end{equation}
+with the soft target
+\begin{equation}
+\tilde{\pi}_{k}=\mathrm{softmax}_{k}\big(-d_{k}/H\big),\qquad
+k^{\ast}=\arg\min_{k}\big(d_{k}+\lambda_{e}d^{\mathrm{end}}_{k}\big),
+\label{eq:softtarget}
+\end{equation}
+$\lambda_{e}=1$, and $k^{\dagger}=\arg\min_{k}d_{k}$. The soft target is detached from the graph. The classification term $\mathcal{L}_{\mathrm{cls}}=-\log\pi_{k^{\dagger}}$ uses label smoothing $0.2$; the diversity term uses $\lambda_{d}=0.05$ and a margin of $0.5$~m. The neighbour term is a SmoothL1 loss over the futures of all non-padded agents other than the focal one, computed from a two-layer head applied to their encoder states, and it is active only during training.
+
+\subsection{Per-scene stratification}
+\label{app:strat}
+
+Table~\ref{tab:appstrat} reports $\mathrm{minFDE}_{20}$ for GAST on each scene and each missing-frame count. The scene-level shape mirrors the macro curve: ETH-M and HOTEL-M are the least sensitive scenes up to six missing frames, UNIV-M and ZARA1-M degrade more steadily, and every scene exhibits the discontinuity at seven missing frames. HOTEL-M is the extreme case, with a nearly flat curve from zero to six missing frames (0.1835 to 0.1957~m) followed by a jump to 1.9085~m; this is consistent with the low-speed, highly constrained motion in that scene, where a single observation still constrains the destination well.
+
+\begin{table}[t]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{2.6pt}
+\caption{GAST per-scene $\mathrm{minFDE}_{20}$ (m) by number of missing history frames. ETH-M has 362 samples in the four-frame bucket and 181 in each other bucket; all other scenes have 181 per bucket.}
+\label{tab:appstrat}
+\begin{tabular}{@{}lcccccccc@{}}
+\toprule
+Scene & 0 & 1 & 2 & 3 & 4 & 5 & 6 & 7 \\
+\midrule
+ETH-M   & 0.6641 & 0.6755 & 0.7196 & 0.7001 & 0.6988 & 0.7026 & 0.7314 & 1.7995 \\
+HOTEL-M & 0.1835 & 0.1841 & 0.1806 & 0.1841 & 0.1847 & 0.1865 & 0.1957 & 1.9085 \\
+UNIV-M  & 0.3997 & 0.4068 & 0.4176 & 0.4270 & 0.4427 & 0.4688 & 0.5048 & 1.2093 \\
+ZARA1-M & 0.3199 & 0.3214 & 0.3292 & 0.3392 & 0.3523 & 0.3812 & 0.4185 & 0.9013 \\
+ZARA2-M & 0.2276 & 0.2281 & 0.2312 & 0.2379 & 0.2483 & 0.2621 & 0.2902 & 0.5469 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Hyperparameters and compute}
+\label{app:hparams}
+
+\begin{table}[t]
+\centering
+\footnotesize
+\caption{Training configuration shared by all GAST runs.}
+\label{tab:hparams}
+\begin{tabular}{@{}ll@{}}
+\toprule
+Item & Value \\
+\midrule
+History / horizon & 8 / 12 frames, $\Delta t=0.4$~s \\
+Embedding width & 128 \\
+Attention heads & 8 \\
+Temporal stack depth & 4 (unidirectional SSM) \\
+Decoder cross-attention & 2 layers \\
+Modes $K$ & 20 \\
+Dropout / drop-path & 0.2 / 0.2 \\
+Optimiser & AdamW, lr $10^{-3}$, wd $10^{-4}$ \\
+Schedule & 5 warm-up epochs, 100 epochs max \\
+Batch size / precision & 64 / bf16 \\
+Gradient clipping & norm 5 \\
+Parameters & 1.19M (0.60M encoder, 0.55M decoder) \\
+Checkpoint monitor & Mixed-val $\mathrm{minFDE}_{20}$, final head \\
+Selected epochs & 58 / 41 / 42 / 33 / 49 \\
+Hardware & 1$\times$ RTX 5880 Ada per scene \\
+Seed & 2024 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The selected epochs are listed in scene order (ETH-M, HOTEL-M, UNIV-M, ZARA1-M, ZARA2-M). No run reached the 100-epoch budget, so the reported results are not truncation-limited. The reliability temperature is parameterised as $\tau=\mathrm{softplus}(\vartheta)$ with $\vartheta$ initialised at $-2.252$, which gives $\tau\approx0.10$ and a half-life of roughly seven frames at initialisation; the parameter is learned jointly with the rest of the model.
+
+\subsection{Reproducibility checklist}
+\label{app:checklist}
+
+\begin{itemize}
+\item \textbf{Data.} Public TrajImpute release; the exact files consumed by each run are recorded in its manifest. No data beyond the release is used.
+\item \textbf{Splits.} Mixed train/val/test as defined in Section~\ref{sec:mixed}; the test split is never used for model selection.
+\item \textbf{Seeds.} One seed (2024) per scene for all methods; the limitation is stated in Section~\ref{sec:disc}.
+\item \textbf{Metrics.} $\mathrm{minADE}_{20}$ and $\mathrm{minFDE}_{20}$ computed by a single evaluator for all methods; top-1 metrics reported only where mode probabilities exist.
+\item \textbf{Artefacts.} Each run emits a manifest (git revision, resolved config, environment) and an evaluation JSON with per-sample diagnostics; all tables in the paper are generated from these files by script.
+\item \textbf{Code.} The Mixed adapter, training runner, evaluator and model definition are released with the paper.
+\end{itemize}

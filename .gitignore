@@ -168,3 +168,13 @@ checkpoints/
 # v2 高缺失审计原始 JSON 过大(1.2G/53M),入库 gzip 版,原始版本地保留
 docs/audits/raw/audit_v2_high_ethucy_full.json
 docs/audits/raw/audit_v2_high_sdd_full.json
+
+# LaTeX 编译中间产物（*.log 已在上方统一忽略）
+*.aux
+*.fls
+*.fdb_latexmk
+*.out
+*.synctex.gz
+*.toc
+*.bbl
+*.blg
