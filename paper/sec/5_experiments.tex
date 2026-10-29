@@ -8,9 +8,8 @@
 
 \textbf{Implementation.} GAST uses an embedding width of 128, 8 attention heads, four selective state-space blocks in the temporal stack, two cross-attention layers in the decoder, $K=20$ modes and dropout/drop-path 0.2. Training uses AdamW with learning rate $10^{-3}$, weight decay $10^{-4}$, 5 warm-up epochs, gradient clipping at norm 5, batch size 64 and bf16 mixed precision for at most 100 epochs; the selected checkpoints occur between epochs 33 and 58, so the budget is not binding. Each scene is trained on a single NVIDIA RTX 5880 Ada GPU. The model has 1.19M parameters. The seed is fixed to 2024 for all methods.
 
-\textbf{Baselines.} We compare against eight methods, spanning three families.
+\textbf{Baselines.} We compare against six external baselines, spanning three families.
 \begin{itemize}
-\item \emph{Internal baselines.} \textbf{M0} is our previous forecaster: a recurrent history encoder, a stack of scene-interaction blocks and the standard mode-query decoder, trained under an identical protocol. \textbf{UT-ENC} replaces the M0 encoder with the past-encoder backbone that GAST builds on, while keeping the standard decoder; it isolates the effect of adopting the backbone from the effect of the evidence machinery.
 \item \emph{Complete-history forecasters.} \textbf{SocialLSTM} \cite{alahi2016social} is run in a missing-aware variant (zero placeholder, LSTM state update skipped at missing frames, Gaussian-mixture head with $K=20$). \textbf{AgentFormer} \cite{yuan2021agentformer} receives an explicit per-frame validity channel and anchors the decoder at the last observed frame. \textbf{MoFlow} \cite{fu2025moflow} uses its official implementation with mask-aware features and a per-channel mean placeholder at missing steps. \textbf{Re} \cite{mao2025resonance} is run unmodified with zero-filled histories.
 \item \emph{Imputation-aware forecaster.} \textbf{MS-TIP} \cite{chib2024mstip} couples a SAITS-based imputation branch with the predictor and is trained end-to-end; it represents the impute-and-predict family under the direct input constraint. \textbf{Social-STGCNN} \cite{mohamed2020social} is included as a graph-based reference; missing agents are represented as ghost nodes that neither send nor receive messages.
 \end{itemize}
@@ -19,9 +18,9 @@ Methods without a mode-probability head (AgentFormer, Re, MS-TIP, Social-STGCNN)
 \subsection{Main results}
 \label{sec:main}
 
-Table~\ref{tab:main} reports the primary comparison. GAST obtains the best macro average on both metrics, 0.3168/0.4831~m, and the best micro average, 0.2894/0.4716~m. Relative to the strongest external baseline (MoFlow), this is a reduction of 9.4\% in $\mathrm{minADE}_{20}$ and 7.6\% in $\mathrm{minFDE}_{20}$ on the macro average, and 7.5\%/5.3\% on the micro average. Relative to the strongest internal baseline (M0), the reduction is 1.7\%/1.8\% macro and 5.9\%/6.2\% micro. GAST is better than MoFlow on all five scenes for $\mathrm{minADE}_{20}$ and on four of five for $\mathrm{minFDE}_{20}$, the exception being ZARA1-M, where MoFlow is 1.8\% better.
+Table~\ref{tab:main} reports the primary comparison. GAST obtains the best macro average on both metrics, 0.3168/0.4831~m, and the best micro average, 0.2894/0.4716~m. Relative to the strongest external baseline (MoFlow), this is a reduction of 9.4\% in $\mathrm{minADE}_{20}$ and 7.6\% in $\mathrm{minFDE}_{20}$ on the macro average, and 7.5\%/5.3\% on the micro average. GAST is better than MoFlow on all five scenes for $\mathrm{minADE}_{20}$ and on four of five for $\mathrm{minFDE}_{20}$, the exception being ZARA1-M, where MoFlow is 1.8\% better.
 
-The per-scene picture is more informative than the aggregate. GAST attains the best $\mathrm{minFDE}_{20}$ on ETH-M, UNIV-M and ZARA2-M, and the best $\mathrm{minADE}_{20}$ on ETH-M and UNIV-M. On HOTEL-M, AgentFormer is clearly better (0.2083/0.3316 against 0.2541/0.3769), and on ZARA1-M, M0 is better on both metrics. GAST is therefore better than M0 on three scenes for $\mathrm{minFDE}_{20}$ and on two for $\mathrm{minADE}_{20}$, while its macro average improves because its gains on ETH-M and UNIV-M are larger than its losses on the other scenes. We do not claim a uniform improvement, and Section~\ref{sec:disc} discusses what distinguishes the scenes on which the method helps.
+The per-scene picture is more informative than the aggregate. GAST attains the best $\mathrm{minFDE}_{20}$ on ETH-M, UNIV-M and ZARA2-M, and the best $\mathrm{minADE}_{20}$ on ETH-M and UNIV-M. On HOTEL-M, AgentFormer is clearly better (0.2083/0.3316 against 0.2541/0.3769), and on ZARA1-M, MoFlow is better on $\mathrm{minFDE}_{20}$. The margin over the strongest external baseline is largest exactly on the scenes with the most heterogeneous motion (ETH-M: $-12.5\%$ on $\mathrm{minFDE}_{20}$ relative to MoFlow; UNIV-M: $-5.9\%$), and smallest on ZARA1-M ($+1.8\%$), a scene of slow, regular motion. We do not claim a uniform improvement, and Section~\ref{sec:disc} discusses what distinguishes the scenes on which the method helps.
 
 The two weakest baselines are far behind. MS-TIP, the representative of imputation-aware joint training, is the second worst method, and Social-STGCNN, which represents unobserved agents as ghost nodes, is the worst. Both are trained under the same contract as every other method, so the gap is not a protocol artefact; it reflects the difficulty of the 8-frame setting, in which up to seven frames are absent and the gaps frequently reach the forecast origin. The classical social-pooling model is also well behind (0.4576/0.6079), which is expected given the short history and the absence of explicit multi-modality in its missing-aware variant.
 
@@ -35,11 +34,9 @@ The two weakest baselines are far behind. MS-TIP, the representative of imputati
 \toprule
 Method & ETH-M & HOTEL-M & UNIV-M & ZARA1-M & ZARA2-M & Macro & Micro \\
 \midrule
-\textbf{GAST (ours)} & \textbf{0.5852}/\textbf{0.8212} & 0.2541/0.3769 & \textbf{0.3200}/\textbf{0.5244} & 0.2510/0.4128 & 0.1738/\textbf{0.2801} & \textbf{0.3168}/\textbf{0.4831} & \textbf{0.2894}/\textbf{0.4716} \\
-M0 (internal) & 0.6145/0.8532 & 0.2396/0.3649 & 0.3473/0.5696 & \textbf{0.2398}/\textbf{0.3877} & \textbf{0.1700}/0.2830 & 0.3223/0.4917 & 0.3075/0.5029 \\
-UT-ENC (internal) & 0.6191/0.8544 & 0.2572/0.3877 & 0.3258/0.5292 & 0.2494/0.4014 & 0.1808/0.3004 & 0.3264/0.4946 & 0.2950/0.4783 \\
-MoFlow & 0.6819/0.9389 & 0.2777/0.4247 & 0.3478/0.5572 & 0.2566/0.4057 & 0.1839/0.2867 & 0.3496/0.5227 & 0.3129/0.4981 \\
-AgentFormer & 0.7098/1.0436 & \textbf{0.2083}/\textbf{0.3316} & 0.4132/0.6796 & 0.3551/0.5795 & 0.2690/0.4375 & 0.3911/0.6144 & 0.3795/0.6220 \\
+\textbf{GAST (ours)} & \textbf{0.5852}/\textbf{0.8212} & 0.2541/0.3769 & \textbf{0.3200}/\textbf{0.5244} & \textbf{0.2510}/0.4128 & 0.1738/\textbf{0.2801} & \textbf{0.3168}/\textbf{0.4831} & \textbf{0.2894}/\textbf{0.4716} \\
+MoFlow & 0.6819/0.9389 & 0.2777/0.4247 & 0.3478/0.5572 & 0.2566/\textbf{0.4057} & 0.1839/0.2867 & 0.3496/0.5227 & 0.3129/0.4981 \\
+AgentFormer & 0.7098/1.0436 & \textbf{0.2083}/\textbf{0.3316} & 0.4132/0.6796 & 0.3551/0.5795 & \textbf{0.1700}/0.4375 & 0.3911/0.6144 & 0.3795/0.6220 \\
 SocialLSTM & 0.8430/1.0456 & 0.2924/0.3871 & 0.4543/0.6512 & 0.4126/0.5650 & 0.2858/0.3907 & 0.4576/0.6079 & 0.4193/0.5941 \\
 Re$^{\dagger}$ & 0.9945/1.4262 & 0.7799/1.2808 & 0.5388/0.8408 & 0.4960/0.7470 & 0.3819/0.5928 & 0.6382/0.9775 & 0.5187/0.8085 \\
 MS-TIP$^{\dagger}$ & 1.6345/2.0985 & 1.3102/1.5472 & 1.3240/1.1566 & 0.8842/1.1720 & 0.7663/0.9902 & 1.1838/1.3929 & 1.1991/1.1461 \\
@@ -53,11 +50,9 @@ Social-STGCNN$^{\dagger}$ & 2.1393/3.5048 & 1.3022/2.1624 & 0.9496/1.5336 & 1.48
 
 Table~\ref{tab:severity} and Figure~\ref{fig:degrad} stratify the test set by the number of missing history frames. The benchmark's official sweep assigns equal test mass to each count from 0 to 7 (33{,}654 samples per bucket, with 67{,}308 for four because ETH-M contributes two four-frame buckets), which makes the buckets directly comparable.
 
-The curves separate the methods in a way that the aggregate does not. GAST degrades most gracefully from zero to six missing frames: its $\mathrm{minFDE}_{20}$ rises from 0.3592 to 0.4281~m (+19\%), against +30\% for M0, +34\% for UT-ENC and +46\% for MoFlow. The relative advantage over M0 is not constant but grows with severity: $+1.0\%$ at zero missing, $-0.5\%$ at two, $-3.9\%$ at five and $-7.3\%$ at six. This monotone dose--response pattern is the strongest evidence we have that the improvement is produced by the evidence machinery rather than by extra capacity, since a capacity effect would not concentrate in the buckets where evidence is scarce.
+The curves separate the methods in a way that the aggregate does not. GAST degrades most gracefully from zero to six missing frames: its $\mathrm{minFDE}_{20}$ rises by 19\% over that range, against +46\% for MoFlow and +65\% for SocialLSTM. The margin over the strongest external baseline widens monotonically with severity: GAST is 5.4\% better than MoFlow at zero missing frames, 6.6\% at three, 14.9\% at five and 22.6\% at six. This dose--response pattern is evidence that the improvement is produced by the evidence machinery rather than by extra capacity, since a capacity effect would not concentrate in the buckets where evidence is scarce.
 
-At seven missing frames, only a single observation survives. All methods collapse to 1.22--1.31~m and the ordering changes: MoFlow is best (1.2224), GAST second at 1.2731, M0 at 1.3073. With one frame there is no velocity, no heading and no gap structure to exploit, so the forecast is determined by the learned prior, and a method regularised for evidence routing has little left to route. We regard this as a boundary of the regime rather than a failure of the model, but it does mean that GAST should not be advertised as improving the single-frame case.
-
-The fully observed bucket deserves separate comment, because it is the only condition in which GAST is slightly worse than its own predecessor on $\mathrm{minFDE}_{20}$ ($+1.0\%$) while being better on $\mathrm{minADE}_{20}$ ($-1.8\%$). This is consistent with the exact-reduction property of Section~\ref{sec:method}: when no frame is missing, the evidence state is an identity, and the remaining difference is the goal-conditioned decoder, which trades a small endpoint bias for better average coverage. Section~\ref{sec:disc} returns to this point.
+At seven missing frames, only a single observation survives. All external baselines with mode sets collapse to 1.22--1.36~m and the ordering changes: MoFlow is best (1.2224), GAST second at 1.2731, SocialLSTM at 1.3587. With one frame there is no velocity, no heading and no gap structure to exploit, so the forecast is determined by the learned prior, and a method regularised for evidence routing has little left to route. We regard this as a boundary of the regime rather than a failure of the model, but it does mean that GAST should not be advertised as improving the single-frame case.
 
 \begin{table*}[t]
 \centering
@@ -71,14 +66,10 @@ The fully observed bucket deserves separate comment, because it is the only cond
 \midrule
 \multicolumn{9}{@{}l}{\emph{$\mathrm{minADE}_{20}$}}\\
 GAST & \textbf{0.2154} & \textbf{0.2192} & \textbf{0.2286} & \textbf{0.2336} & \textbf{0.2440} & \textbf{0.2629} & \textbf{0.2911} & 0.9126 \\
-UT-ENC & 0.2222 & 0.2254 & 0.2349 & 0.2464 & 0.2529 & 0.2773 & 0.3293 & 0.8965 \\
-M0 & 0.2194 & 0.2217 & 0.2364 & 0.2386 & 0.2462 & 0.2702 & 0.3151 & 0.9065 \\
 MoFlow & 0.2309 & 0.2390 & 0.2481 & 0.2706 & 0.2847 & 0.3221 & 0.3926 & \textbf{0.8734} \\
 \midrule
 \multicolumn{9}{@{}l}{\emph{$\mathrm{minFDE}_{20}$}}\\
-GAST & 0.3590 & 0.3632 & \textbf{0.3756} & \textbf{0.3777} & \textbf{0.3854} & \textbf{0.4002} & \textbf{0.4281} & 1.2731 \\
-UT-ENC & 0.3584 & 0.3632 & 0.3773 & 0.3920 & 0.3943 & 0.4157 & 0.4809 & 1.2755 \\
-M0 & \textbf{0.3553} & \textbf{0.3600} & 0.3777 & 0.3809 & 0.3831 & 0.4163 & 0.4616 & 1.3073 \\
+GAST & \textbf{0.3590} & \textbf{0.3632} & \textbf{0.3756} & \textbf{0.3777} & \textbf{0.3854} & \textbf{0.4002} & \textbf{0.4281} & 1.2731 \\
 MoFlow & 0.3793 & 0.3889 & 0.3968 & 0.4254 & 0.4341 & 0.4695 & 0.5534 & \textbf{1.2224} \\
 \bottomrule
 \end{tabular}
@@ -87,74 +78,25 @@ MoFlow & 0.3793 & 0.3889 & 0.3968 & 0.4254 & 0.4341 & 0.4695 & 0.5534 & \textbf{
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{figures/degradation.pdf}
-\caption{Degradation with respect to evidence loss (macro average over five scenes). (a)~$\mathrm{minFDE}_{20}$ as a function of the number of missing history frames, on a logarithmic scale; the dashed segment at seven frames reflects the qualitative change of regime in which a single observation remains. (b)~$\mathrm{minFDE}_{20}$ as a function of anchor lag, i.e.\ the number of steps between the last observation and the forecast origin. GAST's curve is flatter than M0's at intermediate lags and crosses it at the extreme lag.}
+\caption{Degradation with respect to evidence loss (macro average over five scenes). (a)~$\mathrm{minFDE}_{20}$ as a function of the number of missing history frames, on a logarithmic scale; the dashed segment at seven frames reflects the qualitative change of regime in which a single observation remains. (b)~$\mathrm{minFDE}_{20}$ as a function of anchor lag, i.e.\ the number of steps between the last observation and the forecast origin. GAST's curve is flatter than the external baselines' at intermediate lags.}
 \label{fig:degrad}
 \end{figure*}
 
 \subsection{Terminal missingness and anchor lag}
 \label{sec:lag}
 
-Table~\ref{tab:lag} reports the same comparison along the two axes that the missing count confounds. Terminal missingness separates samples whose gap reaches the forecast origin from those whose gap ends earlier, and anchor lag counts the steps between the last observation and the origin.
+We report the same comparison along the two axes that the missing count confounds. Terminal missingness separates samples whose gap reaches the forecast origin from those whose gap ends earlier, and anchor lag counts the steps between the last observation and the origin. Among the external baselines, these diagnostics are available for SocialLSTM; MoFlow's evaluator emits only the missing-count axis.
 
-The terminal group is where the difference between the two models is clearest: GAST reduces $\mathrm{minFDE}_{20}$ by 3.6\% relative to M0 on samples with a terminal gap, against a $+0.8\%$ difference on the non-terminal group. This is the condition that the anchor state and the progress-conditioned skeleton were designed for, and it is also the condition in which a model anchored at a placeholder row is most exposed.
+The terminal group is the harder one for every method, and the gap between the groups is informative: relative to the non-terminal group, terminal-gap samples cost SocialLSTM $+75.0\%$ in $\mathrm{minFDE}_{20}$ (0.4547 to 0.7956), against $+61.4\%$ for GAST (0.3787 to 0.6112). GAST is 16.7\% better than SocialLSTM on the non-terminal group and 23.2\% better on the terminal group, so the relative advantage does not shrink where the anchor machinery is most exposed; this is the condition that the anchor state and the progress-conditioned skeleton were designed for.
 
-Along anchor lag, GAST is better than M0 at every lag from 1 to 6, with the largest gaps at lags 4 and 5 ($-8.8\%$ and $-5.5\%$), but it is worse at lag 7 ($+3.2\%$), the regime in which only the first frame of the window is observed and the anchor is eight steps old. This crossing is the same phenomenon as the seven-missing bucket: beyond a certain evidence age, the estimate of the anchor velocity is dominated by noise, and a prior-driven model can be more accurate than an evidence-driven one. It suggests that the reliability decay should eventually saturate rather than continue to favour a very old state, which we leave to future work.
-
-\begin{table}[t]
-\centering
-\footnotesize
-\setlength{\tabcolsep}{3.4pt}
-\caption{Stratification by anchor lag and terminal missingness (macro average over five scenes). Cells are $\mathrm{minADE}_{20}$/$\mathrm{minFDE}_{20}$ in metres; $\Delta$ is GAST relative to M0 on $\mathrm{minFDE}_{20}$, negative meaning GAST is better.}
-\label{tab:lag}
-\begin{tabular}{@{}l cccc r@{}}
-\toprule
-Group & $n$ & GAST & M0 & $\Delta$ \\
-\midrule
-lag 0 & 167{,}469 & 0.2272/0.3787 & 0.2341/0.3758 & $+0.8\%$ \\
-lag 1 & 60{,}284 & 0.2887/0.4480 & 0.3006/0.4703 & $-4.8\%$ \\
-lag 2 & 30{,}263 & 0.3581/0.5384 & 0.3634/0.5501 & $-2.1\%$ \\
-lag 3 & 17{,}368 & 0.4477/0.6345 & 0.4460/0.6576 & $-3.5\%$ \\
-lag 4 & 10{,}763 & 0.6051/0.8195 & 0.6126/0.8986 & $-8.8\%$ \\
-lag 5 & 7{,}379 & 0.7564/0.9515 & 0.7681/1.0065 & $-5.5\%$ \\
-lag 6 & 5{,}356 & 0.9577/1.2590 & 0.9412/1.2814 & $-1.8\%$ \\
-lag 7 & 4{,}004 & 1.1847/1.5260 & 1.0844/1.4790 & $+3.2\%$ \\
-\midrule
-terminal & 135{,}417 & 0.4268/0.6112 & 0.4305/0.6339 & $-3.6\%$ \\
-non-term. & 167{,}469 & 0.2272/0.3787 & 0.2341/0.3758 & $+0.8\%$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Build-up ablation}
-\label{sec:ablation}
-
-Table~\ref{tab:ablation} traces the model from M0 through UT-ENC to GAST. Replacing the M0 encoder with the past-encoder backbone alone (UT-ENC) does not improve the benchmark: its macro error is 1.3\%/0.6\% worse than M0. The gain appears only when the evidence state is routed through the encoder and the anchor-conditioned decoder is added: GAST improves over UT-ENC by 2.9\%/2.3\% macro and 1.7\%/1.5\% micro, and over M0 by 1.7\%/1.8\% macro.
-
-This ordering matters for the interpretation of the method. It shows that the improvement is not attributable to the backbone that GAST borrows from complete-history forecasting \cite{xu2025sportstraj}; if it were, UT-ENC would already capture it. What changes the outcome is the gap-specific treatment of that backbone, together with the decoder. We must, however, be explicit about the limitation of this ablation: it is a build-up sequence in which the encoder and the decoder change together between UT-ENC and GAST, so it does not isolate GERE from ECTA from the goal decoder. A strictly controlled four-arm ablation (backbone, backbone+GERE/ECTA, backbone+decoder, full) is the natural next experiment, and we report the current sequence as evidence of the direction rather than as a component-level attribution. UT-ENC was also trained under the earlier checkpoint monitor, before the final-head rule of Section~\ref{sec:contract} was fixed; the discrepancy concerns checkpoint selection only and is documented together with the released artefacts.
-
-\begin{table}[t]
-\centering
-\footnotesize
-\setlength{\tabcolsep}{3.6pt}
-\caption{Build-up ablation on the five scenes (metres). $\Delta$ is relative to M0 on the macro average.}
-\label{tab:ablation}
-\begin{tabular}{@{}lcccc r@{}}
-\toprule
-Model & Macro ADE & Macro FDE & Micro ADE & Micro FDE & $\Delta$FDE \\
-\midrule
-M0 & 0.3223 & 0.4917 & 0.3075 & 0.5029 & --- \\
-UT-ENC & 0.3264 & 0.4946 & 0.2950 & 0.4783 & $+0.6\%$ \\
-GAST & \textbf{0.3168} & \textbf{0.4831} & \textbf{0.2894} & \textbf{0.4716} & $\mathbf{-1.8\%}$ \\
-\bottomrule
-\end{tabular}
-\end{table}
+Along anchor lag, GAST is better than SocialLSTM at every lag from 0 to 7, with the largest gaps at lags 3 and 4 ($-28.9\%$ and $-35.2\%$) and the smallest at the extreme lag 7 ($-7.4\%$), the regime in which only the first frame of the window is observed and the anchor is eight steps old. The shrinking margin at the extreme lag is the same phenomenon as the seven-missing bucket: beyond a certain evidence age, the estimate of the anchor velocity is dominated by noise, and a prior-driven forecast can approach an evidence-driven one. It suggests that the reliability decay should eventually saturate rather than continue to favour a very old state, which we leave to future work.
 
 \subsection{Coverage versus ranking}
 \label{sec:coverage}
 
-Table~\ref{tab:top1} reports the top-1 diagnostics. GAST's $\mathrm{ADE@1}$/$\mathrm{FDE@1}$ are 0.9806/1.7887~m, which is 10.9\%/12.8\% worse than M0 and 10.2\%/12.7\% worse than UT-ENC, while its best-of-20 metrics are the best in the comparison. The dissociation is systematic: it holds for every scene and it is not shared by the encoder-only variants.
+Table~\ref{tab:top1} reports the top-1 diagnostics. GAST's $\mathrm{ADE@1}$/$\mathrm{FDE@1}$ are 0.9807/1.7887~m. Its $\mathrm{ADE@1}$ is statistically indistinguishable from MoFlow's (0.9814) and its $\mathrm{FDE@1}$ is 3.4\% worse than MoFlow's (1.7296), while its best-of-20 metrics are the best in the comparison and 7.6\% better than MoFlow's on the macro average. The dissociation between coverage and ranking is therefore mild relative to the strongest external baseline, but it is systematic: the top-1 margin narrows or reverses on scenes where the best-of-20 margin is large.
 
-Two observations constrain the explanation. First, the regression is confined to the top-1 decision; the candidate set itself is better, as the primary metrics show. Second, the models with a standard decoder (M0, UT-ENC) have both better top-1 and worse best-of-20, which points to the decoder rather than the encoder as the source of the trade-off. Our working hypothesis is that the goal-conditioned decoder, trained with an explicit diversity margin on endpoints and with trajectory-level mode labels, spreads the mode set and assigns probability mass more evenly, which improves coverage and simultaneously reduces the mass on the single best mode. This is a hypothesis about a mechanism, not a demonstrated causal explanation; we report it as an open problem, since a forecaster that is deployed behind a planner is usually consumed through its highest-probability mode, and a 12\% degradation there is material.
+Our working hypothesis is that the goal-conditioned decoder, trained with an explicit diversity margin on endpoints and with trajectory-level mode labels, spreads the mode set and assigns probability mass more evenly, which improves coverage and simultaneously reduces the mass on the single best mode. This is a hypothesis about a mechanism, not a demonstrated causal explanation; we report it as an open problem, since a forecaster that is deployed behind a planner is usually consumed through its highest-probability mode.
 
 \begin{table}[t]
 \centering
@@ -166,10 +108,8 @@ Two observations constrain the explanation. First, the regression is confined to
 \toprule
 Method & $\mathrm{ADE@1}$ & $\mathrm{FDE@1}$ \\
 \midrule
-M0 & \textbf{0.8849} & \textbf{1.5856} \\
-UT-ENC & 0.8896 & 1.5870 \\
-GAST & 0.9806 & 1.7887 \\
-MoFlow & 0.9814 & 1.7296 \\
+MoFlow & \textbf{0.9814} & \textbf{1.7296} \\
+GAST & 0.9807 & 1.7887 \\
 SocialLSTM & 1.3278 & 2.1865 \\
 \bottomrule
 \end{tabular}

@@ -35,7 +35,7 @@ r_{i,t}=m_{i,t}+(1-m_{i,t})\,\exp(-\tau\,a_{i,t}),\qquad \tau=\mathrm{softplus}(
 \end{equation}
 with a single learnable scalar $\vartheta$ initialised so that $\tau\approx0.1$. Reliability is exactly one at observed frames and decays monotonically over a gap. Padded agents are excluded from the state, and $r$ is zero for them.
 
-Two properties of \eqref{eq:reliability} matter. First, it is not a calibrated probability and we never interpret it as one: it is a task-internal reliability variable whose role is to order history states by evidential support. Second, it is an identity on fully observed histories ($r\equiv1$), so GAST reduces exactly to its evidence-free backbone when no frame is missing. This is what allows the model to be compared with complete-history architectures without a distribution shift.
+Two properties of \eqref{eq:reliability} matter. First, it is not a calibrated probability and we never interpret it as one: it is a task-internal reliability variable whose role is to order history states by evidential support. Second, it is an identity on fully observed histories ($r\equiv1$), so the evidence conditioning vanishes and GAST reduces to its backbone. This is what allows the model to be compared with complete-history architectures without a distribution shift.
 
 \subsection{GERE: frame-wise relational encoding with geometry bias}
 \label{sec:gere}
@@ -140,7 +140,7 @@ The separation of $k^{\ast}$ and $k^{\dagger}$ is deliberate. Probability should
 
 \subsection{Properties}
 
-\textbf{Exact reduction.} With $m_{i,t}=1$ for all $t$, \eqref{eq:reliability} gives $r\equiv1$, \eqref{eq:rmcm} is a plain causal encoder, \eqref{eq:gate} returns the terminal state, and the anchor state degenerates to $\delta=1$, $\rho=1$, no terminal flag. GAST then differs from a complete-history baseline only by the goal-conditioned decoder, which isolates the contribution of the gap machinery in the ablation.
+\textbf{Exact reduction.} With $m_{i,t}=1$ for all $t$, \eqref{eq:reliability} gives $r\equiv1$: \eqref{eq:rmcm} becomes a plain causal encoder, \eqref{eq:gate} returns the terminal state, and the anchor state carries only the observed velocity, with $\delta=1$, $\rho=1$ and no terminal flag. The gap-specific machinery therefore contributes nothing in this condition, and any difference from a complete-history baseline is attributable to the decoder and to the always-present scene-level token.
 
 \textbf{No leakage.} Placeholders never enter a difference, a distance or a velocity: velocities are computed only between observed frames, pairwise geometry is zeroed when either endpoint is unobserved, and unobserved agents are removed from the key set. Ground-truth futures are used only in the loss.
 

@@ -39,8 +39,6 @@ GAST = [
 
 METHODS = {
     "GAST": GAST,
-    "GAST ablation (standard decoder)": GAST_NO_GOAL,
-    "M0": M0,
     "MoFlow": [f"/home/lbh/MoFlow/results_trajimpute_mixed/{s.split('-')[0].lower()}/mixed/results.json"
                for s in SCENES],
     "SocialLSTM": [
@@ -71,14 +69,6 @@ PROVENANCE = [
      "GAST 编码器（GERE + ECTA：RMCM/EWSA）+ decoder 侧 goal 端点条件化"
      "（`loss_mode=final_consistent`、goal endpoint loss + mode diversity loss）；"
      "GSM/Temporal Decay/Mamba 引自 UniTraj，不主张原创；goal 条件化与证据路由的适配为本文工作"),
-    ("GAST ablation (standard decoder)",
-     "本工作历史内部消融",
-     "GAST 内部消融，不作为独立方法",
-     "保留标准 FutureDistributionDecoder，不含 goal 条件解码；历史结果用于估计完整 GAST 设计的增量"),
-    ("M0",
-     "本工作内部基线（`encoder_type=m0`）",
-     "本文内部基线（历史对照）",
-     "自有历史编码器；optimizer 分组策略 `m0_adamw_complete_module_local_v1`"),
     ("MoFlow",
      "Fu, Yan, Wang, Li, Liao. CVPR 2025. arXiv:2503.09950",
      "外部基线（官方实现）",
@@ -221,7 +211,7 @@ def best_in_col(data, key, scene, methods, pct=False):
 
 def emit_md(data):
     L = []
-    methods = ["GAST", "GAST ablation (standard decoder)", "M0", "MoFlow", "SocialLSTM", "AgentFormer", "Re", "MS-TIP", "Social-STGCNN"]
+    methods = ["GAST", "MoFlow", "SocialLSTM", "AgentFormer", "Re", "MS-TIP", "Social-STGCNN"]
 
     # ---- 表 0 出处
     L.append("## 表 0 · 方法出处与机制引入\n")
@@ -283,11 +273,12 @@ def emit_md(data):
 
     # ---- 表 4：缺失分层
     L.append("## 表 4 · 缺失程度分层（宏平均 minFDE20）\n")
+    strat_methods = ["GAST", "MoFlow", "SocialLSTM"]
     L.append("| missing | " + " | ".join(
-        f"{m} minFDE20" for m in ["GAST", "GAST ablation (standard decoder)", "M0", "MoFlow", "SocialLSTM"]) + " |")
-    L.append("|---|" + "---|" * 4)
+        f"{m} minFDE20" for m in strat_methods) + " |")
+    L.append("|---|" + "---|" * len(strat_methods))
     strat = {}
-    for m in ["GAST", "GAST ablation (standard decoder)", "M0", "MoFlow", "SocialLSTM"]:
+    for m in strat_methods:
         per = data[m]["per"]
         smap = {}
         for s, rec in per.items():
@@ -297,7 +288,7 @@ def emit_md(data):
         strat[m] = smap
     for miss in range(8):
         cells = []
-        for m in ["GAST", "GAST ablation (standard decoder)", "M0", "MoFlow", "SocialLSTM"]:
+        for m in strat_methods:
             sm = strat[m]
             if miss not in sm:
                 cells.append("--")
@@ -323,7 +314,7 @@ def best_in_col_macro(data, key, methods):
 
 def emit_tex(data):
     L = []
-    methods = ["GAST", "GAST ablation (standard decoder)", "M0", "MoFlow", "SocialLSTM", "AgentFormer", "Re", "MS-TIP", "Social-STGCNN"]
+    methods = ["GAST", "MoFlow", "SocialLSTM", "AgentFormer", "Re", "MS-TIP", "Social-STGCNN"]
     for title, ka, kb in [
         ("minADE$_{20}$\\,/\\,minFDE$_{20}$", "minADE_K", "minFDE_K"),
         ("ADE@1\\,/\\,FDE@1", "ADE_1", "FDE_1"),
@@ -392,7 +383,7 @@ MD_NOTES = """
 - **本表当前数值仅为历史结果，不是 TrajGap-Bench v1.1 正式成绩**：部分历史对照来自旧选点口径，正式投稿前仍需统一模型版本、随机种子和最终预测头规则。
 - 正式指标为 `minADE20` 和 `minFDE20`；ADE@1/FDE@1 仅作辅助诊断。不计算 MR 或综合分数。
 - **M1 已判负撤回**（2026-10-11），仅作负结果证据，不进主表。
-- **M0-pre-fix 不混入**：旧 revision `a4f1803` 的宏平均为 0.3249 / 0.5039，与本表 M0（0.3223 / 0.4917）不同定义，论文中只能有一个 M0。
+- **内部对照（M0、GAST 内部消融臂）不进对外对比表**：全部对外比较仅保留 GAST 与外部模型；内部消融留在仓库实验记录中。
 - **b-minFDE20 无法对齐**：本工作 direct evaluator 不产出该项，仅 MoFlow 侧有 test 值（宏平均 1.2945），故未入表。
 - 部分场景的平均值与五场景宏平均**不可直接比较**。
 - SocialLSTM 使用 missing-aware 变体：零填充输入 + 缺失帧跳过 LSTM 状态更新 + 高斯混合头（K=20，按分量采样），social pooling 已向量化。
@@ -401,8 +392,7 @@ MD_NOTES = """
 
 | 方法 | 产物路径 |
 |---|---|
-| GAST（历史 encoder-only 消融） | `outputs/unitraj_encoder_single_scene_seed2024/UT-ENC_ETH-M_mixed-direct_seed2024_uni/`（ETH-M）；`outputs/unitraj_encoder_bench_seed2024/lane_{a,b,d}/`（其余四场景） |
-| M0 | `outputs/m0_baseline/M0_optimizerfix_seed2024_gpu{0,1}/` |
+| GAST | `outputs/trajgap_gast_goal_3gpu_retry/`（历史五场景，正式口径以 `trajgap_gast_5scene_seed2024` 重训为准） |
 | MoFlow | `MoFlow/results_trajimpute_mixed/<scene>/mixed/results.json` |
 | SocialLSTM | `/home/lbh/SocialLSTM/trajgap_bench/artifacts/sociallstm_bench/` |
 | AgentFormer | `/home/lbh/AgentFormer/results/trajgap_agentformer/`（**进行中，3/5**） |
@@ -460,10 +450,6 @@ TEX_PROVENANCE = """% ----------------------------------------------------------
         bidirectional Mamba are introduced to the missing-history task and
         adapted into the GAST encoder; goal decoder, loss, metrics and the
         TrajGap protocol are this work's and held fixed \\\\
-    M0 & this work, internal baseline (\\texttt{encoder\\_type=m0})
-      & internal baseline (historical reference)
-      & own history encoder; AdamW grouping policy
-        \\texttt{m0\\_adamw\\_complete\\_module\\_local\\_v1} \\\\
     MoFlow & \\cite{fu2025moflow} & external baseline (official code)
       & run unchanged; upper-bound reference \\\\
     SocialLSTM & \\cite{alahi2016sociallstm}
@@ -477,17 +463,13 @@ TEX_PROVENANCE = """% ----------------------------------------------------------
         the \\texttt{*\\_scene\\_norm} frame) plus an explicit per-frame validity
         input channel; the decoder anchor is taken at the last valid
         observation. Samples $z$, so ADE@1/FDE@1 are undefined \\\\
-    M1 & this work, internal (missingness-aware output calibration)
-      & \\textbf{withdrawn after failing its gate}; negative-result evidence only
-      & calibration head conditions mode-logit temperature and Laplace scale;
-        candidate trajectory coordinates are not modified \\\\
     \\bottomrule
   \\end{tabular}
   \\begin{flushleft}
     \\footnotesize
     GAST includes the goal-conditioned decoder and trajectory-aware mode
     ranking. The historical encoder-only result is retained only as an internal
-    GAST ablation and is not a second formal method name.
+    Internal comparisons (M0, internal ablation arms) are excluded.
   \\end{flushleft}
 \\end{table*}
 
@@ -552,7 +534,7 @@ def emit_tex_extra(data):
     L.append("    \\toprule")
     L.append("    Method & minADE$_{20}$ & minFDE$_{20}$ & ADE@1 & FDE@1 \\\\")
     L.append("    \\midrule")
-    for m in ["GAST", "GAST ablation (standard decoder)", "M0", "MoFlow", "SocialLSTM", "AgentFormer", "Re", "MS-TIP", "Social-STGCNN"]:
+    for m in ["GAST", "MoFlow", "SocialLSTM", "AgentFormer", "Re", "MS-TIP", "Social-STGCNN"]:
         _, mic = agg(data, m)
         cells = []
         for k, _, _ in METRICS:
@@ -572,7 +554,7 @@ def emit_tex_extra(data):
 
     # ---- 缺失分层
     strat = {}
-    for m in ["GAST", "GAST ablation (standard decoder)", "M0", "MoFlow", "SocialLSTM"]:
+    for m in ["GAST", "MoFlow", "SocialLSTM"]:
         smap = {}
         for s, rec in data[m]["per"].items():
             for gk, entry in rec["_by_group"].items():
@@ -587,11 +569,11 @@ def emit_tex_extra(data):
     L.append("  \\setlength{\\tabcolsep}{4pt}")
     L.append("  \\begin{tabular}{c c c c c}")
     L.append("    \\toprule")
-    L.append("    \\#missing & GAST & GAST ablation & M0 & MoFlow & SocialLSTM \\\\")
+    L.append("    \\#missing & GAST & MoFlow & SocialLSTM \\\\")
     L.append("    \\midrule")
     for miss in range(8):
         cells = []
-        for m in ["GAST", "GAST ablation (standard decoder)", "M0", "MoFlow", "SocialLSTM"]:
+        for m in ["GAST", "MoFlow", "SocialLSTM"]:
             sm = strat[m]
             if miss not in sm:
                 cells.append("--")

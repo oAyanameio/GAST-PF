@@ -1,0 +1,26 @@
+\section{相关工作}
+\label{sec:related}
+
+\subsection{完整历史条件下的轨迹预测}
+
+早期数据驱动方法对每个行人独立编码，再通过池化算子注入社会上下文。Social LSTM 将空间邻居的隐状态池化后送入 LSTM 递推 \cite{alahi2016social}；Social GAN 以生成模型替代回归解码器，并引入 variety loss，使 best-of-$K$ 评价方式得以普及 \cite{gupta2018social}。图结构方法使交互结构显式化，或以固定的社会核构造邻域 \cite{mohamed2020social}，或在智能体及其历史状态上学习时空图 \cite{salzmann2020trajectron,kosaraju2020social}。此后，注意力编码器以学习到的关系替代手工邻域，既用于纯行人场景 \cite{yuan2021agentformer}，也用于需要联合建模车道与智能体历史的道路场景 \cite{liang2020lane,gao2020vectornet,ngiam2022scene,shi2022motion,nayakanti2022wayformer}。
+
+在输出侧，该领域从单一回归轨迹转向未来的分布建模。以显式预测的终点作为条件被证明有助于改善多模态性 \cite{mangalam2020not}；条件变分自编码器、流匹配以及“意图—状态”解耦模型提供了不同的参数化方式 \cite{fu2025moflow,zhang2024demo}。本文解码器属于终点条件化一类，但终点是相对锚点预测的，锚点的“年龄”是输入的一部分；锚点到终点之间的轨迹骨架由实际经过的间隔参数化，而非固定在单位时间网格上。
+
+上述工作都假定历史每一行都是测量。本文的贡献与交互编码器或生成头的选择正交：我们沿用标准的 token 化骨干，考察每一帧可用证据应如何表示并路由。
+
+\subsection{缺失数据与插补方法}
+
+缺失数据理论区分完全随机缺失、随机缺失与非随机缺失三种机制，并指出当下游目标是回归量时应采用多重插补 \cite{little2019missing,vanbuuren2018flexible}。深度插补以端到端网络替代迭代条件模型：生成式对抗插补 \cite{yoon2018gain}、双向循环插补 \cite{cao2018brits}、面向临床时间序列的衰减式循环插补 \cite{che2018gru} 以及基于自注意力的插补 \cite{du2023saits}。近期实证研究表明，插补器的重建精度与其不确定性标定能力仅弱相关 \cite{hossain2025beyond}，这削弱了“按重建误差挑选插补器、再假定下游预测器可继承其质量”的常见做法。
+
+行人领域的相关工作遵循同样的逻辑。Chib 与 Singh \cite{chib2024pedestrian} 构建了将缺失历史数据与多种插补器、预测器配对的基准；Xu 等 \cite{xu2023uncovering} 将插补与预测统一在一个网络中；MS-TIP 将两者耦合并使恢复结果服务于预测 \cite{chib2024mstip}，多尺度超图变体把这一思路扩展到更复杂的关系结构 \cite{chib2026hypergraph}；RMP-YOLO 则先借助地图拓扑与邻域关系重建运动状态再预测 \cite{sun2025rmpyolo}。这些方法说明恢复是可行的，但也使预测器的输入分布依赖于插补器，且模型无法区分测量值与推断值。本文认为，对预测任务而言，这一区分而非重建精度才是关键量。
+
+\subsection{不完整或受限观测下的轨迹预测}
+
+另一条路线保留不完整输入并调整模型。掩码预训练使轨迹表征能够容忍路点被丢弃 \cite{yang2023rmp,chen2023trajmae}，在监督训练中随机丢弃路点则起到数据增强作用 \cite{chib2023dropping}。瞬时观测预测把历史压缩到极少数帧 \cite{sun2022momentary}；知识蒸馏与对比学习使模型适应被截短的观测窗口 \cite{monti2022howmany,qiu2025adapting}。这些研究确认观测减少会削弱速度与朝向估计，但都把历史视为被整体截短。历史内部缺失在两方面不同，且这两方面对结构设计有直接影响：缺失帧与观测帧交错出现；缺失相对预测起点的位置会改变最后一个可用状态的可靠性。
+
+面向鲁棒性的研究从不确定性与传感器退化角度处理该问题：预测自身误差的自省网络 \cite{itkina2022interpretable}、感知不确定性下的深度集成 \cite{nayak2023deepensembles}、基于切换动力系统的遮挡推理 \cite{wei2024navigation}、多传感器退化基准 \cite{mohta2021multisensor,sanchez2023robustness}，以及间歇观测下的滤波理论 \cite{sinopoli2004kalman}。在时间序列预测中，状态空间模型被扩展到缺失值与不规则采样 \cite{gu2022efficient,peng2025s4m,yalavarthi2025profit}，注意力变体也显式处理缺失观测 \cite{gao2021gradient,becker2021missformer}。本文借用选择性状态空间递推 \cite{gu2023mamba} 作为时间骨干，但以证据状态调制其输入与读出，而不是把缺失性当作一个输入通道。
+
+\subsection{评测基准与评测协议}
+
+缺失历史预测的评测困难在于缺失必须被合成，而不同论文的合成方式不同：随机丢帧、连续块缺失、行为相关遮挡，或固定的难度等级。TrajImpute 数据发布 \cite{chib2024pedestrian} 是使用最广的资源，提供划分一致的 Easy 与 Hard 两个版本，但其设计目标是比较插补器，难度标签通常被分别作为独立榜单报告。RealTraj \cite{fujii2024realtraj} 则从真实检测—跟踪流程导出轨迹，对外部效度有价值，但不提供受控的缺失模式。本文基准保留公开数据及其掩码，但冻结单一的 Mixed 协议、单一检查点规则与两项指标，使某一建模选择的作用可以相对固定契约被度量，而非相对各论文的各自约定。

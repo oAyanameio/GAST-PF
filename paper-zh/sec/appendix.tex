@@ -1,0 +1,93 @@
+\appendix
+\section{目标函数与实现细节}
+\label{app:impl}
+
+\subsection{辅助项的显式形式}
+\label{app:loss}
+
+记 $y\in\mathbb{R}^{H\times2}$ 为目标行人的未来，$\hat{y}_{k}$ 为第 $k$ 条候选，$\pi\in\Delta^{K-1}$ 为模式分布。以逐步误差 $e_{k,t}=\|\hat{y}_{k,t}-y_{t}\|$、$d_{k}=\frac{1}{H}\sum_{t}e_{k,t}$、$d^{\mathrm{end}}_{k}=\|\hat{y}_{k,H}-y_{H}\|$，式~\eqref{eq:loss} 中未在正文展开的项为
+\begin{equation}
+\begin{aligned}
+\mathcal{L}_{\mathrm{NLL}}=\ &\frac{1}{2H}\sum_{t,c}\Big[\log\big(2\sigma_{k^{\ast},t,c}\big)+\frac{|y_{t,c}-\hat{y}_{k^{\ast},t,c}|}{\sigma_{k^{\ast},t,c}}\Big]\\
+&-\frac{1}{2}\sum_{k}\tilde{\pi}_{k}\log\pi_{k},
+\end{aligned}
+\label{eq:nll}
+\end{equation}
+软目标为
+\begin{equation}
+\tilde{\pi}_{k}=\mathrm{softmax}_{k}(-d_{k}/H),\quad
+k^{\ast}=\arg\min_{k}(d_{k}+\lambda_{e}d^{\mathrm{end}}_{k}),
+\label{eq:softtarget}
+\end{equation}
+$\lambda_{e}=1$，$k^{\dagger}=\arg\min_{k}d_{k}$。软目标不回传梯度。分类项 $\mathcal{L}_{\mathrm{cls}}=-\log\pi_{k^{\dagger}}$ 使用标签平滑 $0.2$；多样性项取 $\lambda_{d}=0.05$、间隔 $0.5$~m。邻居项对其余全部非填充行人的未来施加 SmoothL1 损失，由作用于其编码状态的两层预测头给出，仅在训练阶段生效。
+
+\subsection{逐场景分层结果}
+\label{app:strat}
+
+表~\ref{tab:appstrat} 给出 GAST 在各场景、各缺失帧数下的 $\mathrm{minFDE}_{20}$。场景层面的形态与宏平均曲线一致：在缺失不超过六帧时 ETH-M 与 HOTEL-M 最不敏感，UNIV-M 与 ZARA1-M 退化更平稳，所有场景在缺失七帧处均出现不连续。HOTEL-M 是最极端的情形：缺失零至六帧时曲线近乎平坦（0.1835 至 0.1957~m），随后跃升至 1.9085~m；这与该场景低速、受强约束的运动特征一致——即使只剩一次观测，也仍能在相当程度上约束目的地。
+
+\begin{table}[t]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{1.0pt}
+\caption{GAST 在各场景、各历史缺失帧数下的 $\mathrm{minFDE}_{20}$（单位米）。ETH-M 在缺失四帧的桶中有 362 个样本，其余桶各 181 个；其他场景每个桶各 181 个。}
+\label{tab:appstrat}
+\begin{tabular}{@{}lcccccccc@{}}
+\toprule
+Scene & 0 & 1 & 2 & 3 & 4 & 5 & 6 & 7 \\
+\midrule
+ETH-M   & 0.6641 & 0.6755 & 0.7196 & 0.7001 & 0.6988 & 0.7026 & 0.7314 & 1.7995 \\
+HOTEL-M & 0.1835 & 0.1841 & 0.1806 & 0.1841 & 0.1847 & 0.1865 & 0.1957 & 1.9085 \\
+UNIV-M  & 0.3997 & 0.4068 & 0.4176 & 0.4270 & 0.4427 & 0.4688 & 0.5048 & 1.2093 \\
+ZARA1-M & 0.3199 & 0.3214 & 0.3292 & 0.3392 & 0.3523 & 0.3812 & 0.4185 & 0.9013 \\
+ZARA2-M & 0.2276 & 0.2281 & 0.2312 & 0.2379 & 0.2483 & 0.2621 & 0.2902 & 0.5469 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{超参数与计算资源}
+\label{app:hparams}
+
+\begin{table}[t]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{2.4pt}
+\caption{全部 GAST 运行共享的训练配置。}
+\label{tab:hparams}
+\begin{tabular}{@{}ll@{}}
+\toprule
+Item & Value \\
+\midrule
+History / horizon & 8 / 12 frames, $\Delta t=0.4$~s \\
+Embedding width & 128 \\
+Attention heads & 8 \\
+Temporal stack depth & 4 (unidirectional SSM) \\
+Decoder cross-attention & 2 layers \\
+Modes $K$ & 20 \\
+Dropout / drop-path & 0.2 / 0.2 \\
+Optimiser & AdamW, lr $10^{-3}$, wd $10^{-4}$ \\
+Schedule & 5 warm-up epochs, 100 epochs max \\
+Batch size / precision & 64 / bf16 \\
+Gradient clipping & norm 5 \\
+Parameters & 1.19M (0.60M encoder, 0.55M decoder) \\
+Checkpoint monitor & Mixed-val $\mathrm{minFDE}_{20}$, final head \\
+Selected epochs & 58 / 41 / 42 / 33 / 49 \\
+Hardware & 1$\times$ RTX 5880 Ada per scene \\
+Seed & 2024 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+所选轮次按场景顺序（ETH-M、HOTEL-M、UNIV-M、ZARA1-M、ZARA2-M）列出。没有运行触及 100 轮预算，因此报告结果不受训练截断限制。可靠度温度按 $\tau=\mathrm{softplus}(\vartheta)$ 参数化，$\vartheta$ 初始化为 $-2.252$，对应 $\tau\approx0.10$，初始时半衰期约为七帧；该参数与模型其余部分联合学习。
+
+\subsection{可复现性清单}
+\label{app:checklist}
+
+\begin{itemize}
+\item \textbf{数据。}公开的 TrajImpute 发布；每次运行实际消费的文件记录于其 manifest，未使用发布之外的任何数据。
+\item \textbf{划分。}按第~\ref{sec:mixed} 节定义的 Mixed 训练/验证/测试；测试划分从不用于模型选择。
+\item \textbf{随机种子。}所有方法在每个场景上使用单一随机种子（2024）；该局限已在第~\ref{sec:disc} 节说明。
+\item \textbf{指标。}所有方法的 $\mathrm{minADE}_{20}$ 与 $\mathrm{minFDE}_{20}$ 由同一评估器计算；top-1 指标仅在存在模式概率时报告。
+\item \textbf{产物。}每次运行输出 manifest（git 版本、解析配置、环境）与含逐样本诊断的评估 JSON；本文全部表格由脚本从这些文件生成。
+\item \textbf{代码。}Mixed 适配器、训练入口、评估器与模型定义随论文发布。
+\end{itemize}
