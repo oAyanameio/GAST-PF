@@ -1,6 +1,6 @@
 <mxfile host="app.diagrams.net" agent="ccfa-arch-diagram" version="24.0.0">
   <diagram name="GAST Framework" id="gast_framework">
-    <mxGraphModel dx="0" dy="0" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1280" pageHeight="890" math="0" shadow="0" background="#FFFFFF">
+    <mxGraphModel dx="0" dy="0" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1280" pageHeight="920" math="0" shadow="0" background="#FFFFFF">
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
@@ -19,24 +19,24 @@
           <mxGeometry x="1090" y="110" width="160" height="430" as="geometry"/>
         </mxCell>
         <mxCell id="panel_loss" value="" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#FDF0EE;strokeColor=#C78B85;fillOpacity=32;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="30" y="570" width="1220" height="195" as="geometry"/>
+          <mxGeometry x="30" y="570" width="1220" height="220" as="geometry"/>
         </mxCell>
 
         <!-- Title and headings -->
-        <mxCell id="title" value="GAST: Evidence-Conditioned Goal-Aware Trajectory Forecasting" style="text;html=1;fontSize=18;fontStyle=1;align=center;verticalAlign=middle;fontColor=#202124;fontFamily=Times New Roman;" vertex="1" parent="1">
+        <mxCell id="title" value="GAST: Evidence-Conditioned Trajectory Forecasting from Incomplete Histories" style="text;html=1;fontSize=18;fontStyle=1;align=center;verticalAlign=middle;fontColor=#202124;fontFamily=Times New Roman;" vertex="1" parent="1">
           <mxGeometry x="30" y="20" width="1220" height="32" as="geometry"/>
         </mxCell>
-        <mxCell id="subtitle" value="Direct prediction from incomplete history · actor-only · K=20 modes · 12 future steps · no imputation" style="text;html=1;fontSize=11;align=center;verticalAlign=middle;fontColor=#5F6368;fontFamily=Times New Roman;" vertex="1" parent="1">
+        <mxCell id="subtitle" value="OES · GERE · ECTA (RMCM + EWSA) · GCI Decoder · direct prediction without imputation · K=20 · 12 steps" style="text;html=1;fontSize=11;align=center;verticalAlign=middle;fontColor=#5F6368;fontFamily=Times New Roman;" vertex="1" parent="1">
           <mxGeometry x="30" y="55" width="1220" height="22" as="geometry"/>
         </mxCell>
-        <mxCell id="head_input" value="(a) History &amp; Evidence" style="text;html=1;fontSize=13;fontStyle=1;align=left;verticalAlign=middle;fontColor=#233047;fontFamily=Times New Roman;" vertex="1" parent="1">
+        <mxCell id="head_input" value="(a) Incomplete History" style="text;html=1;fontSize=13;fontStyle=1;align=left;verticalAlign=middle;fontColor=#233047;fontFamily=Times New Roman;" vertex="1" parent="1">
           <mxGeometry x="42" y="120" width="201" height="24" as="geometry"/>
         </mxCell>
         <mxCell id="head_encoder" value="(b) GAST Encoder" style="text;html=1;fontSize=13;fontStyle=1;align=left;verticalAlign=middle;fontColor=#315A34;fontFamily=Times New Roman;" vertex="1" parent="1">
           <mxGeometry x="312" y="120" width="376" height="24" as="geometry"/>
         </mxCell>
-        <mxCell id="head_decoder" value="(c) Gap-Aware Goal Decoder" style="text;html=1;fontSize=13;fontStyle=1;align=left;verticalAlign=middle;fontColor=#563A72;fontFamily=Times New Roman;" vertex="1" parent="1">
-          <mxGeometry x="732" y="120" width="326" height="24" as="geometry"/>
+        <mxCell id="head_decoder" value="&lt;b&gt;(c) GCI Decoder&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Goal-Conditioned Interaction Decoder&lt;/font&gt;" style="text;html=1;fontSize=13;fontStyle=0;align=left;verticalAlign=middle;fontColor=#563A72;fontFamily=Times New Roman;" vertex="1" parent="1">
+          <mxGeometry x="732" y="120" width="326" height="36" as="geometry"/>
         </mxCell>
         <mxCell id="head_output" value="(d) Forecast" style="text;html=1;fontSize=13;fontStyle=1;align=left;verticalAlign=middle;fontColor=#245A5A;fontFamily=Times New Roman;" vertex="1" parent="1">
           <mxGeometry x="1102" y="120" width="136" height="24" as="geometry"/>
@@ -46,7 +46,7 @@
         </mxCell>
 
         <!-- Inputs -->
-        <mxCell id="input_history" value="&lt;b&gt;History feature [B, N, T, 4]&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Δp (relative position)&lt;br&gt;Δs (speed difference)&lt;br&gt;m (valid mask)&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#DCE9F7;strokeColor=#3A5A8A;fontColor=#1B2A3B;fontFamily=Times New Roman;fontSize=11;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
+        <mxCell id="input_history" value="&lt;b&gt;History feature [B, N, T, 4]&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Δx, Δy (position difference)&lt;br&gt;Δv (speed change)&lt;br&gt;m (validity mask)&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#DCE9F7;strokeColor=#3A5A8A;fontColor=#1B2A3B;fontFamily=Times New Roman;fontSize=11;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
           <mxGeometry x="42" y="170" width="201" height="66" as="geometry"/>
         </mxCell>
         <mxCell id="input_masks" value="&lt;b&gt;Validity masks&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;x_valid_mask · x_key_valid_mask&lt;/font&gt;" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#F1F3F5;strokeColor=#7B8A9A;fontColor=#3C4043;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
@@ -55,118 +55,121 @@
         <mxCell id="input_positions" value="&lt;b&gt;Observed positions&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;x_positions (local xy)&lt;/font&gt;" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=#F1F3F5;strokeColor=#7B8A9A;fontColor=#3C4043;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
           <mxGeometry x="42" y="325" width="201" height="45" as="geometry"/>
         </mxCell>
-        <mxCell id="input_note" value="T = 8 observed steps · dt = 0.4 s&lt;br&gt;actor-only, no map or lane graph" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=none;strokeColor=none;fontColor=#5F6368;fontFamily=Times New Roman;fontSize=9;fontStyle=2;align=center;verticalAlign=middle;" vertex="1" parent="1">
-          <mxGeometry x="42" y="390" width="201" height="50" as="geometry"/>
+        <mxCell id="input_note" value="T = 8 observed steps · dt = 0.4 s&lt;br&gt;no external imputation · actor-only&lt;br&gt;no map or lane graph" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=none;strokeColor=none;fontColor=#5F6368;fontFamily=Times New Roman;fontSize=9;fontStyle=2;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="42" y="390" width="201" height="55" as="geometry"/>
         </mxCell>
 
         <!-- Encoder -->
-        <mxCell id="evidence_state" value="&lt;b&gt;① Observation evidence state&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;age_t = t − last observed step&lt;br&gt;r_t = 1 if observed, else exp(−τ·age_t)&lt;br&gt;τ = softplus(logit), learnable · padding excluded&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#E8DAEF;strokeColor=#6C4A8A;fontColor=#3A2560;fontFamily=Times New Roman;fontSize=11;fontStyle=0;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
+        <mxCell id="evidence_state" value="&lt;b&gt;① OES · Observation Evidence State&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;s: observed · a = t − last observed&lt;br&gt;r = 1 if s=1, else exp(−τ·a)&lt;br&gt;τ = softplus(θ), learnable · padding excluded&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#E8DAEF;strokeColor=#6C4A8A;fontColor=#3A2560;fontFamily=Times New Roman;fontSize=11;fontStyle=0;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
           <mxGeometry x="315" y="160" width="370" height="66" as="geometry"/>
         </mxCell>
-        <mxCell id="gere_gsm" value="&lt;b&gt;② GERE · spatial evidence routing&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;7-D pair geometry → per-head attention bias&lt;br&gt;both-visible gating · ghost token · key padding&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#E8DAEF;strokeColor=#6C4A8A;fontColor=#3A2560;fontFamily=Times New Roman;fontSize=11;fontStyle=0;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
+        <mxCell id="gere_gsm" value="&lt;b&gt;② GERE · Geometry-Evidence Relational Encoding&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;7-D pair geometry → per-head attention bias&lt;br&gt;source eligibility gating · ghost token · key padding&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#E8DAEF;strokeColor=#6C4A8A;fontColor=#3A2560;fontFamily=Times New Roman;fontSize=11;fontStyle=0;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
           <mxGeometry x="315" y="245" width="370" height="66" as="geometry"/>
         </mxCell>
 
-        <mxCell id="ecta_group" value="&lt;b&gt;③ ECTA · temporal aggregation&lt;/b&gt;" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#1E8449;dashed=1;fontColor=#145A32;fontFamily=Times New Roman;fontSize=10;align=left;verticalAlign=bottom;spacingLeft=10;spacingBottom=4;" vertex="1" parent="1">
-          <mxGeometry x="315" y="330" width="370" height="115" as="geometry"/>
+        <mxCell id="ecta_group" value="&lt;b&gt;③ ECTA · RMCM + EWSA&lt;/b&gt;" style="rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#1E8449;dashed=1;fontColor=#145A32;fontFamily=Times New Roman;fontSize=10;align=left;verticalAlign=bottom;spacingLeft=10;spacingBottom=4;" vertex="1" parent="1">
+          <mxGeometry x="315" y="330" width="370" height="120" as="geometry"/>
         </mxCell>
-        <mxCell id="rmcm" value="&lt;b&gt;RMCM&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;r_t × input&lt;br&gt;causal Mamba ×4&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#D5F0DC;strokeColor=#1E8449;fontColor=#145A32;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
-          <mxGeometry x="325" y="360" width="155" height="58" as="geometry"/>
+        <mxCell id="rmcm" value="&lt;b&gt;RMCM&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:8.5px&quot;&gt;reliability-modulated&lt;br&gt;causal Mamba ×4&lt;br&gt;r_t × MLP(z_t)&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#D5F0DC;strokeColor=#1E8449;fontColor=#145A32;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="325" y="360" width="155" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="ewsa" value="&lt;b&gt;EWSA&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;softmax(s_t + β·log r_t)&lt;br&gt;terminal-state blending&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#D5F0DC;strokeColor=#1E8449;fontColor=#145A32;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
-          <mxGeometry x="525" y="360" width="155" height="58" as="geometry"/>
+        <mxCell id="ewsa" value="&lt;b&gt;EWSA&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:8.5px&quot;&gt;w_t = softmax(q_t + β log r_t)&lt;br&gt;h = r_T h_T +&lt;br&gt;(1−r_T) Σ w_t h_t&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#D5F0DC;strokeColor=#1E8449;fontColor=#145A32;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="525" y="360" width="155" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="actor_encoding" value="&lt;b&gt;GAST actor encoding [B, N, 128]&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;focal actor at index 0&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#DCE9F7;strokeColor=#3A5A8A;fontColor=#1B2A3B;fontFamily=Times New Roman;fontSize=11;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
+        <mxCell id="actor_encoding" value="&lt;b&gt;Actor Tokens [B, N, 128]&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;focal actor at index 0&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#DCE9F7;strokeColor=#3A5A8A;fontColor=#1B2A3B;fontFamily=Times New Roman;fontSize=11;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
           <mxGeometry x="375" y="465" width="250" height="50" as="geometry"/>
         </mxCell>
 
-        <!-- Decoder -->
-        <mxCell id="focal_encoding" value="&lt;b&gt;Focal encoding&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;actor 0&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#DCE9F7;strokeColor=#3A5A8A;fontColor=#1B2A3B;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
+        <!-- GCI decoder -->
+        <mxCell id="focal_encoding" value="&lt;b&gt;Focal actor token&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;index 0&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#DCE9F7;strokeColor=#3A5A8A;fontColor=#1B2A3B;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
           <mxGeometry x="735" y="160" width="150" height="55" as="geometry"/>
         </mxCell>
-        <mxCell id="anchor_gap" value="&lt;b&gt;Last-valid anchor state (7-D)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;anchor xy · terminal velocity&lt;br&gt;gap ratio · valid ratio&lt;br&gt;terminal missing&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FBE5C6;strokeColor=#B0651A;fontColor=#6E3D0A;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
+        <mxCell id="anchor_gap" value="&lt;b&gt;Anchor state (7-D)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;last valid c · v&lt;br&gt;g/T · ρ · m_T&lt;br&gt;no imputation&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FBE5C6;strokeColor=#B0651A;fontColor=#6E3D0A;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=2;" vertex="1" parent="1">
           <mxGeometry x="895" y="160" width="160" height="70" as="geometry"/>
         </mxCell>
-        <mxCell id="mode_queries" value="&lt;b&gt;K=20 mode queries&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;focal encoding + anchor state + mode embedding&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#E8DAEF;strokeColor=#6C4A8A;fontColor=#3A2560;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
+        <mxCell id="mode_queries" value="&lt;b&gt;① Mode queries (K=20)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;focal token + anchor state + mode embedding&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#E8DAEF;strokeColor=#6C4A8A;fontColor=#3A2560;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
           <mxGeometry x="735" y="250" width="320" height="60" as="geometry"/>
         </mxCell>
-        <mxCell id="context_attn" value="&lt;b&gt;Actor-context cross-attention ×2&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;attends all actors · padding masked&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#E8DAEF;strokeColor=#6C4A8A;fontColor=#3A2560;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
+        <mxCell id="context_attn" value="&lt;b&gt;② Actor cross-attention ×2&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;each mode reads valid actor tokens · padding masked&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#E8DAEF;strokeColor=#6C4A8A;fontColor=#3A2560;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
           <mxGeometry x="735" y="325" width="320" height="55" as="geometry"/>
         </mxCell>
-        <mxCell id="endpoint_head" value="&lt;b&gt;Goal endpoint head&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Δg = MLP(mode query) · endpoint = anchor + Δg&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#C0392B;fontColor=#7B241C;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
+        <mxCell id="endpoint_head" value="&lt;b&gt;③ Endpoint prediction&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Δg = MLP(mode query) · g = c + Δg&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#C0392B;fontColor=#7B241C;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
           <mxGeometry x="735" y="395" width="320" height="60" as="geometry"/>
         </mxCell>
-        <mxCell id="trajectory_head" value="&lt;b&gt;Time-conditioned trajectory head&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;t_k = (gap + k)·dt · x_k = anchor + p_k·Δg + (1−p_k)·res_k&lt;br&gt;exact endpoint at p_k = 1 · mode score · Laplace scale&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3A4A5A;fontColor=#202124;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
+        <mxCell id="trajectory_head" value="&lt;b&gt;④ Time-conditioned trajectory generation&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;t_k = (gap+k)·dt · linear path + decaying residual&lt;br&gt;exact endpoint at p=1 · mode score · scale&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#3A4A5A;fontColor=#202124;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=4;" vertex="1" parent="1">
           <mxGeometry x="735" y="470" width="320" height="58" as="geometry"/>
         </mxCell>
 
         <!-- Forecast heads -->
-        <mxCell id="prediction_heads" value="&lt;b&gt;Prediction heads&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;trajectory · score · scale&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#D5F0DC;strokeColor=#1E8449;fontColor=#145A32;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
+        <mxCell id="prediction_heads" value="&lt;b&gt;Prediction outputs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;trajectory · score · scale&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#D5F0DC;strokeColor=#1E8449;fontColor=#145A32;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
           <mxGeometry x="1105" y="160" width="130" height="60" as="geometry"/>
         </mxCell>
-        <mxCell id="traj_output" value="&lt;b&gt;Outputs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;ŷ [B, 20, 12, 2]&lt;br&gt;π [B, 20]&lt;br&gt;s [B, 20, 2]&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#D5F0DC;strokeColor=#1E8449;fontColor=#145A32;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
+        <mxCell id="traj_output" value="&lt;b&gt;Outputs (K=20)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;ŷ [B, 20, 12, 2]&lt;br&gt;π [B, 20]&lt;br&gt;s [B, 20, 2]&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#D5F0DC;strokeColor=#1E8449;fontColor=#145A32;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
           <mxGeometry x="1105" y="250" width="130" height="95" as="geometry"/>
         </mxCell>
-        <mxCell id="neighbor_heads" value="&lt;b&gt;Neighbor head&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;ŷ_others&lt;br&gt;auxiliary smooth-L1&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F1F3F5;strokeColor=#7B8A9A;fontColor=#3C4043;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
+        <mxCell id="neighbor_heads" value="&lt;b&gt;Neighbor Prediction Head&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;training-only auxiliary&lt;br&gt;ŷ_others&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#F1F3F5;strokeColor=#7B8A9A;fontColor=#3C4043;fontFamily=Times New Roman;fontSize=9;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
           <mxGeometry x="1105" y="375" width="130" height="65" as="geometry"/>
         </mxCell>
 
         <!-- Training supervision -->
         <mxCell id="gt_traj" value="&lt;b&gt;Ground-truth trajectory y&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;future xy, 12 steps&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#C78B85;fontColor=#7B3E38;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
-          <mxGeometry x="50" y="612" width="180" height="42" as="geometry"/>
+          <mxGeometry x="50" y="605" width="180" height="42" as="geometry"/>
         </mxCell>
         <mxCell id="gt_endpoint" value="&lt;b&gt;Ground-truth endpoint y_T&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;last future position&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#C78B85;fontColor=#7B3E38;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
-          <mxGeometry x="50" y="664" width="180" height="42" as="geometry"/>
+          <mxGeometry x="50" y="657" width="180" height="42" as="geometry"/>
         </mxCell>
-        <mxCell id="final_loss" value="&lt;b&gt;Final-consistent loss&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;L = Lreg + Lcls + Lend + Ldiv + LLaplace + Lothers&lt;br&gt;best mode by joint trajectory + endpoint error&lt;br&gt;classification target ranked by trajectory error&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#C0392B;fontColor=#7B241C;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
-          <mxGeometry x="460" y="595" width="430" height="90" as="geometry"/>
+        <mxCell id="l_main" value="&lt;b&gt;L_main (final-consistent)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;L_main = L_reg + L_cls + L_Laplace&lt;br&gt;+ λ_end·L_endpoint + λ_div·L_diversity&lt;br&gt;best mode: joint trajectory + endpoint error&lt;br&gt;classification target: trajectory error&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#C0392B;fontColor=#7B241C;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
+          <mxGeometry x="460" y="595" width="360" height="95" as="geometry"/>
         </mxCell>
-        <mxCell id="loss_terms" value="&lt;font style=&quot;font-size:9px&quot;&gt;reg: smooth-L1 on best mode · cls: CE, ls=0.2 · endpoint ×1.0 · diversity ×0.05 on endpoints (margin 0.5) · Laplace NLL · neighbor smooth-L1&lt;/font&gt;" style="text;html=1;fontColor=#7B3E38;fontFamily=Times New Roman;fontSize=9;align=left;verticalAlign=middle;" vertex="1" parent="1">
-          <mxGeometry x="460" y="700" width="790" height="26" as="geometry"/>
+        <mxCell id="l_others" value="&lt;b&gt;L_others&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;SmoothL1(ŷ_others, Y_others)&lt;br&gt;valid neighbors only&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#C0392B;fontColor=#7B241C;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
+          <mxGeometry x="900" y="600" width="300" height="60" as="geometry"/>
         </mxCell>
-        <mxCell id="loss_note" value="GT and losses enter only during training; inference stops at the forecast heads." style="text;html=1;fontSize=9;fontStyle=2;align=left;verticalAlign=middle;fontColor=#7B3E38;fontFamily=Times New Roman;" vertex="1" parent="1">
-          <mxGeometry x="42" y="735" width="1180" height="20" as="geometry"/>
+        <mxCell id="l_total" value="&lt;b&gt;L_total&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;L_main + L_others&lt;/font&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FADBD8;strokeColor=#C0392B;fontColor=#7B241C;fontFamily=Times New Roman;fontSize=10;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
+          <mxGeometry x="900" y="690" width="300" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="loss_note" value="GT and losses enter only during training; inference stops at the main outputs." style="text;html=1;fontSize=9;fontStyle=2;align=left;verticalAlign=middle;fontColor=#7B3E38;fontFamily=Times New Roman;" vertex="1" parent="1">
+          <mxGeometry x="42" y="765" width="1180" height="20" as="geometry"/>
         </mxCell>
 
         <!-- Legend -->
         <mxCell id="legend_box" value="" style="rounded=1;arcSize=4;fillColor=#FFFFFF;strokeColor=#B8C2CC;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="30" y="785" width="1220" height="42" as="geometry"/>
+          <mxGeometry x="30" y="810" width="1220" height="42" as="geometry"/>
         </mxCell>
         <mxCell id="legend_title" value="Legend" style="text;html=1;fontSize=11;fontStyle=1;align=left;verticalAlign=middle;fontColor=#3C4043;fontFamily=Times New Roman;" vertex="1" parent="1">
-          <mxGeometry x="45" y="795" width="55" height="20" as="geometry"/>
+          <mxGeometry x="45" y="820" width="55" height="20" as="geometry"/>
         </mxCell>
         <mxCell id="legend_flow_swatch" value="" style="rounded=1;arcSize=4;fillColor=#5F6368;strokeColor=#5F6368;" vertex="1" parent="1">
-          <mxGeometry x="115" y="803" width="35" height="6" as="geometry"/>
+          <mxGeometry x="115" y="828" width="35" height="6" as="geometry"/>
         </mxCell>
         <mxCell id="legend_flow_text" value="forward flow" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#5F6368;fontFamily=Times New Roman;" vertex="1" parent="1">
-          <mxGeometry x="158" y="794" width="100" height="22" as="geometry"/>
+          <mxGeometry x="158" y="819" width="100" height="22" as="geometry"/>
         </mxCell>
         <mxCell id="legend_sup_swatch" value="" style="rounded=1;arcSize=4;fillColor=#9AA0A6;strokeColor=#9AA0A6;dashed=1;" vertex="1" parent="1">
-          <mxGeometry x="290" y="803" width="35" height="6" as="geometry"/>
+          <mxGeometry x="290" y="828" width="35" height="6" as="geometry"/>
         </mxCell>
         <mxCell id="legend_sup_text" value="training supervision" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#5F6368;fontFamily=Times New Roman;" vertex="1" parent="1">
-          <mxGeometry x="333" y="794" width="150" height="22" as="geometry"/>
+          <mxGeometry x="333" y="819" width="150" height="22" as="geometry"/>
         </mxCell>
         <mxCell id="legend_evidence_swatch" value="" style="rounded=1;arcSize=4;fillColor=#E8DAEF;strokeColor=#6C4A8A;" vertex="1" parent="1">
-          <mxGeometry x="510" y="797" width="24" height="18" as="geometry"/>
+          <mxGeometry x="510" y="822" width="24" height="18" as="geometry"/>
         </mxCell>
-        <mxCell id="legend_evidence_text" value="evidence-aware module" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#5F6368;fontFamily=Times New Roman;" vertex="1" parent="1">
-          <mxGeometry x="542" y="794" width="155" height="22" as="geometry"/>
+        <mxCell id="legend_evidence_text" value="evidence / interaction" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#5F6368;fontFamily=Times New Roman;" vertex="1" parent="1">
+          <mxGeometry x="542" y="819" width="155" height="22" as="geometry"/>
         </mxCell>
         <mxCell id="legend_goal_swatch" value="" style="rounded=1;arcSize=4;fillColor=#FBE5C6;strokeColor=#B0651A;" vertex="1" parent="1">
-          <mxGeometry x="710" y="797" width="24" height="18" as="geometry"/>
+          <mxGeometry x="710" y="822" width="24" height="18" as="geometry"/>
         </mxCell>
         <mxCell id="legend_goal_text" value="goal / gap conditioning" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#5F6368;fontFamily=Times New Roman;" vertex="1" parent="1">
-          <mxGeometry x="742" y="794" width="155" height="22" as="geometry"/>
+          <mxGeometry x="742" y="819" width="155" height="22" as="geometry"/>
         </mxCell>
         <mxCell id="legend_loss_swatch" value="" style="rounded=1;arcSize=4;fillColor=#FADBD8;strokeColor=#C0392B;" vertex="1" parent="1">
-          <mxGeometry x="910" y="797" width="24" height="18" as="geometry"/>
+          <mxGeometry x="910" y="822" width="24" height="18" as="geometry"/>
         </mxCell>
         <mxCell id="legend_loss_text" value="loss / constraint" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#5F6368;fontFamily=Times New Roman;" vertex="1" parent="1">
-          <mxGeometry x="942" y="794" width="130" height="22" as="geometry"/>
+          <mxGeometry x="942" y="819" width="130" height="22" as="geometry"/>
         </mxCell>
-        <mxCell id="caption" value="Fig. 1. GAST: evidence-conditioned encoding and gap-aware goal decoding for direct forecasting under incomplete history." style="text;html=1;fontSize=11;align=center;verticalAlign=middle;fontColor=#202124;fontFamily=Times New Roman;" vertex="1" parent="1">
-          <mxGeometry x="30" y="845" width="1220" height="22" as="geometry"/>
+        <mxCell id="caption" value="Fig. 1. GAST: OES, GERE, ECTA (RMCM + EWSA), and the GCI Decoder implementing GCIP for direct pedestrian forecasting under incomplete histories." style="text;html=1;fontSize=11;align=center;verticalAlign=middle;fontColor=#202124;fontFamily=Times New Roman;" vertex="1" parent="1">
+          <mxGeometry x="30" y="870" width="1220" height="22" as="geometry"/>
         </mxCell>
 
         <!-- Forward data flow -->
@@ -217,19 +220,28 @@
         <mxCell id="e_heads_output" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5F6368;strokeWidth=1.2;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="prediction_heads" target="traj_output">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_actor_neighbor" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5F6368;strokeWidth=1.2;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=1;" edge="1" parent="1" source="actor_encoding" target="neighbor_heads">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="500" y="550"/><mxPoint x="1170" y="550"/></Array></mxGeometry>
-        </mxCell>
 
         <!-- Training-only paths -->
-        <mxCell id="e_output_loss" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#9AA0A6;strokeWidth=1.1;dashed=1;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="traj_output" target="final_loss">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1244" y="297"/><mxPoint x="1244" y="640"/></Array></mxGeometry>
+        <mxCell id="e_output_main" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#9AA0A6;strokeWidth=1.1;dashed=1;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=1;entryY=0.25;" edge="1" parent="1" source="traj_output" target="l_main">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1244" y="297"/><mxPoint x="1244" y="585"/><mxPoint x="840" y="585"/><mxPoint x="840" y="619"/></Array></mxGeometry>
         </mxCell>
-        <mxCell id="e_gt_loss" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C78B85;strokeWidth=1.1;dashed=1;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.25;" edge="1" parent="1" source="gt_traj" target="final_loss">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="345" y="633"/><mxPoint x="345" y="617.5"/></Array></mxGeometry>
+        <mxCell id="e_gt_main" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C78B85;strokeWidth=1.1;dashed=1;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.25;" edge="1" parent="1" source="gt_traj" target="l_main">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="345" y="626"/><mxPoint x="345" y="619"/></Array></mxGeometry>
         </mxCell>
-        <mxCell id="e_endpoint_loss" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C78B85;strokeWidth=1.1;dashed=1;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.8;" edge="1" parent="1" source="gt_endpoint" target="final_loss">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="345" y="685"/><mxPoint x="345" y="667"/></Array></mxGeometry>
+        <mxCell id="e_endpoint_main" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C78B85;strokeWidth=1.1;dashed=1;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.75;" edge="1" parent="1" source="gt_endpoint" target="l_main">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="345" y="678"/><mxPoint x="345" y="666"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e_actor_neighbor" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#9AA0A6;strokeWidth=1.1;dashed=1;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="actor_encoding" target="neighbor_heads">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="500" y="550"/><mxPoint x="1080" y="550"/><mxPoint x="1080" y="408"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e_neighbor_others" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#9AA0A6;strokeWidth=1.1;dashed=1;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="neighbor_heads" target="l_others">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1260" y="408"/><mxPoint x="1260" y="630"/><mxPoint x="1200" y="630"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e_main_total" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C0392B;strokeWidth=1.1;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="l_main" target="l_total">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="860" y="642"/><mxPoint x="860" y="720"/><mxPoint x="900" y="720"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e_others_total" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C0392B;strokeWidth=1.1;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="l_others" target="l_total">
+          <mxGeometry relative="1" as="geometry"/>
         </mxCell>
       </root>
     </mxGraphModel>
