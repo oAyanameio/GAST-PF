@@ -90,13 +90,6 @@ python scripts/结果分析/evaluate_trajimpute_direct.py \
     --variant GAST --K 20 --seed 2024 \
     --checkpoint <path/to/checkpoint.ckpt> --output-root <output_dir>
 
-# ETH/UCY 完整数据（按 LOO 换 test_scenes，5 折分别运行）
-python train.py --config-name=config_ethucy
-python train.py --config-name=config_ethucy \
-    datamodule.train_scenes=[HOTEL,ZARA1,ZARA2] \
-    datamodule.val_scenes=[ETH] \
-    datamodule.test_scenes=[UNIV]
-
 # 通用 checkpoint 评估
 python eval.py checkpoint='/path/to/ckpt' test=true
 ```
@@ -106,10 +99,10 @@ python eval.py checkpoint='/path/to/ckpt' test=true
 ## 目录结构
 
 ```text
-conf/                 Hydra 配置（ETH/UCY、SDD、TrajImpute；模型见 conf/model/）
+conf/                 Hydra 配置（TrajImpute 主线与对照；模型见 conf/model/）
 src/model/            TrajectoryForecaster、loss 与 LightningModule
 src/model/layers/     gast_encoder.py（GERE/ECTA/RMCM/EWSA）、gast_goal_decoder.py、
-                      structured_future_decoder.py、mamba
+                      mamba
 src/datamodule/       ETH/UCY、SDD 与 TrajImpute（TrajGapDataset）数据管线
 src/metrics/          minADE/minFDE/MR/brierFDE
 scripts/              训练与评估 / 结果分析 / 数据集构建 / 审计与校验
@@ -126,7 +119,7 @@ outputs/              训练与评估产物（逐折 results.json）
 - 唯一权威实验总汇总：`docs/results/实验总汇总.md`
 - TrajGap-Bench 榜单：`docs/results/trajgap_bench_leaderboard.md`
 - 数据审计：`docs/audits/trajimpute_release_审计.md`
-- 框架图：根目录 `GAST-Goal-framework.drawio` / `.png`，历史版本见 `docs/figures/`
+- 框架图：`docs/figures/`（当前 `GAST-Goal-framework.drawio` / `.png`，历史版本同目录）
 
 ## 当前结果
 

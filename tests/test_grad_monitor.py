@@ -24,7 +24,7 @@ class _FakeNet(torch.nn.Module):
         self.gast_encoder = torch.nn.Module()
         self.gast_encoder.spatial = torch.nn.Linear(4, 4)
         self.gast_encoder.temporal = torch.nn.Linear(4, 4)
-        self.future_decoder = torch.nn.Linear(4, 4)
+        self.goal_decoder = torch.nn.Linear(4, 4)
         self.other_head = torch.nn.Linear(4, 4)
 
 
@@ -52,7 +52,7 @@ def test_group_of_maps_modules():
     assert group_of(
         "gast_encoder.temporal_aggregation.state_aggregation.score.weight"
     ) == "enc.aggregation"
-    assert group_of("future_decoder.x.weight") == "decoder"
+    assert group_of("goal_decoder.x.weight") == "decoder"
     assert group_of("neighbor_prediction_head.0.weight") == "aux.neighbor_head"
     assert group_of("future_time_embedding.0.weight") == "aux.time_embed"
     assert group_of("something_else") == "other"

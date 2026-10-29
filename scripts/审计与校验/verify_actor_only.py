@@ -26,18 +26,16 @@ def check_instantiation():
         print(f"[{label}] 实例化 OK, 参数量={n/1e6:.2f}M, 违禁属性={bad or '无'}")
         assert not bad
 
-    build({"type": "ModelForecast", "embed_dim": 128, "future_steps": 12, "num_heads": 8,
+    build({"type": "TrajectoryForecaster", "embed_dim": 128, "future_steps": 12, "num_heads": 8,
            "mlp_ratio": 4.0, "qkv_bias": False, "drop_path": 0.2, "num_actor_types": 1,
            "num_modes": 6, "dt": 0.4}, "ETH/UCY uni 6modes")
-    build({"type": "ModelForecast", "embed_dim": 128, "future_steps": 12, "num_heads": 8,
+    build({"type": "TrajectoryForecaster", "embed_dim": 128, "future_steps": 12, "num_heads": 8,
            "mlp_ratio": 4.0, "qkv_bias": False, "drop_path": 0.2, "num_actor_types": 1,
            "num_modes": 20, "dt": 0.4}, "SDD 20modes")
 
-    import src.model.model_forecast as mf
-    import src.model.trainer_forecast as tf
-    print("StreamModelForecast 已移除:", not hasattr(mf, "StreamModelForecast"))
+    import src.model.trajectory_forecaster as tf
     print("StreamTrainer 已移除:", not hasattr(tf, "StreamTrainer"))
-    assert not hasattr(mf, "StreamModelForecast") and not hasattr(tf, "StreamTrainer")
+    assert not hasattr(tf, "StreamTrainer")
 
 
 if __name__ == "__main__":

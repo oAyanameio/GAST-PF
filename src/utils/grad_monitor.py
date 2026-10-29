@@ -30,7 +30,7 @@ _GROUP_RULES = (
     ("gast_encoder.temporal_aggregation.temporal_mamba", "enc.aggregation"),
     ("gast_encoder.temporal", "enc.temporal"),
     ("gast_encoder", "enc.other"),
-    ("future_decoder", "decoder"),
+    ("goal_decoder", "decoder"),
     ("neighbor_prediction_head", "aux.neighbor_head"),
     ("future_time_embedding", "aux.time_embed"),
 )

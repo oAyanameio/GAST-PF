@@ -25,7 +25,6 @@ def test_gast_forward_uses_goal_decoder_as_base_design():
         encoder_type="gast",
         gast_gere_spatial=True,
         gast_ecta=True,
-        loss_mode="final_consistent",
     ).cuda().eval()
     data = {
         "x_positions_diff": torch.randn(2, 3, 8, 2, device="cuda"),

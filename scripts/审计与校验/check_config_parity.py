@@ -34,8 +34,6 @@ def main():
         "gast_temporal_direction": "unidirectional",
         "gast_gere_spatial": True,
         "gast_ecta": True,
-        "gast_goal": True,
-        "loss_mode": "final_consistent",
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05,
         "mode_diversity_margin": 0.5,

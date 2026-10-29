@@ -24,12 +24,10 @@ target:
     gast_ecta: true
     # Goal-conditioned decoding and trajectory-aware mode ranking are
     # intrinsic parts of GAST, not a separate model variant.
-    gast_goal: true
     goal_endpoint_loss_weight: 1.0
     mode_diversity_loss_weight: 0.05
     mode_diversity_margin: 0.5
     classification_target_mode: 'trajectory'
-    loss_mode: 'final_consistent'
   pretrained_weights: ${pretrained_weights}
   lr: ${lr}
   weight_decay: ${weight_decay}

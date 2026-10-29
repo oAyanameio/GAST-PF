@@ -121,7 +121,6 @@ def test_training_and_evaluation_expose_only_selected_variants():
     assert set(train_variants) == {"M0", "GAST"}
     assert train_variants.keys() == eval_variants.keys()
     assert train_variants["GAST"] == eval_variants["GAST"]
-    assert train_variants["GAST"]["gast_goal"] is True
     assert train_variants["GAST"]["classification_target_mode"] == "trajectory"
 
 
@@ -132,7 +131,6 @@ def test_gast_yaml_uses_trajectory_target_and_goal_decoder_by_default():
         (REPO / "conf/model/gast_model_forecast.yaml").read_text()
     )
     model = config["target"]["model"]
-    assert model["gast_goal"] is True
     assert model["classification_target_mode"] == "trajectory"
 
 
@@ -174,8 +172,6 @@ def test_current_gast_checkpoint_loads_into_gast(tmp_path):
                     "encoder_type": "gast",
                     "gast_gere_spatial": True,
                     "gast_ecta": True,
-                    "gast_goal": True,
-                    "loss_mode": "final_consistent",
                     "classification_target_mode": "trajectory",
                     "goal_endpoint_loss_weight": 1.0,
                     "mode_diversity_loss_weight": 0.05,

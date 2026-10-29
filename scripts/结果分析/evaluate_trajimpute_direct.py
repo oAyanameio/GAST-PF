@@ -32,8 +32,6 @@ VARIANTS = {
         "encoder_type": "m0",
         "gast_gere_spatial": False,
         "gast_ecta": False,
-        "gast_goal": False,
-        "loss_mode": "final_consistent",
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05,
         "mode_diversity_margin": 0.5,
@@ -46,8 +44,6 @@ VARIANTS = {
         "gast_temporal_direction": "unidirectional",
         "gast_gere_spatial": True,
         "gast_ecta": True,
-        "gast_goal": True,
-        "loss_mode": "final_consistent",
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05,
         "mode_diversity_margin": 0.5,
@@ -55,10 +51,7 @@ VARIANTS = {
     },
 }
 
-LEGACY_VARIANT_ALIASES = {
-    "GAST-Goal": "GAST",
-    "GAST-Goal-TrajCls": "GAST",
-}
+LEGACY_VARIANT_ALIASES = {}
 
 
 def canonical_variant(variant: str) -> str:
@@ -137,24 +130,6 @@ def load_checkpoint(model, ckpt_path):
                 f"checkpoint {switch}={ckpt_switch} does not match "
                 f"variant {switch}={model_switch}"
             )
-    checkpoint_goal = (
-        bool(model_config.get("gast_goal", model.encoder_type == "gast"))
-        if hasattr(model_config, "get") else model.encoder_type == "gast"
-    )
-    if checkpoint_goal != model.gast_goal:
-        raise ValueError(
-            f"checkpoint gast_goal={checkpoint_goal} does not match "
-            f"variant gast_goal={model.gast_goal}"
-        )
-    checkpoint_loss_mode = (
-        model_config.get("loss_mode")
-        if hasattr(model_config, "get") else None
-    )
-    if checkpoint_loss_mode is not None and checkpoint_loss_mode != model.loss_mode:
-        raise ValueError(
-            f"checkpoint loss_mode={checkpoint_loss_mode} does not match "
-            f"variant loss_mode={model.loss_mode}"
-        )
     checkpoint_classification_target = (
         model_config.get("classification_target_mode")
         if hasattr(model_config, "get") else None

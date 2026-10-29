@@ -256,10 +256,10 @@ def _collated_batch(scene="ETH-M", difficulty="Easy", split="test", n=4):
 
 @pytest.mark.skipif(not GPU, reason="需要 GPU（Mamba CUDA）")
 def test_batch_m0_forward_and_backward():
-    from src.model.model_forecast import ModelForecast
+    from src.model.trajectory_forecaster import TrajectoryForecaster
     batch = _collated_batch()
     batch = {k: (v.cuda() if torch.is_tensor(v) else v) for k, v in batch.items()}
-    model = ModelForecast(num_modes=6, bimamba=True).cuda()
+    model = TrajectoryForecaster(num_modes=6, bimamba=True).cuda()
     out = model(batch)
     assert out["new_y_hat"].shape[1] == 6
     # loss（复用 trainer.cal_loss 的核心项）
@@ -277,10 +277,10 @@ def test_batch_m0_forward_and_backward():
 
 @pytest.mark.skipif(not GPU, reason="需要 GPU（Mamba CUDA）")
 def test_batch_m0_forward_hard():
-    from src.model.model_forecast import ModelForecast
+    from src.model.trajectory_forecaster import TrajectoryForecaster
     batch = _collated_batch(difficulty="Hard", n=3)
     batch = {k: (v.cuda() if torch.is_tensor(v) else v) for k, v in batch.items()}
-    model = ModelForecast(num_modes=6, bimamba=True).cuda()
+    model = TrajectoryForecaster(num_modes=6, bimamba=True).cuda()
     out = model(batch)
     assert torch.isfinite(out["new_y_hat"]).all()
 

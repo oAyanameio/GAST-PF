@@ -48,8 +48,6 @@ VARIANTS = {
         "encoder_type": "m0",
         "gast_gere_spatial": False,
         "gast_ecta": False,
-        "gast_goal": False,
-        "loss_mode": "final_consistent",
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05,
         "mode_diversity_margin": 0.5,
@@ -62,8 +60,6 @@ VARIANTS = {
         "gast_temporal_direction": "unidirectional",
         "gast_gere_spatial": True,
         "gast_ecta": True,
-        "gast_goal": True,
-        "loss_mode": "final_consistent",
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05,
         "mode_diversity_margin": 0.5,
@@ -246,12 +242,10 @@ def _model_config(args):
         "encoder_type": "gast", "gast_depth": 4,
         "gast_gsm_operator": "max",
         "gast_temporal_direction": "unidirectional",
-        "gast_goal": True,
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05,
         "mode_diversity_margin": 0.5,
         "classification_target_mode": "trajectory",
-        "loss_mode": "final_consistent",
     }
     config.update(VARIANTS[args.variant])
     return config

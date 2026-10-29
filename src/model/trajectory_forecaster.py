@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 from .layers.transformer_blocks import Block
-from .layers.structured_future_decoder import FutureDistributionDecoder
 from .layers.gast_goal_decoder import GapAwareGoalDecoder
 from .layers.gast_encoder import GASTEncoder
 from .layers.mamba.vim_mamba import create_block
@@ -33,12 +32,10 @@ class TrajectoryForecaster(nn.Module):
         gast_gere_spatial: bool = False,
         gast_ecta: bool = False,
         gast_temporal_direction: str = "unidirectional",
-        gast_goal=None,
         goal_endpoint_loss_weight: float = 1.0,
         mode_diversity_loss_weight: float = 0.05,
         mode_diversity_margin: float = 0.5,
         classification_target_mode=None,
-        loss_mode: str = "legacy",
     ) -> None:
         super().__init__()
         self.future_steps = future_steps
@@ -59,9 +56,6 @@ class TrajectoryForecaster(nn.Module):
                 f"got {classification_target_mode!r}"
             )
         self.classification_target_mode = classification_target_mode
-        if loss_mode not in {"legacy", "final_consistent"}:
-            raise ValueError(f"unsupported loss_mode={loss_mode!r}")
-        self.loss_mode = loss_mode
         if encoder_type not in {"m0", "gast"}:
             raise ValueError(f"unsupported encoder_type={encoder_type!r}")
         self.encoder_type = encoder_type
@@ -70,17 +64,8 @@ class TrajectoryForecaster(nn.Module):
             raise ValueError("GAST supports only unidirectional temporal encoding")
         self.gast_gere_spatial = bool(gast_gere_spatial) and encoder_type == "gast"
         self.gast_ecta = bool(gast_ecta) and encoder_type == "gast"
-        evidence_switches = (
-            self.gast_gere_spatial,
-            self.gast_ecta,
-        )
-        if any(evidence_switches) and not all(evidence_switches):
+        if self.gast_gere_spatial != self.gast_ecta:
             raise ValueError("GAST enables GERE and ECTA together")
-        if gast_goal is None:
-            gast_goal = encoder_type == "gast" and all(evidence_switches)
-        self.gast_goal = bool(gast_goal)
-        if self.gast_goal and (encoder_type != "gast" or not all(evidence_switches)):
-            raise ValueError("GAST requires the complete GAST encoder")
         self.gast_method_name = "GAST" if encoder_type == "gast" else "M0"
         hist_input_dim = 4
 
@@ -131,21 +116,13 @@ class TrajectoryForecaster(nn.Module):
             torch.random.get_rng_state() if self.encoder_type == "gast" else None
         )
 
-        if not self.gast_goal:
-            self.future_time_embedding = nn.Sequential(
-                nn.Linear(1, 64), nn.GELU(), nn.Linear(64, embed_dim)
-            )
-            self.future_decoder = FutureDistributionDecoder(
-                future_len=future_steps, dim=embed_dim, num_modes=num_modes
-            )
-        else:
-            self.goal_decoder = GapAwareGoalDecoder(
-                future_steps=future_steps,
-                dim=embed_dim,
-                num_modes=num_modes,
-                num_heads=num_heads,
-                dt=dt,
-            )
+        self.goal_decoder = GapAwareGoalDecoder(
+            future_steps=future_steps,
+            dim=embed_dim,
+            num_modes=num_modes,
+            num_heads=num_heads,
+            dt=dt,
+        )
         self.initialize_weights()
 
         if self.encoder_type == "gast":
@@ -197,58 +174,6 @@ class TrajectoryForecaster(nn.Module):
             )
         return incompatible
 
-    def _load_from_state_dict(
-        self, state_dict, prefix, local_metadata, strict,
-        missing_keys, unexpected_keys, error_msgs,
-    ):
-        """Migrate decoder and head parameter paths from earlier checkpoints."""
-        replacements = (
-            ("hist_embed_mlp.", "history_input_projection."),
-            ("pos_embed.", "actor_context_projection."),
-            ("blocks.", "scene_interaction_blocks."),
-            ("dense_predictor.", "neighbor_prediction_head."),
-            ("time_embedding_mlp.", "future_time_embedding."),
-            ("time_decoder.predictor_dense.", "future_decoder.coupled_trajectory_head."),
-            ("time_decoder.predictor.", "future_decoder.mode_trajectory_head."),
-            ("time_decoder.cross_block_time.", "future_decoder.state_context_layers."),
-            ("time_decoder.dense_predict.", "future_decoder.state_forecast_head."),
-            ("time_decoder.timequery_norm_f.", "future_decoder.state_sequence_norm."),
-            ("time_decoder.timequery_drop_path.", "future_decoder.state_sequence_drop_path."),
-            ("time_decoder.timequery_embed_mamba.", "future_decoder.timequery_embed_mamba."),
-            ("time_decoder.self_block_mode.", "future_decoder.mode_self_attention_layers."),
-            ("time_decoder.cross_block_mode.", "future_decoder.mode_context_layers."),
-            ("time_decoder.multi_modal_query_embedding.", "future_decoder.mode_query_embedding."),
-            ("time_decoder.self_block_dense.", "future_decoder.coupling_joint_layers."),
-            ("time_decoder.cross_block_dense.", "future_decoder.coupling_context_layers."),
-            ("time_decoder.self_block_different_mode.", "future_decoder.coupling_mode_interaction_layers."),
-            ("time_decoder.dense_embed_mamba.", "future_decoder.coupled_temporal_mamba."),
-            ("time_decoder.dense_norm_f.", "future_decoder.coupled_temporal_norm."),
-            ("time_decoder.dense_drop_path.", "future_decoder.coupled_temporal_drop_path."),
-            ("time_decoder.", "future_decoder."),
-        )
-        head_replacements = (
-            (".gaussian.", ".trajectory_mean_head."),
-            (".score.", ".mode_score_head."),
-            (".scale.", ".trajectory_scale_head."),
-        )
-        for key in list(state_dict):
-            if not key.startswith(prefix):
-                continue
-            relative = key[len(prefix):]
-            migrated = relative
-            for old, new in replacements:
-                if migrated.startswith(old):
-                    migrated = new + migrated[len(old):]
-                    break
-            if migrated.startswith("future_decoder."):
-                for old, new in head_replacements:
-                    migrated = migrated.replace(old, new)
-            if migrated != relative:
-                state_dict[prefix + migrated] = state_dict.pop(key)
-        super()._load_from_state_dict(
-            state_dict, prefix, local_metadata, strict,
-            missing_keys, unexpected_keys, error_msgs,
-        )
 
     def forward(self, data):
         hist_valid_mask = data["x_valid_mask"]
@@ -316,13 +241,8 @@ class TrajectoryForecaster(nn.Module):
                 x_encoder = blk(x_encoder, key_padding_mask=~hist_key_valid_mask)
             x_encoder = self.norm(x_encoder)
 
-        ###### Trajectory decoding with decoupled queries ###### 
-        new_y_hat = None
-        new_pi = None
-        dense_predict = None
-        mode = None
-
-        # outputs of other agents (handle N=1: no other agents)
+        # Neighbor predictions also supervise the encoder representations
+        # (handle N=1: no other agents).
         x_others = x_encoder[:, 1:N]
         if x_others.size(1) > 0:
             y_hat_others = self.neighbor_prediction_head(x_others).view(
@@ -332,58 +252,27 @@ class TrajectoryForecaster(nn.Module):
             y_hat_others = x_encoder.new_zeros((B, 0, self.future_steps, 2))
 
 
-        # Goal-conditioned decoder uses the last valid observation and the
-        # actual forecast gap. The legacy decoder remains untouched otherwise.
-        if self.gast_goal:
-            goal_out = self.goal_decoder(
-                x_encoder,
-                data,
-                actor_padding_mask=~hist_key_valid_mask,
-            )
-            return {
-                "y_hat": goal_out["trajectories"],
-                "pi": goal_out["scores"],
-                "scal": goal_out["scales"],
-                "dense_predict": None,
-                "y_hat_others": y_hat_others,
-                "new_y_hat": goal_out["trajectories"],
-                "new_pi": goal_out["scores"],
-                "scal_new": goal_out["scales"],
-                "goal_conditioned": True,
-                "goal_endpoints": goal_out["endpoints"],
-                "goal_anchor": goal_out["anchor"],
-                "goal_delta": goal_out["goal_delta"],
-                "goal_future_time_seconds": goal_out["future_time_seconds"],
-            }
-
-        # state query initialization
-        # dt 参数化：ETH/UCY 与 SDD 均为 0.4s/帧（frame stride=10 @ 2.5Hz）
-        time = torch.arange(self.future_steps).long().to(x_encoder.device)
-        time = time * self.dt + self.dt
-        time = time.unsqueeze(-1)
-        mode = self.future_time_embedding(time)
-        mode = mode.repeat(x_encoder.size(0), 1, 1)
-
-        # decoder module with decoupled queries
-        dense_predict, y_hat, pi, x_mode, new_y_hat, new_pi, mode_dense, scal, scal_new = \
-        self.future_decoder(mode, x_encoder, mask=~hist_key_valid_mask)
-
-        ret_dict = {
-            "y_hat": y_hat,  # trajectory output from mode query
-            "pi": pi,  # probability output from mode query
-            "scal": scal,  # output for Laplace loss from mode query
-
-            "dense_predict": dense_predict,  # trajectory output from state query
-
-            "y_hat_others": y_hat_others,  # trajectory of other agents
-
-            "new_y_hat": new_y_hat,  # final trajectory output
-            "new_pi": new_pi,  # final probability output
-            "scal_new": scal_new,  # final output for Laplace loss
+        # Gap-aware goal decoder conditions on the last valid observation and
+        # the actual forecast gap.
+        goal_out = self.goal_decoder(
+            x_encoder,
+            data,
+            actor_padding_mask=~hist_key_valid_mask,
+        )
+        return {
+            "y_hat": goal_out["trajectories"],
+            "pi": goal_out["scores"],
+            "scal": goal_out["scales"],
+            "dense_predict": None,
+            "y_hat_others": y_hat_others,
+            "new_y_hat": goal_out["trajectories"],
+            "new_pi": goal_out["scores"],
+            "scal_new": goal_out["scales"],
+            "goal_endpoints": goal_out["endpoints"],
+            "goal_anchor": goal_out["anchor"],
+            "goal_delta": goal_out["goal_delta"],
+            "goal_future_time_seconds": goal_out["future_time_seconds"],
         }
 
-        return ret_dict
 
 
-# Legacy class name kept for old configs and external scripts.
-ModelForecast = TrajectoryForecaster

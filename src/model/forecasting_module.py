@@ -11,7 +11,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from src.metrics import MR, minADE, minFDE, brier_minFDE
 from src.utils.optim import WarmupCosLR
 from src.utils.LaplaceNLLLoss import LaplaceNLLLoss
-from .trajectory_forecaster import TrajectoryForecaster, ModelForecast
+from .trajectory_forecaster import TrajectoryForecaster
 from .trajectory_loss import final_consistent_loss
 
 
@@ -66,7 +66,6 @@ class ForecastingLightningModule(pl.LightningModule):
     def get_model(self, model_type):
         model_dict = {
             'TrajectoryForecaster': TrajectoryForecaster,
-            'ModelForecast': ModelForecast,  # legacy config name
         }
         assert model_type in model_dict, f"Unknown model type: {model_type}"
         return model_dict[model_type]
@@ -100,88 +99,7 @@ class ForecastingLightningModule(pl.LightningModule):
         )
 
     def cal_loss(self, out, data, tag=''):
-        y_hat, pi, y_hat_others = out["y_hat"], out["pi"], out["y_hat_others"]
-        scal, scal_new = out["scal"], out["scal_new"]
-        new_y_hat = out.get("new_y_hat", None)
-        new_pi = out.get("new_pi", None)
-        dense_predict = out.get("dense_predict", None)
-
-        # gt
-        y, y_others = data["target"][:, 0], data["target"][:, 1:]
-
-        if self.net.loss_mode == "final_consistent":
-            return self._cal_loss_final_consistent(out, data, tag=tag)
-
-        # loss for output of state query
-        if dense_predict is not None:
-            dense_reg_loss = F.smooth_l1_loss(dense_predict, y)
-        else:
-            dense_reg_loss = 0
-
-        # loss for output of mode query
-        l2_norm = torch.norm(y_hat[..., :2] - y.unsqueeze(1), dim=-1).sum(dim=-1)
-        best_mode = torch.argmin(l2_norm, dim=-1)
-        y_hat_best = y_hat[torch.arange(y_hat.shape[0]), best_mode]
-        agent_reg_loss = F.smooth_l1_loss(y_hat_best[..., :2], y)
-        agent_cls_loss = F.cross_entropy(pi, best_mode.detach(), label_smoothing=0.2)
-
-        # loss for final output
-        if new_y_hat is not None:
-            l2_norm_new = torch.norm(new_y_hat[..., :2] - y.unsqueeze(1), dim=-1).sum(dim=-1)
-            best_mode_new = torch.argmin(l2_norm_new, dim=-1)
-            new_y_hat_best = new_y_hat[torch.arange(new_y_hat.shape[0]), best_mode_new]
-            new_agent_reg_loss = F.smooth_l1_loss(new_y_hat_best[..., :2], y)
-        else:
-            new_agent_reg_loss = 0
-        if new_pi is not None:
-            new_pi_reg_loss = F.cross_entropy(new_pi, best_mode_new.detach(), label_smoothing=0.2)
-        else:
-            new_pi_reg_loss = 0
-
-        # loss for other agents
-        others_reg_mask = data["target_mask"][:, 1:]
-        if others_reg_mask.any():
-            others_reg_loss = F.smooth_l1_loss(
-                y_hat_others[others_reg_mask], y_others[others_reg_mask]
-            )
-        else:
-            others_reg_loss = y_hat_others.new_zeros(())
-
-        # Laplace loss, which is not necessary
-        predictions = {}
-        predictions['traj'] = y_hat
-        predictions['scale'] = scal
-        predictions['probs'] = pi
-        laplace_loss = self.laplace_loss.compute(predictions, y)
-
-        predictions['traj'] = new_y_hat
-        predictions['scale'] = scal_new
-        predictions['probs'] = new_pi
-        laplace_loss_new = self.laplace_loss.compute(predictions, y)
-
-        # total loss
-        loss = agent_reg_loss + agent_cls_loss + others_reg_loss + \
-                new_agent_reg_loss + dense_reg_loss + new_pi_reg_loss
-        loss = loss + laplace_loss + laplace_loss_new
-
-        # 日志标量保持 detached tensor，避免每 batch 多次 GPU->CPU 同步（提速方案 §2.3）；
-        # 字段名与数值定义不变，只在 epoch 结束由 logger 统一 .item() 一次。
-        disp_dict = {
-            f"{tag}loss": loss.detach(),
-            f"{tag}reg_loss": agent_reg_loss.detach(),
-            f"{tag}cls_loss": agent_cls_loss.detach(),
-            f"{tag}others_reg_loss": others_reg_loss.detach(),
-            f"{tag}laplace_loss": laplace_loss.detach(),
-            f"{tag}laplace_loss_new": laplace_loss_new.detach(),
-        }
-        if new_y_hat is not None:
-            disp_dict[f"{tag}reg_loss_refine"] = _log_detach(new_agent_reg_loss)
-        if new_pi is not None:
-            disp_dict[f"{tag}reg_loss_new_pi"] = _log_detach(new_pi_reg_loss)
-        if dense_predict is not None:
-            disp_dict[f"{tag}reg_loss_dense"] = _log_detach(dense_reg_loss)
-
-        return loss, disp_dict
+        return self._cal_loss_final_consistent(out, data, tag=tag)
 
     def training_step(self, data, batch_idx):
         out = self(data)

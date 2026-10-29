@@ -34,7 +34,7 @@ def _make_dummy_batch_actor_only(B=2, N=10, obs_len=8, pred_len=12):
 def _make_trainer():
     trainer = Trainer(
         model={
-            "type": "ModelForecast",
+            "type": "TrajectoryForecaster",
             "embed_dim": 128,
             "future_steps": 12,
             "num_actor_types": 1,

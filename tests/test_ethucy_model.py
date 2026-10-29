@@ -1,12 +1,12 @@
 """ETH/UCY 模型单元测试。
 
-测试 actor-only ModelForecast 的初始化与前向传播。
+测试 actor-only TrajectoryForecaster 的初始化与前向传播。
 """
 
 import pytest
 import torch
 
-from src.model.model_forecast import ModelForecast
+from src.model.trajectory_forecaster import TrajectoryForecaster
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -35,7 +35,7 @@ def _make_dummy_batch_actor_only(
 
 
 def _make_model():
-    return ModelForecast(
+    return TrajectoryForecaster(
         embed_dim=128,
         future_steps=12,
         num_actor_types=1,
@@ -43,7 +43,7 @@ def _make_model():
     ).to(DEVICE)
 
 
-class TestModelForecastActorOnly:
+class TestTrajectoryForecasterActorOnly:
     """测试 actor-only 模式。"""
 
     def test_model_init(self):
