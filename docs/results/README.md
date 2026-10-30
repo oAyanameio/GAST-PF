@@ -1,21 +1,17 @@
 # 实验结果索引
 
-结果文档按用途组织，原始运行产物仍在 `outputs/`。旧实验过程文档已删除，结论和结果统一收口到《[实验总汇总](实验总汇总.md)》。
+结果按主题保留单一权威文档；原始运行产物仍在各实验目录。旧筛选路线、Easy/Hard 旧主榜和重复过程记录已清理。
 
 ## 文档清单
 
-| 文档 | 内容 | 关键结论 |
+| 文档 | 内容 | 当前结果 |
 |---|---|---|
-| [实验总汇总](实验总汇总.md) | 全部已完成实验的唯一权威总汇总 | GAST 五场景正式记录 0.3085/0.4716（§17，2026-10-30 核定）；失败路线经验已收口 |
-| [完整数据基线对比](完整数据基线对比.md) | 无缺失完整数据上的初始 M0、当前 GAST 与公开 SOTA 参考，ETH/UCY + SDD | 初始 M0 = 0.232/0.389；GAST = 0.226/0.393 |
-| [缺失数据基线对比](缺失数据基线对比.md) | TrajImpute Easy/Hard 直接预测与公开插补基线 | Easy 0.245/0.399；Hard 0.432/0.640 |
-| [主线实验记录](主线实验记录.md) | 当前 K=20 主链与协议 | GAST 为当前滚动基线；Clean 结果作为辅助完整性验证 |
-| [TrajGap-Bench 榜单](trajgap_bench_leaderboard.md) | 全部方法对照表（`gen_leaderboard_tables.py` 现算） | 7 方法纯外部对比口径；GAST vs MoFlow 宏平均 −11.8%/−9.8% |
-
-
+| [实验总汇总](实验总汇总.md) | 当前 GAST 五场景结果、六个外部方法对比与缺失等级分层 | Mixed-direct 宏平均 minADE20/minFDE20 = 0.3085/0.4716；共 7 种方法完整 |
+| [TrajGap-Bench 榜单](trajgap_bench_leaderboard.md) | 从各方法 `results.json` 生成的逐场景、宏/微平均和分层对比 | GAST 对 MoFlow 宏平均改善 11.8%/9.8% |
+| [完整数据基线对比](完整数据基线对比.md) | ETH/UCY Clean GAST 结果及公开文献参考；和 Mixed-direct 主榜分开 | GAST Clean 宏平均 0.2260/0.3927 |
 
 ## 口径约束
 
-- direct（缺失直接输入）与 impute（先插补后预测）口径不并表；两种输入信息量不同。
-- train_adapt（同条件训练测试）与 zero-shot（完整数据训练→缺失测试）分开报告。
-- 协议定义、指标口径与对照设计见《[选题](../research/选题.md)》§4–§6（双贡献版：§4 Benchmark 协议、§5 方法、§6 实验设计）；数据来源与审计见《[TrajImpute release 审计](../audits/trajimpute_release_审计.md)》。
+- 缺失历史主结果统一采用 TrajGap-Bench Mixed；Easy/Hard 仅为底层文件来源或缺失程度诊断。
+- direct 与插补感知方法保留各自方法属性；表格注明测试协议，不把方法类别混同。
+- train-adapt 与 zero-shot 分开报告；协议定义见《[选题](../research/选题.md)》，数据来源见《[TrajImpute release 审计](../audits/trajimpute_release_审计.md)》。

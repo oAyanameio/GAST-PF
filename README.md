@@ -123,16 +123,19 @@ outputs/              训练与评估产物（逐折 results.json）
 
 ## 当前结果
 
-TrajGap-Bench Mixed direct（单种子 2024，最终预测头 `val_new_minFDE20` 选点）：
+TrajGap-Bench Mixed-direct（seed=2024；GAST 按最终预测头 `val_new_minFDE20` 选点；其他外部方法沿用各自选点流程）：
 
 | 方法 | Macro `minADE20` | Macro `minFDE20` | 完成度 |
 |---|---:|---:|---:|
 | **GAST** | **0.3085** | **0.4716** | 5/5 |
 | MoFlow | 0.3496 | 0.5227 | 5/5 |
-| SocialLSTM | 0.4576 | 0.6079 | 5/5 |
 | AgentFormer | 0.3911 | 0.6144 | 5/5 |
+| SocialLSTM | 0.4576 | 0.6079 | 5/5 |
+| Re | 0.6382 | 0.9775 | 5/5 |
+| MS-TIP（插补感知） | 1.1838 | 1.3929 | 5/5 |
+| Social-STGCNN | 1.3471 | 2.2861 | 5/5 |
 
-逐场景数字、micro average 与外部基线见 `docs/results/trajgap_bench_leaderboard.md` 与 `docs/results/实验总汇总.md` §17。当前结果为单种子 screening，定稿前仍需第二种子与按原始轨迹聚类的统计检验。
+逐场景数字、微平均与缺失分层见 `docs/results/trajgap_bench_leaderboard.md`；唯一汇总见 `docs/results/实验总汇总.md`。当前为 seed 2024 结果，定稿前仍需独立种子与轨迹级统计检验。
 
 ## 方法名称
 

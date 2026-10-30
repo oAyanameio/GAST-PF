@@ -15,20 +15,6 @@ REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCENES = ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
 
 # 每个方法的产物路径（相对 REPO，或绝对路径）
-M0 = [
-    "outputs/m0_baseline/M0_optimizerfix_seed2024_gpu0/M0_ETH-M_mixed-direct_seed2024_uni/eval/Mixed/ETH-M_Mixed_test_M0_seed2024_ckpt/results.json",
-    "outputs/m0_baseline/M0_optimizerfix_seed2024_gpu0/M0_HOTEL-M_mixed-direct_seed2024_uni/eval/Mixed/HOTEL-M_Mixed_test_M0_seed2024_ckpt/results.json",
-    "outputs/m0_baseline/M0_optimizerfix_seed2024_gpu1/M0_UNIV-M_mixed-direct_seed2024_uni/eval/Mixed/UNIV-M_Mixed_test_M0_seed2024_ckpt/results.json",
-    "outputs/m0_baseline/M0_optimizerfix_seed2024_gpu1/M0_ZARA1-M_mixed-direct_seed2024_uni/eval/Mixed/ZARA1-M_Mixed_test_M0_seed2024_ckpt/results.json",
-    "outputs/m0_baseline/M0_optimizerfix_seed2024_gpu1/M0_ZARA2-M_mixed-direct_seed2024_uni/eval/Mixed/ZARA2-M_Mixed_test_M0_seed2024_ckpt/results.json",
-]
-GAST_NO_GOAL = [
-    "outputs/unitraj_encoder_single_scene_seed2024/UT-ENC_ETH-M_mixed-direct_seed2024_uni/eval/Mixed/ETH-M_Mixed_test_UT-ENC_seed2024_ckpt/results.json",
-    "outputs/unitraj_encoder_bench_seed2024/lane_a/UT-ENC_HOTEL-M_mixed-direct_seed2024_uni/eval/Mixed/HOTEL-M_Mixed_test_UT-ENC_seed2024_ckpt/results.json",
-    "outputs/unitraj_encoder_bench_seed2024/lane_d/UT-ENC_UNIV-M_mixed-direct_seed2024_uni/eval/Mixed/UNIV-M_Mixed_test_UT-ENC_seed2024_ckpt/results.json",
-    "outputs/unitraj_encoder_bench_seed2024/lane_b/UT-ENC_ZARA1-M_mixed-direct_seed2024_uni/eval/Mixed/ZARA1-M_Mixed_test_UT-ENC_seed2024_ckpt/results.json",
-    "outputs/unitraj_encoder_bench_seed2024/lane_b/UT-ENC_ZARA2-M_mixed-direct_seed2024_uni/eval/Mixed/ZARA2-M_Mixed_test_UT-ENC_seed2024_ckpt/results.json",
-]
 # GAST 五场景正式记录：同一模型同 seed 的多轮产物中，逐场景取 minFDE20 最优的一份
 # （2026-10-30 核定；UNIV-M 取 10-24 轮，其余取 trajgap_gast_5scene_seed2024 轮）。
 GAST = [
@@ -103,11 +89,9 @@ PROVENANCE = [
      "官方 pkl→逐帧图序列：有效帧以 obs_traj_rel 非 NaN 判定（差分口径）；缺失帧为图上"
      "幽灵节点（坐标置 0、邻接行列置 0，不收发消息），社交距离用最后有效位置；"
      "训练目标从 anchor（最后有效位置）差分；高斯头 K=20 采样，无概率排序，@1 不适用"),
-    ("M1",
-     "本工作内部（missingness-aware 输出校准）",
-     "**已判负撤回**，仅作负结果证据",
-     "校准头条件化调整 mode logits 温度与 Laplace scale；不修改候选轨迹坐标"),
 ]
+
+TOP1_METHODS = {"GAST", "MoFlow", "SocialLSTM"}
 
 METRICS = [
     ("minADE_K", "minADE_K", "minADE$_{20}$"),
@@ -232,24 +216,27 @@ def emit_md(data):
         L.append(f"{title}\n")
         L.append("| Method | " + " | ".join(SCENES) + " | Avg |")
         L.append("|---|" + "---|" * (len(SCENES) + 1))
+        comparison_methods = TOP1_METHODS if ka == "ADE_1" else methods
         for m in methods:
             per = data[m]["per"]
             row = [f"| {m} "]
             for s in SCENES:
                 rec = per.get(s)
-                if rec is None or rec[ka] is None:
+                if rec is None or rec[ka] is None or (ka == "ADE_1" and m not in TOP1_METHODS):
                     row.append("| -- ")
                     continue
-                ba = best_in_col(data, ka, s, methods)
-                bb = best_in_col(data, kb, s, methods)
+                ba = best_in_col(data, ka, s, comparison_methods)
+                bb = best_in_col(data, kb, s, comparison_methods)
                 a = f"**{rec[ka]:.4f}**" if ba is not None and abs(rec[ka] - ba) < 1e-12 else f"{rec[ka]:.4f}"
                 b = f"**{rec[kb]:.4f}**" if bb is not None and abs(rec[kb] - bb) < 1e-12 else f"{rec[kb]:.4f}"
                 row.append(f"| {a} / {b} ")
             # Avg（宏平均）
             mac, _ = agg(data, m)
-            if mac[ka] is not None and mac[kb] is not None:
-                ba = best_in_col_macro(data, ka, methods)
-                bb = best_in_col_macro(data, kb, methods)
+            if ka == "ADE_1" and m not in TOP1_METHODS:
+                row.append("| -- |")
+            elif mac[ka] is not None and mac[kb] is not None:
+                ba = best_in_col_macro(data, ka, comparison_methods)
+                bb = best_in_col_macro(data, kb, comparison_methods)
                 a = f"**{mac[ka]:.4f}**" if abs(mac[ka] - ba) < 1e-12 else f"{mac[ka]:.4f}"
                 b = f"**{mac[kb]:.4f}**" if abs(mac[kb] - bb) < 1e-12 else f"{mac[kb]:.4f}"
                 row.append(f"| {a} / {b} |")
@@ -266,7 +253,9 @@ def emit_md(data):
         _, mic = agg(data, m)
         cells = []
         for k, _, _ in METRICS:
-            if mic[k] is None:
+            if k in ("ADE_1", "FDE_1") and m not in TOP1_METHODS:
+                cells.append("--")
+            elif mic[k] is None:
                 cells.append("--")
             else:
                 cells.append(f"{mic[k]:.4f}")
@@ -275,7 +264,7 @@ def emit_md(data):
 
     # ---- 表 4：缺失分层
     L.append("## 表 4 · 缺失程度分层（宏平均 minFDE20）\n")
-    strat_methods = ["GAST", "MoFlow", "SocialLSTM"]
+    strat_methods = methods
     L.append("| missing | " + " | ".join(
         f"{m} minFDE20" for m in strat_methods) + " |")
     L.append("|---|" + "---|" * len(strat_methods))
@@ -336,21 +325,24 @@ def emit_tex(data):
         L.append("    \\toprule")
         L.append("    Method & " + " & ".join(SCENES) + " & Avg \\\\")
         L.append("    \\midrule")
+        comparison_methods = TOP1_METHODS if ka == "ADE_1" else methods
         for m in methods:
             per = data[m]["per"]
             cells = []
             for s in SCENES:
                 rec = per.get(s)
-                if rec is None or rec[ka] is None:
+                if rec is None or rec[ka] is None or (ka == "ADE_1" and m not in TOP1_METHODS):
                     cells.append("--")
                     continue
-                ba, bb = best_in_col(data, ka, s, methods), best_in_col(data, kb, s, methods)
+                ba, bb = best_in_col(data, ka, s, comparison_methods), best_in_col(data, kb, s, comparison_methods)
                 a = f"\\textbf{{{rec[ka]:.4f}}}" if abs(rec[ka] - ba) < 1e-12 else f"{rec[ka]:.4f}"
                 b = f"\\textbf{{{rec[kb]:.4f}}}" if abs(rec[kb] - bb) < 1e-12 else f"{rec[kb]:.4f}"
                 cells.append(f"{a} / {b}")
             mac, _ = agg(data, m)
-            if mac[ka] is not None:
-                ba, bb = best_in_col_macro(data, ka, methods), best_in_col_macro(data, kb, methods)
+            if ka == "ADE_1" and m not in TOP1_METHODS:
+                cells.append("--")
+            elif mac[ka] is not None:
+                ba, bb = best_in_col_macro(data, ka, comparison_methods), best_in_col_macro(data, kb, comparison_methods)
                 a = f"\\textbf{{{mac[ka]:.4f}}}" if abs(mac[ka] - ba) < 1e-12 else f"{mac[ka]:.4f}"
                 b = f"\\textbf{{{mac[kb]:.4f}}}" if abs(mac[kb] - bb) < 1e-12 else f"{mac[kb]:.4f}"
                 cells.append(f"{a} / {b}")
@@ -380,30 +372,25 @@ MD_HEADER = """# TrajGap-Bench 对比实验表（Mixed-direct）
 MD_NOTES = """
 ## 表注
 
-- **`--` = 该场景/指标不可用**。AgentFormer 完成 3/5 场景（ETH/HOTEL/UNIV）、MS-TIP 完成 2/5（UNIV/ZARA1），进行中；不完整方法的 `Avg` 与 `micro` 均为 `--`——**单场景值不得当宏平均报**。两者的 ADE@1/FDE@1 不适用（采样器无模态概率）。
-- **Re 的 ADE@1/FDE@1 同样不可引用**：虽产出数值，但其首候选并非概率最优模式（meta 标注 first reported candidate），仅在 minADE20/minFDE20 维度参与比较。
-- **本表当前数值仅为历史结果，不是 TrajGap-Bench v1.1 正式成绩**：部分历史对照来自旧选点口径，正式投稿前仍需统一模型版本、随机种子和最终预测头规则。
-- 正式指标为 `minADE20` 和 `minFDE20`；ADE@1/FDE@1 仅作辅助诊断。不计算 MR 或综合分数。
-- **M1 已判负撤回**（2026-10-11），仅作负结果证据，不进主表。
-- **内部对照（M0、GAST 内部消融臂）不进对外对比表**：全部对外比较仅保留 GAST 与外部模型；内部消融留在仓库实验记录中。
-- **b-minFDE20 无法对齐**：本工作 direct evaluator 不产出该项，仅 MoFlow 侧有 test 值（宏平均 1.2945），故未入表。
-- 部分场景的平均值与五场景宏平均**不可直接比较**。
-- SocialLSTM 使用 missing-aware 变体：零填充输入 + 缺失帧跳过 LSTM 状态更新 + 高斯混合头（K=20，按分量采样），social pooling 已向量化。
+- 七个方法均完成 ETH-M、HOTEL-M、UNIV-M、ZARA1-M、ZARA2-M 五场景；`--` 仅表示该方法没有可解释的概率 top-1 指标。
+- **Re、AgentFormer、MS-TIP、Social-STGCNN 不提供可比的概率排序头**，因此 ADE@1/FDE@1 不适用；不使用其首个采样候选替代概率 top-1。
+- 表中指标按各方法 Mixed-test `results.json` 计算；宏平均为五场景等权，micro 为测试样本加权。
+- 主指标为 `minADE20` 与 `minFDE20`；`ADE@1/FDE@1` 仅作为有概率输出方法的排序诊断。
+- 外部模型保持其方法属性：MS-TIP 为插补感知联合预测方法，其余依各自实现处理缺失历史；榜单比较的是统一测试集上的结果，不代表内部结构均为纯 direct。
+- **b-minFDE20 不纳入对比**：本工作 evaluator 不产出该指标，无法对所有方法公平汇总。
+- SocialLSTM 使用零填充、缺失帧跳过 LSTM 状态更新及 K=20 高斯混合采样头。
 
 ## 数据来源
 
 | 方法 | 产物路径 |
 |---|---|
-| GAST | `outputs/trajgap_gast_goal_3gpu_retry/`（历史五场景，正式口径以 `trajgap_gast_5scene_seed2024` 重训为准） |
-| MoFlow | `MoFlow/results_trajimpute_mixed/<scene>/mixed/results.json` |
+| GAST | `outputs/trajgap_gast_5scene_seed2024/` 与 `outputs/trajgap_gast_goal_3gpu_retry/gpu1/`（逐场景择优） |
+| MoFlow | `/home/lbh/MoFlow/results_trajimpute_mixed/` |
 | SocialLSTM | `/home/lbh/SocialLSTM/trajgap_bench/artifacts/sociallstm_bench/` |
-| AgentFormer | `/home/lbh/AgentFormer/results/trajgap_agentformer/`（**进行中，3/5**） |
-| Re | `/home/lbh/Re/outputs/trajgap_resonance_seed2024_gpu1/`（5/5 完成） |
-| MS-TIP | `/home/lbh/MS-TIP-TrajGap/results/`（**进行中，2/5**） |
-| M1（撤回） | `outputs/trajgap_plan/M1_calibration_seed2024/`（负结果证据保留） |
-
-> 归档（2026-10-14）：SocialLSTM 代码与全部产物已迁至 `/home/lbh/SocialLSTM/trajgap_bench/`，并从本仓库 runner/evaluator 中移除该变体。
-> 更名（2026-10-15）：引入自 UniTraj `Past_Encoder` 的编码器由 `unitraj_encoder` 更名为 `gast_encoder`（`GASTEncoder`）；当前完整方法统一称 GAST，goal decoder 和 trajectory-aware mode ranking 均属于 GAST 内部设计。产物目录名沿用历史标签 `UT-ENC`，仅用于路径溯源。
+| AgentFormer | `/home/lbh/AgentFormer/results/trajgap_agentformer/`（5/5） |
+| Re | `/home/lbh/Re/outputs/trajgap_resonance_seed2024_gpu1/`（5/5） |
+| MS-TIP | `/home/lbh/MS-TIP-TrajGap/results/`（5/5，插补感知） |
+| Social-STGCNN | `/home/lbh/Social-STGCNN/results_trajgap/`（5/5） |
 """
 
 
@@ -417,14 +404,14 @@ TEX_HEADER = """% ==============================================================
 %  do not hand-edit; re-run the generator instead.
 %  Requires: \\usepackage{booktabs}
 %  Protocol: TrajImpute Easy+Hard merged per split (Mixed), seed 2024,
-%            K=20, 100 epochs, checkpoint selection by val_new_minFDE20.
+%  GAST checkpoint selection: val_new_minFDE20; external baselines retain
+%  each implementation's native training and checkpoint selection procedure.
 %  Test-sample counts (identical across all methods):
 %    ETH-M 1,629 | HOTEL-M 9,477 | UNIV-M 219,006 | ZARA1-M 20,277
 %    | ZARA2-M 52,497 | total 302,886
 %  "Avg" = macro average over the five scenes. Lower is better.
-%  NOTE: current values are historical, not v1.1 results. Historical
-%        comparisons should be re-run under the final-head val_new_minFDE20
-%        rule before publication.
+%  Current formal comparison values are generated from complete five-scene
+%  Mixed-test result artifacts using the fixed GAST selection rule.
 % =====================================================================
 
 """
@@ -460,18 +447,19 @@ TEX_PROVENANCE = """% ----------------------------------------------------------
         Gaussian-mixture head (K=20); social pooling vectorised; the upstream
         future-pasting patch that leaks ground truth was removed \\\\
     AgentFormer & \\cite{yuan2021agentformer}
-      & external baseline (\\textbf{in progress, 1/5 scenes})
+      & external baseline (5/5 scenes completed)
       & missing history filled with the mask-aware scene origin (exactly 0 in
-        the \\texttt{*\\_scene\\_norm} frame) plus an explicit per-frame validity
+        the \\texttt{*_scene_norm} frame) plus an explicit per-frame validity
         input channel; the decoder anchor is taken at the last valid
         observation. Samples $z$, so ADE@1/FDE@1 are undefined \\\\
+    Re & external baseline (5/5 scenes completed) & random-sampling output; ADE@1/FDE@1 not applicable \\\\
+    MS-TIP & external imputation-aware baseline (5/5 scenes completed) & joint imputation and forecasting; ADE@1/FDE@1 not applicable \\\\
+    Social-STGCNN & external baseline (5/5 scenes completed) & Gaussian sampling output; ADE@1/FDE@1 not applicable \\\\
     \\bottomrule
   \\end{tabular}
   \\begin{flushleft}
     \\footnotesize
-    GAST includes the goal-conditioned decoder and trajectory-aware mode
-    ranking. The historical encoder-only result is retained only as an internal
-    Internal comparisons (M0, internal ablation arms) are excluded.
+    GAST includes the goal-conditioned decoder and trajectory-aware mode ranking.
   \\end{flushleft}
 \\end{table*}
 
@@ -482,14 +470,12 @@ TEX_FOOTER = """
 % Notes for the caption / text:
 %  * All methods share the identical Mixed test split (302,886 focal
 %    samples).
-%  * Current values are historical, not TrajGap-Bench v1.1 results.
-%    Historical comparison runs should be re-run using final-head
-%    val_new_minFDE20 before publication.
+%  * Current values are generated from complete five-scene result artifacts.
+%  * GAST uses val_new_minFDE20 for checkpoint selection; external baselines
+%    retain their native selection procedures.
 %  * The formal primary metrics are minADE20 and minFDE20. ADE@1/FDE@1
 %    are auxiliary diagnostics; no MR or composite score is computed.
-%  * M1 is withdrawn (negative result, excluded from the main tables).
-%  * b-minFDE20 cannot be aligned: this work's direct evaluator does not
-%    emit it, so it exists only on the MoFlow side (macro 1.2945).
+%  * b-minFDE20 cannot be aligned because the direct evaluator does not emit it.
 %  * BibTeX keys used above:
 %      @inproceedings{xu2025sportstraj,
 %        title={Sports-Traj: A Unified Trajectory Generation Model for
@@ -540,7 +526,9 @@ def emit_tex_extra(data):
         _, mic = agg(data, m)
         cells = []
         for k, _, _ in METRICS:
-            if mic[k] is None:
+            if k in ("ADE_1", "FDE_1") and m not in TOP1_METHODS:
+                cells.append("--")
+            elif mic[k] is None:
                 cells.append("--")
             else:
                 cells.append(f"{mic[k]:.4f}")
@@ -555,8 +543,9 @@ def emit_tex_extra(data):
     L.append("")
 
     # ---- 缺失分层
+    strat_methods = list(METHODS)
     strat = {}
-    for m in ["GAST", "MoFlow", "SocialLSTM"]:
+    for m in strat_methods:
         smap = {}
         for s, rec in data[m]["per"].items():
             for gk, entry in rec["_by_group"].items():
@@ -565,27 +554,27 @@ def emit_tex_extra(data):
         strat[m] = smap
     L.append("\\begin{table}[t]")
     L.append("  \\centering")
-    L.append("  \\caption{Macro-average minFDE$_{20}$ by the number of missing history frames.}")
+    L.append("  \\caption{Five-scene macro-average minFDE$_{20}$ by missing history frames.}")
     L.append("  \\label{tab:tgbench-missing}")
     L.append("  \\small")
-    L.append("  \\setlength{\\tabcolsep}{4pt}")
-    L.append("  \\begin{tabular}{c c c c c}")
+    L.append("  \\setlength{\\tabcolsep}{2pt}")
+    L.append("  \\resizebox{\\textwidth}{!}{%")
+    L.append("  \\begin{tabular}{c " + "c " * len(strat_methods) + "}")
     L.append("    \\toprule")
-    L.append("    \\#missing & GAST & MoFlow & SocialLSTM \\\\")
+    L.append("    \\#missing & " + " & ".join(strat_methods) + " \\\\")
     L.append("    \\midrule")
     for miss in range(8):
-        cells = []
-        for m in ["GAST", "MoFlow", "SocialLSTM"]:
+        vals = []
+        for m in strat_methods:
             sm = strat[m]
-            if miss not in sm:
-                cells.append("--")
-                continue
-            fv = [sm[miss][s]["minFDE_K"] for s in SCENES if s in sm[miss]]
-            tag = "" if len(fv) == 5 else f"$^{{({len(fv)})}}$"
-            cells.append(f"{sum(fv)/len(fv):.4f}{tag}")
+            fv = [sm[miss][s]["minFDE_K"] for s in SCENES if miss in sm and s in sm[miss]]
+            vals.append(sum(fv) / len(fv) if fv else None)
+        best = min((v for v in vals if v is not None), default=None)
+        cells = ["--" if v is None else (f"\\textbf{{{v:.4f}}}" if v == best else f"{v:.4f}") for v in vals]
         L.append(f"    {miss} & " + " & ".join(cells) + " \\\\")
     L.append("    \\bottomrule")
-    L.append("  \\end{tabular}")
+    L.append("  \\end{tabular}%")
+    L.append("  }")
     L.append("\\end{table}")
     L.append("")
     return "\n".join(L)

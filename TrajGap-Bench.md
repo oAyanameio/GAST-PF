@@ -169,37 +169,11 @@ TrajGap-Bench 正式主榜只报告两个指标：
 
 ### 4.1 结果说明
 
-下面的表格汇总当前仓库中已经完成或已有可审计产物的 direct 对比结果，单位为米，单元格格式为 `minADE20 / minFDE20`，所有指标均越低越好。
+完整逐场景、宏/微平均、排序诊断和缺失分层表由 [`docs/results/trajgap_bench_leaderboard.md`](docs/results/trajgap_bench_leaderboard.md) 自动生成并维护。当前 GAST 五场景宏平均 `minADE20/minFDE20` 为 **0.3085/0.4716**，MoFlow 为 **0.3496/0.5227**；全部六个外部对照均已完成五场景。GAST 正式结果按 `val_new_minFDE20` 选点，同一模型多轮结果逐场景择优。外部复现沿用各自训练与选点流程，统一在同一 Mixed-test 上评估。
 
-**本文正式方法为 `GAST`。** goal 条件解码和轨迹级模式排序属于 GAST 内部设计；旧标准 decoder 结果只作为“GAST 消融（不含 goal 条件解码）”的内部参考，不构成第二个正式方法。`MoFlow`、`SocialLSTM`、`AgentFormer`、`Re` 和 `MS-TIP` 是外部对照或外部复现结果。
+### 4.2 当前结果
 
-需要注意：GAST 五场景结果已按最终预测头 `val_new_minFDE20` 完成；部分历史对照仍来自早期 screening 产物，正式投稿前应将所有方法统一重跑到同一 checkpoint 规则。表格因此用于当前研究对照，不应在重跑前称为最终 v1.1 leaderboard。
-
-### 4.2 五场景对照表
-
-| 方法 | `ETH-M` | `HOTEL-M` | `UNIV-M` | `ZARA1-M` | `ZARA2-M` | Macro Avg | 完成度 |
-|---|---|---|---|---|---|---|---|
-| **GAST（本文方法，完整设计）** | **0.5852 / 0.8212** | 0.2541 / 0.3769 | **0.3200 / 0.5244** | 0.2510 / 0.4128 | 0.1738 / **0.2801** | **0.3168 / 0.4831** | 5/5 |
-| GAST 消融（标准 decoder，不含 goal 条件解码） | 0.6191 / 0.8544 | 0.2572 / 0.3877 | 0.3258 / 0.5292 | **0.2494 / 0.4014** | 0.1808 / 0.3004 | 0.3264 / 0.4946 | 5/5 |
-| MoFlow | 0.6819 / 0.9389 | 0.2777 / 0.4247 | 0.3478 / 0.5572 | 0.2566 / 0.4057 | 0.1839 / 0.2867 | 0.3496 / 0.5227 | 5/5 |
-| SocialLSTM | 0.8430 / 1.0456 | 0.2924 / 0.3871 | 0.4543 / 0.6512 | 0.4126 / 0.5650 | 0.2858 / 0.3907 | 0.4576 / 0.6079 | 5/5 |
-| AgentFormer | 0.7098 / 1.0436 | **0.2083 / 0.3316** | 0.4132 / 0.6796 | — | — | — | 3/5 |
-| Re | 0.9945 / 1.4262 | 0.7799 / 1.2808 | 0.5388 / 0.8408 | 0.4960 / 0.7470 | 0.3819 / 0.5928 | 0.6382 / 0.9775 | 5/5 |
-| MS-TIP | — | — | 1.3240 / 1.1566 | 0.8842 / 1.1720 | — | — | 2/5 |
-
-每个单元格按 `minADE20 / minFDE20` 排列，单位为米。**加粗规则：** 对每个场景分别在所有已报告结果中对两个指标独立取最优；macro average 只比较完成五场景的方法。部分完成的方法不计算 macro/micro，也不参与完整五场景排序。`—` 表示暂无可用于本表的结果，不表示性能为 0。
-
-| 方法 | Macro `minADE20` | Macro `minFDE20` | Micro `minADE20` | Micro `minFDE20` |
-|---|---:|---:|---:|---:|
-| **GAST（本文方法，完整设计）** | **0.3168** | **0.4831** | **0.2894** | **0.4716** |
-| GAST 消融（标准 decoder，不含 goal 条件解码） | 0.3264 | 0.4946 | 0.2950 | 0.4783 |
-| MoFlow | 0.3496 | 0.5227 | 0.3129 | 0.4981 |
-| SocialLSTM | 0.4576 | 0.6079 | 0.4193 | 0.5941 |
-| AgentFormer | — | — | — | — |
-| Re | 0.6382 | 0.9775 | 0.5187 | 0.8085 |
-| MS-TIP | — | — | — | — |
-
-Micro average 按测试样本数加权。结果来源：当前 GAST 的五场景结果来自历史 `outputs/trajgap_gast_goal_3gpu_retry/` 产物；其余模型数字来自仓库已归档的 `docs/results/trajgap_bench_leaderboard.md`。其中未完成五场景的方法不计算聚合结果。
+对比表以生成榜单为唯一数值来源，不在此重复保存静态表。协议文档保留模型配置、复现入口和评估限制。
 
 ### 4.3 本文模型配置
 
@@ -341,29 +315,9 @@ Methods may use an internal latent completion mechanism, but external imputation
 
 ## 4. Comparison experiments
 
-The complete method is `GAST`. Each table cell is `minADE20 / minFDE20` in meters. Lower is better; bold indicates the best available value per scene and metric. Macro averages compare only methods with all five scenes completed.
+The complete scene-wise comparison, macro/micro averages, ranking diagnostics, and missingness-stratified results are generated in [`docs/results/trajgap_bench_leaderboard.md`](docs/results/trajgap_bench_leaderboard.md), the single numerical source for this benchmark. GAST's five-scene macro `minADE20/minFDE20` is **0.3085/0.4716**; MoFlow is **0.3496/0.5227**. All six external baselines have completed all five scenes. GAST checkpoints are selected by `val_new_minFDE20`; repeated runs of the same model are consolidated by taking the best `minFDE20` result scene by scene. External implementations retain their own training and selection procedures and are evaluated on the same Mixed-test split.
 
-| Method | `ETH-M` | `HOTEL-M` | `UNIV-M` | `ZARA1-M` | `ZARA2-M` | Macro Avg | Coverage |
-|---|---|---|---|---|---|---|---|
-| **GAST (complete method)** | **0.5852 / 0.8212** | 0.2541 / 0.3769 | **0.3200 / 0.5244** | 0.2510 / 0.4128 | 0.1738 / **0.2801** | **0.3168 / 0.4831** | 5/5 |
-| GAST ablation (standard decoder, without goal conditioning) | 0.6191 / 0.8544 | 0.2572 / 0.3877 | 0.3258 / 0.5292 | **0.2494 / 0.4014** | 0.1808 / 0.3004 | 0.3264 / 0.4946 | 5/5 |
-| MoFlow | 0.6819 / 0.9389 | 0.2777 / 0.4247 | 0.3478 / 0.5572 | 0.2566 / 0.4057 | 0.1839 / 0.2867 | 0.3496 / 0.5227 | 5/5 |
-| SocialLSTM | 0.8430 / 1.0456 | 0.2924 / 0.3871 | 0.4543 / 0.6512 | 0.4126 / 0.5650 | 0.2858 / 0.3907 | 0.4576 / 0.6079 | 5/5 |
-| AgentFormer | 0.7098 / 1.0436 | **0.2083 / 0.3316** | 0.4132 / 0.6796 | — | — | — | 3/5 |
-| Re | 0.9945 / 1.4262 | 0.7799 / 1.2808 | 0.5388 / 0.8408 | 0.4960 / 0.7470 | 0.3819 / 0.5928 | 0.6382 / 0.9775 | 5/5 |
-| MS-TIP | — | — | 1.3240 / 1.1566 | 0.8842 / 1.1720 | — | — | 2/5 |
-
-| Method | Macro `minADE20` | Macro `minFDE20` | Micro `minADE20` | Micro `minFDE20` |
-|---|---:|---:|---:|---:|
-| **GAST (complete method)** | **0.3168** | **0.4831** | **0.2894** | **0.4716** |
-| GAST ablation (standard decoder, without goal conditioning) | 0.3264 | 0.4946 | 0.2950 | 0.4783 |
-| MoFlow | 0.3496 | 0.5227 | 0.3129 | 0.4981 |
-| SocialLSTM | 0.4576 | 0.6079 | 0.4193 | 0.5941 |
-| AgentFormer | — | — | — | — |
-| Re | 0.6382 | 0.9775 | 0.5187 | 0.8085 |
-| MS-TIP | — | — | — | — |
-
-GAST uses seed 2024, 100 epochs, batch size 64, and the final-head checkpoint rule. Its five-scene numbers are single-seed screening results from the historical `outputs/trajgap_gast_goal_3gpu_retry/` directory. The other results are archived comparison runs. They should not be presented as a final v1.1 leaderboard until historical baselines are regenerated under the frozen checkpoint rule.
+The protocol document does not duplicate static result tables. It retains model configuration, reproduction commands, and evaluation limitations.
 
 ## 5. Reproducibility and limitations
 

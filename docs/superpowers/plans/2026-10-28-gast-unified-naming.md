@@ -116,10 +116,9 @@ pytest -q tests/test_gast_encoder.py tests/test_resume_checkpoint_selection.py
 - 修改：`TrajGap-Bench.md`
 - 修改：`README.md`
 - 修改：`docs/results/README.md`
-- 修改：`docs/results/主线实验记录.md`
 - 修改：`docs/results/实验总汇总.md`
 - 修改：`docs/results/完整数据基线对比.md`
-- 修改：`docs/results/完整数据基线数据.csv`
+- 删除：`docs/results/主线实验记录.md`（合并至唯一汇总）
 - 修改：`scripts/README.md`
 
 - [ ] **步骤 1：合并榜单方法行**

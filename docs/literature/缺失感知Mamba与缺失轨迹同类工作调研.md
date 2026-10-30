@@ -12,7 +12,7 @@
 1. **direct（免插补）行人轨迹预测在 2026 年仍是空白**：TrajImpute 全部 16 篇施引逐条核对，无一做"缺失坐标直接预测"——新增施引全部是插补系（dual-view diffusion 插补、TCN 插补、协同观测插补）或相邻基准（CrowdTraj/EgoTraj-Bench）。上次调研的空白结论继续成立，但**插补赛道竞争者持续增加**。
 2. **最高撞车警报升级：EgoTraj-Bench/BiFlow（arXiv 2510.00405，v2 2026-03）**——双流 flow matching（dual-stream flow matching）同时去噪历史观测+预测未来，"流匹配+不完整历史"叙事已出现。划界点：它是 ego-view 噪声（遮挡/ID switch/跟踪漂移），显式做历史恢复（非 direct），数据集 TBD 非 ETH/UCY 系。
 3. **缺失感知 Mamba 已是成型赛道**，按机制分五族（token/mask 输入流、Δ 离散化条件化、时间感知结构改造、mask 缩放扫描、扩散插补骨干）。其中 **MAS-Mamba 式 Δ 条件化在 M0 上已判负关闭**（C-MAS-delta，2026-10-08），不可作为缝合方向重复投入。
-4. 轨迹领域内最近的邻居是 **Sports-Traj 的 BTS 模块**（按缺失年龄的逐通道特征缩放 + 双向时间 Mamba）——其时间衰减部分**已完整移植进 GAST-PF**，本文在其上做恒等性重参数化并纳入统一证据状态；见第三节 D 族与 `docs/results/stage2_frame_geo.md` §8.4。
+4. 轨迹领域内最近的邻居是 **Sports-Traj 的 BTS 模块**（按缺失年龄的逐通道特征缩放 + 双向时间 Mamba）；其时间衰减机制作为相关工作来源之一纳入当前 GAST 设计，本文模型结构以现行方法说明和结果文档为准。
 
 ## 二、问题①同类研究（缺失历史下的轨迹预测，按缺失处理范式分类）
 

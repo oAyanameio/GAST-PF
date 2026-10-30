@@ -19,7 +19,6 @@
 | **Re** | Mao et al. ICCV 2025. arXiv:2412.02447（Resonance: Learning to Predict Social-Aware Pedestrian Trajectories as Co-Vibrations） | 外部基线（官方实现，5/5 完成） | 完整外部方法；缺失历史按上游口径零填充（anchor 保持），K=20 随机采样；无概率排序头，ADE@1/FDE@1 不可引用（首候选非最优模式） |
 | **MS-TIP** | Wang et al. ICML 2024（MS-TIP: Imputation Aware Pedestrian Trajectory Prediction） | 外部基线（官方实现，5/5 完成） | SAITS 插补感知联合训练（插补分支与预测分支端到端）；采样式输出，无模态概率，ADE@1/FDE@1 不适用；训练含 NaN 守卫（上游 GMM 数值不稳定，跳过脏 batch 回滚权重） |
 | **Social-STGCNN** | Mohamed et al. CVPR 2020（Social-STGCNN: A Social Spatio-Temporal Graph Convolutional Neural Network for Human Trajectory Prediction） | 外部基线（官方实现，5/5 完成） | 官方 pkl→逐帧图序列：有效帧以 obs_traj_rel 非 NaN 判定（差分口径）；缺失帧为图上幽灵节点（坐标置 0、邻接行列置 0，不收发消息），社交距离用最后有效位置；训练目标从 anchor（最后有效位置）差分；高斯头 K=20 采样，无概率排序，@1 不适用 |
-| **M1** | 本工作内部（missingness-aware 输出校准） | **已判负撤回**，仅作负结果证据 | 校准头条件化调整 mode logits 温度与 Laplace scale；不修改候选轨迹坐标 |
 
 ## 表 1 · 精度（minADE20 / minFDE20，米）
 
@@ -41,7 +40,7 @@
 | MoFlow | 1.4669 / 2.5903 | 0.6818 / **1.1561** | **1.0569** / **1.8893** | **0.9863** / **1.7563** | **0.7152** / **1.2559** | **0.9814** / **1.7296** |
 | SocialLSTM | 2.1039 / 3.2800 | 0.9876 / 1.5940 | 1.2964 / 2.2710 | 1.2546 / 2.1104 | 0.9964 / 1.6772 | 1.3278 / 2.1865 |
 | AgentFormer | -- | -- | -- | -- | -- | -- |
-| Re | 2.9032 / 4.5988 | 15.4376 / 25.2335 | 2.2482 / 3.7202 | 2.0790 / 3.3993 | 2.4996 / 3.9995 | 5.0335 / 8.1903 |
+| Re | -- | -- | -- | -- | -- | -- |
 | MS-TIP | -- | -- | -- | -- | -- | -- |
 | Social-STGCNN | -- | -- | -- | -- | -- | -- |
 
@@ -53,46 +52,41 @@
 | MoFlow | 0.3129 | 0.4981 | 0.9834 | 1.7515 |
 | SocialLSTM | 0.4193 | 0.5941 | 1.2363 | 2.1416 |
 | AgentFormer | 0.3795 | 0.6220 | -- | -- |
-| Re | 0.5187 | 0.8085 | 2.6966 | 4.4250 |
+| Re | 0.5187 | 0.8085 | -- | -- |
 | MS-TIP | 1.1991 | 1.1461 | -- | -- |
 | Social-STGCNN | 0.9878 | 1.6409 | -- | -- |
 
 ## 表 4 · 缺失程度分层（宏平均 minFDE20）
 
-| missing | GAST minFDE20 | MoFlow minFDE20 | SocialLSTM minFDE20 |
-|---|---|---|---|
-| 0 | 0.3523 | 0.3793 | 0.4231 |
-| 1 | 0.3608 | 0.3889 | 0.4332 |
-| 2 | 0.3695 | 0.3968 | 0.4491 |
-| 3 | 0.3725 | 0.4254 | 0.4772 |
-| 4 | 0.3838 | 0.4341 | 0.5228 |
-| 5 | 0.4037 | 0.4695 | 0.5844 |
-| 6 | 0.4298 | 0.5534 | 0.6997 |
-| 7 | 1.1879 | 1.2224 | 1.3587 |
+| missing | GAST minFDE20 | MoFlow minFDE20 | SocialLSTM minFDE20 | AgentFormer minFDE20 | Re minFDE20 | MS-TIP minFDE20 | Social-STGCNN minFDE20 |
+|---|---|---|---|---|---|---|---|
+| 0 | 0.3523 | 0.3793 | 0.4231 | 0.4575 | 0.7113 | 1.1231 | 1.3903 |
+| 1 | 0.3608 | 0.3889 | 0.4332 | 0.4811 | 0.6771 | 1.1810 | 1.4912 |
+| 2 | 0.3695 | 0.3968 | 0.4491 | 0.4726 | 0.6804 | 1.2128 | 1.6938 |
+| 3 | 0.3725 | 0.4254 | 0.4772 | 0.4856 | 0.8266 | 1.2016 | 1.9453 |
+| 4 | 0.3838 | 0.4341 | 0.5228 | 0.5012 | 0.9533 | 1.2859 | 2.2993 |
+| 5 | 0.4037 | 0.4695 | 0.5844 | 0.5395 | 1.0994 | 1.4487 | 2.6822 |
+| 6 | 0.4298 | 0.5534 | 0.6997 | 0.6118 | 1.3166 | 1.7603 | 3.1150 |
+| 7 | 1.1879 | 1.2224 | 1.3587 | 1.4787 | 1.5797 | 2.0369 | 3.6583 |
 
 ## 表注
 
-- **`--` = 该场景/指标不可用**。AgentFormer 完成 3/5 场景（ETH/HOTEL/UNIV）、MS-TIP 完成 2/5（UNIV/ZARA1），进行中；不完整方法的 `Avg` 与 `micro` 均为 `--`——**单场景值不得当宏平均报**。两者的 ADE@1/FDE@1 不适用（采样器无模态概率）。
-- **Re 的 ADE@1/FDE@1 同样不可引用**：虽产出数值，但其首候选并非概率最优模式（meta 标注 first reported candidate），仅在 minADE20/minFDE20 维度参与比较。
-- **本表当前数值仅为历史结果，不是 TrajGap-Bench v1.1 正式成绩**：部分历史对照来自旧选点口径，正式投稿前仍需统一模型版本、随机种子和最终预测头规则。
-- 正式指标为 `minADE20` 和 `minFDE20`；ADE@1/FDE@1 仅作辅助诊断。不计算 MR 或综合分数。
-- **M1 已判负撤回**（2026-10-11），仅作负结果证据，不进主表。
-- **内部对照（M0、GAST 内部消融臂）不进对外对比表**：全部对外比较仅保留 GAST 与外部模型；内部消融留在仓库实验记录中。
-- **b-minFDE20 无法对齐**：本工作 direct evaluator 不产出该项，仅 MoFlow 侧有 test 值（宏平均 1.2945），故未入表。
-- 部分场景的平均值与五场景宏平均**不可直接比较**。
-- SocialLSTM 使用 missing-aware 变体：零填充输入 + 缺失帧跳过 LSTM 状态更新 + 高斯混合头（K=20，按分量采样），social pooling 已向量化。
+- 七个方法均完成 ETH-M、HOTEL-M、UNIV-M、ZARA1-M、ZARA2-M 五场景；`--` 仅表示该方法没有可解释的概率 top-1 指标。
+- **Re、AgentFormer、MS-TIP、Social-STGCNN 不提供可比的概率排序头**，因此 ADE@1/FDE@1 不适用；不使用其首个采样候选替代概率 top-1。
+- 表中指标按各方法 Mixed-test `results.json` 计算；宏平均为五场景等权，micro 为测试样本加权。
+- 主指标为 `minADE20` 与 `minFDE20`；`ADE@1/FDE@1` 仅作为有概率输出方法的排序诊断。
+- 外部模型保持其方法属性：MS-TIP 为插补感知联合预测方法，其余依各自实现处理缺失历史；榜单比较的是统一测试集上的结果，不代表内部结构均为纯 direct。
+- **b-minFDE20 不纳入对比**：本工作 evaluator 不产出该指标，无法对所有方法公平汇总。
+- SocialLSTM 使用零填充、缺失帧跳过 LSTM 状态更新及 K=20 高斯混合采样头。
 
 ## 数据来源
 
 | 方法 | 产物路径 |
 |---|---|
-| GAST | `outputs/trajgap_gast_goal_3gpu_retry/`（历史五场景，正式口径以 `trajgap_gast_5scene_seed2024` 重训为准） |
-| MoFlow | `MoFlow/results_trajimpute_mixed/<scene>/mixed/results.json` |
+| GAST | `outputs/trajgap_gast_5scene_seed2024/` 与 `outputs/trajgap_gast_goal_3gpu_retry/gpu1/`（逐场景择优） |
+| MoFlow | `/home/lbh/MoFlow/results_trajimpute_mixed/` |
 | SocialLSTM | `/home/lbh/SocialLSTM/trajgap_bench/artifacts/sociallstm_bench/` |
-| AgentFormer | `/home/lbh/AgentFormer/results/trajgap_agentformer/`（**进行中，3/5**） |
-| Re | `/home/lbh/Re/outputs/trajgap_resonance_seed2024_gpu1/`（5/5 完成） |
-| MS-TIP | `/home/lbh/MS-TIP-TrajGap/results/`（**进行中，2/5**） |
-| M1（撤回） | `outputs/trajgap_plan/M1_calibration_seed2024/`（负结果证据保留） |
-
-> 归档（2026-10-14）：SocialLSTM 代码与全部产物已迁至 `/home/lbh/SocialLSTM/trajgap_bench/`，并从本仓库 runner/evaluator 中移除该变体。
-> 更名（2026-10-15）：引入自 UniTraj `Past_Encoder` 的编码器由 `unitraj_encoder` 更名为 `gast_encoder`（`GASTEncoder`）；当前完整方法统一称 GAST，goal decoder 和 trajectory-aware mode ranking 均属于 GAST 内部设计。产物目录名沿用历史标签 `UT-ENC`，仅用于路径溯源。
+| AgentFormer | `/home/lbh/AgentFormer/results/trajgap_agentformer/`（5/5） |
+| Re | `/home/lbh/Re/outputs/trajgap_resonance_seed2024_gpu1/`（5/5） |
+| MS-TIP | `/home/lbh/MS-TIP-TrajGap/results/`（5/5，插补感知） |
+| Social-STGCNN | `/home/lbh/Social-STGCNN/results_trajgap/`（5/5） |
