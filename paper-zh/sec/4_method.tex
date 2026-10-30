@@ -16,7 +16,7 @@ GAST 由带掩码的历史编码器与目标条件化的多模态解码器组成
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.94\textwidth]{figures/architecture_crop.png}
-\caption{GAST 整体结构。(a) 带掩码的历史仅由位置、有效性掩码与观测位置表示，缺失项为占位值；(b) 观测证据状态（OES）驱动 GERE 与 ECTA，前者执行带几何偏置与源资格约束的逐帧关系注意力，后者按证据强度缩放时间输入（RMCM）并以证据加权方式聚合状态（EWSA）；(c) 目标条件化解码器由最后观测帧构造七维锚点状态，形成 $K$ 个模式查询，并为每个模式预测终点与随进度衰减的残差；(d) 输出 $K$ 条带概率与逐模式尺度的轨迹，邻居预测头仅在训练阶段使用。}
+\caption{GAST 整体结构。(a) 带掩码的历史仅由位置、有效性掩码与观测位置表示，缺失项为占位值；(b) 观测证据状态（OES）驱动 GERE 与 ECTA，前者执行带几何偏置与源资格约束的逐帧关系注意力，后者按证据强度缩放时间输入（RMCM）并以证据加权方式聚合状态（EWSA）；(c) 目标条件化解码器由最后观测帧构造七维锚点状态（Anchor State），形成 $K$ 个模式查询，并为每个模式预测终点与随进度衰减的残差；(d) 输出 $K$ 条带概率与逐模式尺度的轨迹，邻居预测头仅在训练阶段使用。}
 \label{fig:arch}
 \end{figure*}
 
@@ -96,7 +96,7 @@ z_{i}=r_{i,T}\,u_{i,T}+\big(1-r_{i,T}\big)\bar{h}_{i}.
 \subsection{锚点条件化目标解码}
 \label{sec:decoder}
 
-\textbf{锚点状态。}设 $\ell_{i}$ 为最后一个有效观测帧的下标，$\ell'_{i}$ 为其前一个有效观测帧的下标。解码器接收
+\textbf{锚点状态（Anchor State）。}设 $\ell_{i}$ 为最后一个有效观测帧的下标，$\ell'_{i}$ 为其前一个有效观测帧的下标。解码器接收
 \begin{equation}
 \varphi_{i}=\Big[p_{i,\ell_i},\ v_{i},\ \tfrac{\delta_{i}}{T},\ \rho_{i},\ \mathbb{1}[\ell_{i}<T]\Big]\in\mathbb{R}^{7},
 \label{eq:anchor}

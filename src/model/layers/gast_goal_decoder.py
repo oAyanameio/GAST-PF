@@ -54,6 +54,7 @@ class GapAwareGoalDecoder(nn.Module):
         )
 
     def _anchor_state(self, data: dict):
+        """Build the seven-dimensional Anchor State from observed history."""
         positions = data["x_positions"][:, 0]
         valid = data["x_valid_mask"][:, 0].bool()
         batch_size, history_steps = valid.shape

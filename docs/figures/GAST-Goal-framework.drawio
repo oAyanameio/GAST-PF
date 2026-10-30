@@ -84,7 +84,7 @@
         <mxCell id="focal_encoding" value="&lt;b&gt;Focal actor&lt;/b&gt;&lt;br&gt;&lt;b&gt;token&lt;/b&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#DCE9F7;strokeColor=#3A5A8A;fontColor=#1B2A3B;fontFamily=Times New Roman;fontSize=17;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
           <mxGeometry x="735" y="160" width="150" height="55" as="geometry"/>
         </mxCell>
-        <mxCell id="anchor_gap" value="&lt;b&gt;Anchor state&lt;/b&gt;&lt;br&gt;&lt;b&gt;(7-D)&lt;/b&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FBE5C6;strokeColor=#B0651A;fontColor=#6E3D0A;fontFamily=Times New Roman;fontSize=17;align=center;verticalAlign=middle;spacing=2;" vertex="1" parent="1">
+        <mxCell id="anchor_state" value="&lt;b&gt;锚点状态&lt;/b&gt;&lt;br&gt;&lt;b&gt;Anchor State (7-D)&lt;/b&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FBE5C6;strokeColor=#B0651A;fontColor=#6E3D0A;fontFamily=Times New Roman;fontSize=14;align=center;verticalAlign=middle;spacing=2;" vertex="1" parent="1">
           <mxGeometry x="895" y="160" width="160" height="70" as="geometry"/>
         </mxCell>
         <mxCell id="mode_queries" value="&lt;b&gt;① Mode queries&lt;/b&gt;&lt;br&gt;&lt;b&gt;(K=20)&lt;/b&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#E8DAEF;strokeColor=#6C4A8A;fontColor=#3A2560;fontFamily=Times New Roman;fontSize=21;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
@@ -202,7 +202,7 @@
         <mxCell id="e_focal_modes" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5F6368;strokeWidth=1.4;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.2344;entryY=0;" edge="1" parent="1" source="focal_encoding" target="mode_queries">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e_anchor_modes" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C0762C;strokeWidth=1.8;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.75;entryY=0;" edge="1" parent="1" source="anchor_gap" target="mode_queries">
+        <mxCell id="e_anchor_modes" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#C0762C;strokeWidth=1.8;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.75;entryY=0;" edge="1" parent="1" source="anchor_state" target="mode_queries">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
         <mxCell id="e_modes_context" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#5F6368;strokeWidth=1.4;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="mode_queries" target="context_attn">
