@@ -25,7 +25,7 @@ GAST
 │       ├── RMCM  可靠度调制的因果 Mamba
 │       └── EWSA  证据加权状态聚合
 └── Goal-conditioned future decoder
-    ├── anchor state + 显式未来时间间隔
+    ├── 锚点状态（Anchor State）+ 显式未来时间间隔
     ├── 终点偏移预测（相对最后有效观测位置）
     └── final-consistent loss + mode diversity regularization
 ```
@@ -127,11 +127,12 @@ TrajGap-Bench Mixed direct（单种子 2024，最终预测头 `val_new_minFDE20`
 
 | 方法 | Macro `minADE20` | Macro `minFDE20` | 完成度 |
 |---|---:|---:|---:|
-| **GAST** | **0.3168** | **0.4831** | 5/5 |
-| GAST 消融（标准 decoder，不含 goal 条件解码） | 0.3264 | 0.4946 | 5/5 |
+| **GAST** | **0.3085** | **0.4716** | 5/5 |
 | MoFlow | 0.3496 | 0.5227 | 5/5 |
+| SocialLSTM | 0.4576 | 0.6079 | 5/5 |
+| AgentFormer | 0.3911 | 0.6144 | 5/5 |
 
-逐场景数字、micro average 与外部基线见 `TrajGap-Bench.md` §4。当前结果为单种子 screening，定稿前仍需第二种子与按原始轨迹聚类的统计检验。
+逐场景数字、micro average 与外部基线见 `docs/results/trajgap_bench_leaderboard.md` 与 `docs/results/实验总汇总.md` §17。当前结果为单种子 screening，定稿前仍需第二种子与按原始轨迹聚类的统计检验。
 
 ## 方法名称
 

@@ -6,11 +6,11 @@
 
 | 文档 | 内容 | 关键结论 |
 |---|---|---|
-| [实验总汇总](实验总汇总.md) | 全部已完成实验的唯一权威总汇总 | GAST 为当前缺失主线滚动基线；失败路线经验已收口 |
+| [实验总汇总](实验总汇总.md) | 全部已完成实验的唯一权威总汇总 | GAST 五场景正式记录 0.3085/0.4716（§17，2026-10-30 核定）；失败路线经验已收口 |
 | [完整数据基线对比](完整数据基线对比.md) | 无缺失完整数据上的初始 M0、当前 GAST 与公开 SOTA 参考，ETH/UCY + SDD | 初始 M0 = 0.232/0.389；GAST = 0.226/0.393 |
 | [缺失数据基线对比](缺失数据基线对比.md) | TrajImpute Easy/Hard 直接预测与公开插补基线 | Easy 0.245/0.399；Hard 0.432/0.640 |
 | [主线实验记录](主线实验记录.md) | 当前 K=20 主链与协议 | GAST 为当前滚动基线；Clean 结果作为辅助完整性验证 |
-| [TrajGap-Bench 榜单](trajgap_bench_leaderboard.md) | 全部方法对照表（`gen_leaderboard_tables.py` 现算） | Re 5/5 已入榜；AgentFormer 3/5、MS-TIP 2/5 进行中 |
+| [TrajGap-Bench 榜单](trajgap_bench_leaderboard.md) | 全部方法对照表（`gen_leaderboard_tables.py` 现算） | 7 方法纯外部对比口径；GAST vs MoFlow 宏平均 −11.8%/−9.8% |
 
 
 

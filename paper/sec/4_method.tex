@@ -16,7 +16,7 @@ Figure~\ref{fig:arch} summarises the resulting architecture. The encoder consist
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.94\textwidth]{figures/architecture_crop.png}
-\caption{Architecture of GAST. (a)~The masked history is represented by positions, validity masks and observed positions only; missing entries are placeholders. (b)~The observation-evidence state (OES) drives GERE, which performs frame-wise relational attention with geometry bias and source eligibility, and ECTA, which scales the temporal input by evidence strength (RMCM) and aggregates states with an evidence-weighted readout (EWSA). (c)~The goal-conditioned decoder builds a seven-dimensional anchor state from the last observed frame, forms $K$ mode queries and predicts an endpoint plus a progress-conditioned residual per mode. (d)~Outputs are $K$ trajectories with probabilities and per-mode scales; the neighbour head is used only during training.}
+\caption{Architecture of GAST. (a)~The masked history is represented by positions, validity masks and observed positions only; missing entries are placeholders. (b)~The observation-evidence state (OES) drives GERE, which performs frame-wise relational attention with geometry bias and source eligibility, and ECTA, which scales the temporal input by evidence strength (RMCM) and aggregates states with an evidence-weighted readout (EWSA). (c)~The goal-conditioned decoder builds a seven-dimensional Anchor State from the last observed frame, forms $K$ mode queries and predicts an endpoint plus a progress-conditioned residual per mode. (d)~Outputs are $K$ trajectories with probabilities and per-mode scales; the neighbour head is used only during training.}
 \label{fig:arch}
 \end{figure*}
 
@@ -96,7 +96,7 @@ When the last frame is observed, $z_{i}=u_{i,T}$ exactly and the readout is iden
 \subsection{Anchor-conditioned goal decoding}
 \label{sec:decoder}
 
-\textbf{Anchor state.} Let $\ell_{i}$ be the index of the last observed frame and $\ell'_{i}$ the index of the previous one. The decoder receives
+\textbf{Anchor State.} Let $\ell_{i}$ be the index of the last observed frame and $\ell'_{i}$ the index of the previous one. The decoder receives
 \begin{equation}
 \varphi_{i}=\Big[p_{i,\ell_i},\ v_{i},\ \tfrac{\delta_{i}}{T},\ \rho_{i},\ \mathbb{1}[\ell_{i}<T]\Big]\in\mathbb{R}^{7},
 \label{eq:anchor}

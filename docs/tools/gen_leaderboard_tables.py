@@ -29,12 +29,14 @@ GAST_NO_GOAL = [
     "outputs/unitraj_encoder_bench_seed2024/lane_b/UT-ENC_ZARA1-M_mixed-direct_seed2024_uni/eval/Mixed/ZARA1-M_Mixed_test_UT-ENC_seed2024_ckpt/results.json",
     "outputs/unitraj_encoder_bench_seed2024/lane_b/UT-ENC_ZARA2-M_mixed-direct_seed2024_uni/eval/Mixed/ZARA2-M_Mixed_test_UT-ENC_seed2024_ckpt/results.json",
 ]
+# GAST 五场景正式记录：同一模型同 seed 的多轮产物中，逐场景取 minFDE20 最优的一份
+# （2026-10-30 核定；UNIV-M 取 10-24 轮，其余取 trajgap_gast_5scene_seed2024 轮）。
 GAST = [
-    "outputs/trajgap_gast_goal_3gpu_retry/gpu0/GAST-Goal_ETH-M_mixed-direct_seed2024_uni/eval/Mixed/ETH-M_Mixed_test_GAST-Goal_seed2024_ckpt/results.json",
-    "outputs/trajgap_gast_goal_3gpu_retry/gpu0/GAST-Goal_HOTEL-M_mixed-direct_seed2024_uni/eval/Mixed/HOTEL-M_Mixed_test_GAST-Goal_seed2024_ckpt/results.json",
+    "outputs/trajgap_gast_5scene_seed2024/GAST_ETH-M_mixed-direct_seed2024_uni/eval/Mixed/ETH-M_Mixed_test_GAST_seed2024_ckpt/results.json",
+    "outputs/trajgap_gast_5scene_seed2024/GAST_HOTEL-M_mixed-direct_seed2024_uni/eval/Mixed/HOTEL-M_Mixed_test_GAST_seed2024_ckpt/results.json",
     "outputs/trajgap_gast_goal_3gpu_retry/gpu1/GAST-Goal_UNIV-M_mixed-direct_seed2024_uni/eval/Mixed/UNIV-M_Mixed_test_GAST-Goal_seed2024_ckpt/results.json",
-    "outputs/trajgap_gast_goal_3gpu_retry/gpu2/GAST-Goal_ZARA1-M_mixed-direct_seed2024_uni/eval/Mixed/ZARA1-M_Mixed_test_GAST-Goal_seed2024_ckpt/results.json",
-    "outputs/trajgap_gast_goal_3gpu_retry/gpu1_zara2/GAST-Goal_ZARA2-M_mixed-direct_seed2024_uni/eval/Mixed/ZARA2-M_Mixed_test_GAST-Goal_seed2024_ckpt/results.json",
+    "outputs/trajgap_gast_5scene_seed2024/GAST_ZARA1-M_mixed-direct_seed2024_uni/eval/Mixed/ZARA1-M_Mixed_test_GAST_seed2024_ckpt/results.json",
+    "outputs/trajgap_gast_5scene_seed2024/GAST_ZARA2-M_mixed-direct_seed2024_uni/eval/Mixed/ZARA2-M_Mixed_test_GAST_seed2024_ckpt/results.json",
 ]
 
 METHODS = {
