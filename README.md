@@ -5,7 +5,7 @@ GAST-PF 是面向**缺失历史直接未来预测**的研究代码库，包含�
 | 项目 | 说明 |
 |---|---|
 | 方法 | `GAST`（Gap-Aware Spatio-Temporal Pedestrian Forecaster） |
-| 基准 | `TrajGap-Bench`：TrajImpute 官方 Easy/Hard 整理为 Mixed direct 协议 |
+| 数据集与基准 | `TrajGap-Bench`：基于 TrajImpute 官方 Easy/Hard，按 Mixed split 组织并直接预测 |
 | 任务 | 8 帧历史（显式缺失掩码）→ 12 帧未来，`K=20` |
 | 指标 | `minADE20` / `minFDE20` |
 | 基线 | `M0`（同协议历史对照） |
@@ -63,7 +63,7 @@ pip install -e mamba
 
 正式缺失历史数据位于 `/home/lbh/TrajImpute/dataset/TrajImpute`，包含 ETH-M、HOTEL-M、UNIV-M、ZARA1-M、ZARA2-M 的 Easy/Hard train/val/test pkl。
 
-正式协议为 **Mixed direct**：每个 split 下 `Easy + Hard` 做 actor-centric 样本拼接，缺失掩码显式输入，不使用外部插补，也不使用未来真值填补历史。Easy/Hard 标签仅用于内部审计与诊断。
+**TrajGap-Bench** 是数据集与评估基准的统一名称。每个 split 将 `Easy + Hard` 做 actor-centric 样本拼接，形成 `Mixed` 数据；`direct` 描述任务约束，即模型直接使用带缺失掩码的历史进行预测，不使用外部插补或未来真值填补历史。Easy/Hard 标签仅用于内部审计与诊断。
 
 ## 训练与评估
 
@@ -76,9 +76,9 @@ PYTHONPATH=. python train.py --config-name=config_missing_aware_trajimpute \
     scene=ETH-M difficulty=Mixed train_difficulties=[Mixed] val_difficulties=[Mixed] \
     hydra.run.dir=outputs/trajgap_smoke/GAST_ETH-M
 
-# 五场景 Mixed direct 统一训练入口（仅注册 GAST / M0）
+# 五场景 TrajGap-Bench 统一训练入口（仅注册 GAST / M0）
 PYTHONNOUSERSITE=1 PYTHONPATH=. python scripts/训练与评估/run_trajimpute_experiments.py \
-    --protocol mixed-direct --variant GAST \
+    --protocol trajgap-bench --variant GAST \
     --scenes ETH-M HOTEL-M UNIV-M ZARA1-M ZARA2-M \
     --seed 2024 --gpu 0 \
     --output-root outputs/trajgap_bench_gast_seed2024
@@ -123,11 +123,11 @@ outputs/              训练与评估产物（逐折 results.json）
 
 ## 当前结果
 
-TrajGap-Bench Mixed-direct（seed=2024；GAST 按最终预测头 `val_new_minFDE20` 选点；其他外部方法沿用各自选点流程）：
+TrajGap-Bench（seed=2024；GAST 按最终预测头 `val_new_minFDE20` 选点；其他外部方法沿用各自选点流程）：
 
 | 方法 | Macro `minADE20` | Macro `minFDE20` | 完成度 |
 |---|---:|---:|---:|
-| **GAST** | **0.3085** | **0.4716** | 5/5 |
+| **GAST** | **0.3168** | **0.4831** | 5/5 |
 | MoFlow | 0.3496 | 0.5227 | 5/5 |
 | AgentFormer | 0.3911 | 0.6144 | 5/5 |
 | SocialLSTM | 0.4576 | 0.6079 | 5/5 |
@@ -135,7 +135,7 @@ TrajGap-Bench Mixed-direct（seed=2024；GAST 按最终预测头 `val_new_minFDE
 | MS-TIP（插补感知） | 1.1838 | 1.3929 | 5/5 |
 | Social-STGCNN | 1.3471 | 2.2861 | 5/5 |
 
-逐场景数字、微平均与缺失分层见 `docs/results/trajgap_bench_leaderboard.md`；唯一汇总见 `docs/results/实验总汇总.md`。当前为 seed 2024 结果，定稿前仍需独立种子与轨迹级统计检验。
+逐场景数字、微平均与缺失分层见 `docs/results/trajgap_bench_leaderboard.md`；唯一汇总见 `docs/results/实验总汇总.md`。正式口径使用五场景 manifest 同一代码 revision 的完整轮次，不跨 revision 或逐场景拼接。
 
 ## 方法名称
 

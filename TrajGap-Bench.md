@@ -11,7 +11,7 @@
 
 **TrajGap-Bench** 是一个面向「缺失历史条件下直接未来预测」的行人轨迹预测基准。它不重新生成轨迹，也不把缺失历史先交给外部插补器，而是要求模型直接读取带缺失掩码的历史观测，并预测未来 12 帧轨迹。
 
-本基准的底层数据来自 TrajImpute 官方 Easy/Hard release。TrajGap-Bench 的贡献不是重新发明数据，而是将官方数据整理为统一、可复现、无测试泄漏的 Mixed direct 评估协议，并冻结训练、选点和结果汇报规则。
+TrajGap-Bench 的底层数据来自 TrajImpute 官方 Easy/Hard release。本文将数据集与评估基准统一命名为 **TrajGap-Bench**：每个 split 内的 Easy/Hard 样本合并为 `Mixed`；`direct` 表示模型从不完整历史直接预测未来、不以前置外部插补为条件。TrajGap-Bench 的贡献不是重新发明上游数据，而是建立可复现、无测试泄漏的数据组织、任务约束与评估规则。
 
 ### 1.1 当前本文模型
 
@@ -43,6 +43,8 @@ goal 条件解码和轨迹级模式排序是 GAST 的内置设计，不单独注
 4. GAST 的 goal 条件化是否能改善缺失历史下的多模态未来覆盖？
 
 ## 2. 数据集与任务
+
+**TrajGap-Bench** 同时指本文整理后的数据集和围绕该数据集定义的评估基准。`Mixed` 是 split 的样本组织方式，`direct prediction` 是任务约束；二者都是定义要素，不是数据集或基准的替代名称。
 
 ### 2.1 数据来源
 
@@ -169,7 +171,7 @@ TrajGap-Bench 正式主榜只报告两个指标：
 
 ### 4.1 结果说明
 
-完整逐场景、宏/微平均、排序诊断和缺失分层表由 [`docs/results/trajgap_bench_leaderboard.md`](docs/results/trajgap_bench_leaderboard.md) 自动生成并维护。当前 GAST 五场景宏平均 `minADE20/minFDE20` 为 **0.3085/0.4716**，MoFlow 为 **0.3496/0.5227**；全部六个外部对照均已完成五场景。GAST 正式结果按 `val_new_minFDE20` 选点，同一模型多轮结果逐场景择优。外部复现沿用各自训练与选点流程，统一在同一 Mixed-test 上评估。
+完整逐场景、宏/微平均、排序诊断和缺失分层表由 [`docs/results/trajgap_bench_leaderboard.md`](docs/results/trajgap_bench_leaderboard.md) 自动生成并维护。正式采用的 GAST 完整五场景轮次为 `outputs/trajgap_gast_goal_3gpu_retry/`，五场景 manifest revision 一致，宏平均 `minADE20/minFDE20` 为 **0.3168/0.4831**；MoFlow 为 **0.3496/0.5227**。六个外部对照均完成五场景。另一套 `trajgap_gast_5scene_seed2024` 虽有五份评估结果，但场景 manifest revisions 不一致，不作为严格完整轮次汇总。
 
 ### 4.2 当前结果
 
@@ -200,7 +202,7 @@ TrajGap-Bench 正式主榜只报告两个指标：
 PYTHONNOUSERSITE=1 PYTHONPATH=. \
 /home/lbh/.conda/envs/gast-pf/bin/python \
 scripts/训练与评估/run_trajimpute_experiments.py \
-  --protocol mixed-direct \
+  --protocol trajgap-bench \
   --variant GAST \
   --scenes ETH-M HOTEL-M UNIV-M ZARA1-M ZARA2-M \
   --seed 2024 \
@@ -246,7 +248,7 @@ scripts/结果分析/evaluate_trajimpute_direct.py \
 
 ## 7. 一句话定位
 
-> **TrajGap-Bench 将 TrajImpute 官方 Easy/Hard 的同一 train/val/test split 统一为 Mixed direct 协议，并以最终预测头的 `val_new_minFDE20` 选择 checkpoint，在五个场景上使用 `minADE20` 与 `minFDE20` 评估模型直接利用不完整历史进行未来轨迹预测的能力；本文完整方法统一命名为 GAST。**
+> **TrajGap-Bench 将 TrajImpute 官方 Easy/Hard 的同一 train/val/test split 统一组织为 Mixed 数据，并以最终预测头的 `val_new_minFDE20` 选择 checkpoint，在五个场景上使用 `minADE20` 与 `minFDE20` 评估模型直接利用不完整历史进行未来轨迹预测的能力；本文完整方法统一命名为 GAST。**
 
 </details>
 
@@ -315,7 +317,7 @@ Methods may use an internal latent completion mechanism, but external imputation
 
 ## 4. Comparison experiments
 
-The complete scene-wise comparison, macro/micro averages, ranking diagnostics, and missingness-stratified results are generated in [`docs/results/trajgap_bench_leaderboard.md`](docs/results/trajgap_bench_leaderboard.md), the single numerical source for this benchmark. GAST's five-scene macro `minADE20/minFDE20` is **0.3085/0.4716**; MoFlow is **0.3496/0.5227**. All six external baselines have completed all five scenes. GAST checkpoints are selected by `val_new_minFDE20`; repeated runs of the same model are consolidated by taking the best `minFDE20` result scene by scene. External implementations retain their own training and selection procedures and are evaluated on the same Mixed-test split.
+The complete scene-wise comparison, macro/micro averages, ranking diagnostics, and missingness-stratified results are generated in [`docs/results/trajgap_bench_leaderboard.md`](docs/results/trajgap_bench_leaderboard.md), the single numerical source for this benchmark. The selected GAST complete run is `outputs/trajgap_gast_goal_3gpu_retry/`; all five scene manifests share one code revision, and its macro `minADE20/minFDE20` is **0.3168/0.4831**. MoFlow is **0.3496/0.5227**. All six external baselines have completed all five scenes. A second five-scene result directory contains different scene revisions and is not treated as one strict complete run.
 
 The protocol document does not duplicate static result tables. It retains model configuration, reproduction commands, and evaluation limitations.
 

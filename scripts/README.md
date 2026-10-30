@@ -4,9 +4,9 @@
 
 | 子目录 | 内容 |
 |---|---|
-| `训练与评估/` | TrajGap-Bench Mixed direct 训练评估：`run_trajimpute_experiments.py`（当前仅注册 M0 和 GAST） |
+| `训练与评估/` | TrajGap-Bench 训练评估：`run_trajimpute_experiments.py`（当前仅注册 M0 和 GAST） |
 | `审计与校验/` | 当前模型与配置的静态检查 |
-| `结果分析/` | TrajImpute direct 评估与汇总：`evaluate_trajimpute_direct.py`（Mixed direct 分组评估）、`summarize_trajimpute.py`（重训结果汇总） |
+| `结果分析/` | TrajGap-Bench direct 评估与汇总：`evaluate_trajimpute_direct.py`（按 Mixed split 分组评估）、`summarize_trajimpute.py`（重训结果汇总） |
 
 注意事项：
 

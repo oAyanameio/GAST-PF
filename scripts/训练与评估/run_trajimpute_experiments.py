@@ -1,8 +1,9 @@
-"""TrajGap 缺失数据重训入口（统一 Mixed direct 协议）。
+"""TrajGap-Bench 缺失数据重训入口。
 
 协议（任务书 2026-09-07 + 方案 §1.4）：
-- 默认从 `GAST + mixed-direct` 开始；
-- `mixed-direct` 将官方 Easy/Hard 的同一 split 合并为单一 Mixed 数据集；
+- 默认使用 `GAST + TrajGap-Bench`；
+- TrajGap-Bench 将官方 Easy/Hard 的同一 split 合并为单一 Mixed 数据集，
+  用于 direct 缺失历史预测；
 - 每个场景从头训练，不使用零样本 checkpoint；
 - 训练输出、验证选点和测试评估统一使用 K=20；
 - 每个实验写入独立 manifest，拒绝把不同数据源混为同一协议；
@@ -11,7 +12,7 @@
 
 用法：
   PYTHONNOUSERSITE=1 PYTHONPATH=. python scripts/训练与评估/run_trajimpute_experiments.py \
-      --protocol mixed-direct --variant GAST-PF-Uni \
+      --protocol trajgap-bench --variant GAST \
       --scenes ETH-M HOTEL-M UNIV-M ZARA1-M ZARA2-M \
       --seed 2024 --gpu 3 --output-root outputs/trajgap_bench
 """
@@ -37,7 +38,8 @@ EVAl_SCRIPT = REPO / "scripts/结果分析/evaluate_trajimpute_direct.py"
 SCENES = ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
 FOLDS = ["ETH", "HOTEL", "UNIV", "ZARA1", "ZARA2"]
 DIRECT_NUM_MODES = 20
-DEFAULT_PROTOCOL = "mixed-direct"
+CANONICAL_BENCHMARK = "TrajGap-Bench"
+DEFAULT_PROTOCOL = "trajgap-bench"
 DEFAULT_VARIANT = "GAST"
 OPTIMIZER_POLICY = "adamw_complete_module_local_v1"
 
@@ -68,7 +70,7 @@ VARIANTS = {
 }
 
 PROTOCOLS = {
-    "mixed-direct": {
+    "trajgap-bench": {
         "dataset": "trajgap",
         "difficulty": "Mixed",
         "train_difficulties": ["Mixed"],
@@ -488,8 +490,12 @@ def build_manifest(args, protocol_cfg):
         for scene in args.scenes
     }
     manifest = {
-        "protocol": args.protocol,
-        "dataset": "TrajGap" if protocol_cfg.get("dataset") == "trajgap" else "TrajImpute",
+        "protocol": CANONICAL_BENCHMARK,
+        "dataset": (
+            CANONICAL_BENCHMARK
+            if protocol_cfg.get("dataset") == "trajgap"
+            else "TrajImpute"
+        ),
         "data_source": {
             "type": "official_release",
             "root": str(data_root),
@@ -529,7 +535,10 @@ def build_manifest(args, protocol_cfg):
         "train_sampling_scheme": protocol_cfg.get("train_sampling_scheme", "natural"),
         "train_sampling_seed": args.train_sampling_seed,
         "sampling_definition": {
-            "natural": "TrajGap Mixed train dataset with official Easy/Hard source samples concatenated and shuffled",
+            "natural": (
+                "TrajGap-Bench Mixed train split with official Easy/Hard "
+                "source samples concatenated and shuffled"
+            ),
         },
         "monitor": checkpoint_monitor(args.K),
         "K": args.K,
@@ -800,8 +809,8 @@ def main():
         raise SystemExit("TrajGap-Bench 正式重训协议固定 K=20")
 
     protocol_cfg = PROTOCOLS[args.protocol]
-    if args.protocol != "mixed-direct":
-        raise SystemExit("正式实验只允许 TrajGap-Bench mixed-direct")
+    if args.protocol != DEFAULT_PROTOCOL:
+        raise SystemExit("正式实验只允许 TrajGap-Bench")
     if protocol_cfg["dataset"] != "trajgap":
         raise SystemExit("正式实验必须使用 TrajGap 数据适配器")
     if protocol_cfg["zero_missing_only"]:

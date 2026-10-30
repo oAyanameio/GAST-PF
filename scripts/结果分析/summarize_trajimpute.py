@@ -1,10 +1,10 @@
-"""TrajGap-Bench Mixed 结果汇总。
+"""TrajGap-Bench 结果汇总。
 
 扫描 TrajGap-Bench 输出根目录下的 Mixed results.json，
 按 scene/seed/variant 聚合 minFDE20 等指标，输出：
   summary.json / summary.csv / comparison.md（含配对差值）
 
-只纳入 `mixed-direct` 和 K=20；历史 Easy/Hard 子集结果不会进入正式汇总。
+只纳入 TrajGap-Bench 和 K=20；历史 Easy/Hard 子集结果不会进入正式汇总。
 """
 
 import argparse
@@ -16,11 +16,17 @@ from pathlib import Path
 METRICS = ["minADE_K", "minFDE_K", "ADE@1", "FDE@1"]
 SCENES = ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
 FORMAL_K = 20
+CANONICAL_PROTOCOL = "TrajGap-Bench"
+CANONICAL_PROTOCOL_VALUES = {"trajgap-bench", CANONICAL_PROTOCOL}
+LEGACY_PROTOCOL_ALIASES = {"mixed-direct"}
 
 
 def protocol_label(manifest, meta):
     """Return the formal benchmark protocol label."""
-    return manifest.get("protocol", "?")
+    raw = manifest.get("protocol") or meta.get("protocol")
+    if raw in CANONICAL_PROTOCOL_VALUES or raw in LEGACY_PROTOCOL_ALIASES:
+        return CANONICAL_PROTOCOL
+    return raw or "?"
 
 
 def collect(root: Path):
@@ -103,18 +109,19 @@ def main():
     root = Path(args.root)
     all_rows = collect(root)
     rows = [row for row in all_rows
-            if row["K"] == FORMAL_K and row["protocol"] == "mixed-direct"]
+            if row["K"] == FORMAL_K and row["protocol"] == CANONICAL_PROTOCOL]
     excluded = [
         {
             "run_dir": row["run_dir"],
             "K": row["K"],
             "protocol": row["protocol"],
             "reason": (
-                f"TrajGap-Bench formal summary requires protocol=mixed-direct and K={FORMAL_K}"
+                f"TrajGap-Bench formal summary requires protocol={CANONICAL_PROTOCOL} "
+                f"and K={FORMAL_K}"
             ),
         }
         for row in all_rows
-        if row["K"] != FORMAL_K or row["protocol"] != "mixed-direct"
+        if row["K"] != FORMAL_K or row["protocol"] != CANONICAL_PROTOCOL
     ]
     if not rows:
         if excluded:
@@ -143,7 +150,7 @@ def main():
         w.writerows(rows)
 
     # comparison.md：配对比较 + 聚合表
-    md = ["# TrajGap-Bench Mixed 模型重训结果汇总\n"]
+    md = ["# TrajGap-Bench 模型重训结果汇总\n"]
     md.append("数据来源：`" + str(root) + "`；训练与评估均为 direct 重训，K=20；")
     md.append("训练、验证和测试均为 TrajGap Mixed；所有误差指标越低越好。\n")
 

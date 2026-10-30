@@ -1,4 +1,4 @@
-"""TrajGap-Bench Mixed 直接缺失预测评估入口。
+"""TrajGap-Bench 直接缺失预测评估入口。
 
 正式协议固定为 `--difficulty Mixed`：
   PYTHONPATH=. python scripts/结果分析/evaluate_trajimpute_direct.py \
@@ -20,6 +20,7 @@ import torch
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
+BENCHMARK_NAME = "TrajGap-Bench"
 
 from src.datamodule.trajimpute_dataset import (  # noqa: E402
     MIXED_DIFFICULTY, TrajGapDataset, trajimpute_collate_fn,
@@ -254,7 +255,7 @@ def main():
     args = ap.parse_args()
 
     if args.K != 20:
-        raise SystemExit("TrajGap-Bench Mixed direct 正式评估固定 K=20")
+        raise SystemExit("TrajGap-Bench 正式评估固定 K=20")
 
     torch.manual_seed(args.seed)
     if args.difficulty != MIXED_DIFFICULTY:
@@ -287,6 +288,7 @@ def main():
     )
 
     meta = {
+        "dataset": BENCHMARK_NAME,
         "data_root": args.data_root,
         "scene": args.scene,
         "difficulty": args.difficulty,
@@ -294,7 +296,7 @@ def main():
         "variant": args.variant,
         "seed": args.seed,
         "K": args.K,
-        "evaluator": "src/evaluation/trajimpute_direct.py (TrajGap Mixed direct, no imputation)",
+        "evaluator": "src/evaluation/trajimpute_direct.py (TrajGap-Bench direct, no imputation)",
         "git_revision": get_git_revision(),
         "untrained_smoke": bool(args.untrained),
         "checkpoint": ckpt_info,
@@ -306,7 +308,7 @@ def main():
         },
         "external_reference": None,
         "release_subset": inspect_clean_source(args.data_root),
-        "protocol": "mixed-direct",
+        "protocol": BENCHMARK_NAME,
         "zero_missing_only": bool(args.zero_missing_only),
         "n_samples_kept": n_kept_focal,
         "n_samples_total_rows": n_total_rows,

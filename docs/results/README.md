@@ -6,9 +6,9 @@
 
 | 文档 | 内容 | 当前结果 |
 |---|---|---|
-| [实验总汇总](实验总汇总.md) | 当前 GAST 五场景结果、六个外部方法对比与缺失等级分层 | Mixed-direct 宏平均 minADE20/minFDE20 = 0.3085/0.4716；共 7 种方法完整 |
-| [TrajGap-Bench 榜单](trajgap_bench_leaderboard.md) | 从各方法 `results.json` 生成的逐场景、宏/微平均和分层对比 | GAST 对 MoFlow 宏平均改善 11.8%/9.8% |
-| [完整数据基线对比](完整数据基线对比.md) | ETH/UCY Clean GAST 结果及公开文献参考；和 Mixed-direct 主榜分开 | GAST Clean 宏平均 0.2260/0.3927 |
+| [实验总汇总](实验总汇总.md) | 当前 GAST 五场景结果、六个外部方法对比与缺失等级分层 | 同 revision 完整轮次宏平均 minADE20/minFDE20 = 0.3168/0.4831；共 7 种方法完整 |
+| [TrajGap-Bench 榜单](trajgap_bench_leaderboard.md) | 从各方法 `results.json` 生成的逐场景、宏/微平均和分层对比 | GAST 对 MoFlow 宏平均 minADE20/minFDE20 改善 9.4%/7.6% |
+| [完整数据基线对比](完整数据基线对比.md) | ETH/UCY Clean GAST 结果及公开文献参考；和 TrajGap-Bench 缺失历史主榜分开 | GAST Clean 宏平均 0.2260/0.3927 |
 
 ## 口径约束
 
