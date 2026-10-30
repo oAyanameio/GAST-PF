@@ -252,8 +252,8 @@ class TrajectoryForecaster(nn.Module):
             y_hat_others = x_encoder.new_zeros((B, 0, self.future_steps, 2))
 
 
-        # Gap-aware goal decoder conditions on the last valid observation and
-        # the actual forecast gap.
+        # GAST Gap Aware Goal Decoder conditions on the last valid observation
+        # and the actual forecast gap.
         goal_out = self.goal_decoder(
             x_encoder,
             data,
@@ -273,6 +273,5 @@ class TrajectoryForecaster(nn.Module):
             "goal_delta": goal_out["goal_delta"],
             "goal_future_time_seconds": goal_out["future_time_seconds"],
         }
-
 
 

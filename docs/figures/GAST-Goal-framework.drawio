@@ -26,7 +26,7 @@
         <mxCell id="title" value="GAST: Evidence-Conditioned Trajectory Forecasting from Incomplete Histories" style="text;html=1;fontSize=18;fontStyle=1;align=center;verticalAlign=middle;fontColor=#202124;fontFamily=Times New Roman;" vertex="1" parent="1">
           <mxGeometry x="30" y="20" width="1220" height="32" as="geometry"/>
         </mxCell>
-        <mxCell id="subtitle" value="OES · GERE · ECTA (RMCM + EWSA) · GapAwareGoalDecoder · direct prediction without imputation · K=20 · 12 steps" style="text;html=1;fontSize=11;align=center;verticalAlign=middle;fontColor=#5F6368;fontFamily=Times New Roman;" vertex="1" parent="1">
+        <mxCell id="subtitle" value="OES · GERE · ECTA (RMCM + EWSA) · GAST Gap Aware Goal Decoder · direct prediction without imputation · K=20 · 12 steps" style="text;html=1;fontSize=11;align=center;verticalAlign=middle;fontColor=#5F6368;fontFamily=Times New Roman;" vertex="1" parent="1">
           <mxGeometry x="30" y="55" width="1220" height="22" as="geometry"/>
         </mxCell>
         <mxCell id="head_input" value="(a) Incomplete History" style="text;html=1;fontSize=13;fontStyle=1;align=left;verticalAlign=middle;fontColor=#233047;fontFamily=Times New Roman;" vertex="1" parent="1">
@@ -35,7 +35,7 @@
         <mxCell id="head_encoder" value="(b) GAST Encoder" style="text;html=1;fontSize=13;fontStyle=1;align=left;verticalAlign=middle;fontColor=#315A34;fontFamily=Times New Roman;" vertex="1" parent="1">
           <mxGeometry x="312" y="120" width="376" height="24" as="geometry"/>
         </mxCell>
-        <mxCell id="head_decoder" value="&lt;b&gt;(c) GapAwareGoalDecoder&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Goal-Conditioned Interaction Prediction&lt;/font&gt;" style="text;html=1;fontSize=13;fontStyle=0;align=left;verticalAlign=middle;fontColor=#563A72;fontFamily=Times New Roman;" vertex="1" parent="1">
+        <mxCell id="head_decoder" value="&lt;b&gt;(c) GAST Gap Aware Goal Decoder&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Last-valid-anchor and endpoint-conditioned trajectory generation&lt;/font&gt;" style="text;html=1;fontSize=13;fontStyle=0;align=left;verticalAlign=middle;fontColor=#563A72;fontFamily=Times New Roman;" vertex="1" parent="1">
           <mxGeometry x="732" y="120" width="326" height="36" as="geometry"/>
         </mxCell>
         <mxCell id="head_output" value="(d) Forecast" style="text;html=1;fontSize=13;fontStyle=1;align=left;verticalAlign=middle;fontColor=#245A5A;fontFamily=Times New Roman;" vertex="1" parent="1">
@@ -80,7 +80,7 @@
           <mxGeometry x="375" y="465" width="250" height="50" as="geometry"/>
         </mxCell>
 
-        <!-- GapAwareGoalDecoder (GCIP) -->
+        <!-- GAST Gap Aware Goal Decoder -->
         <mxCell id="focal_encoding" value="&lt;b&gt;Focal actor&lt;/b&gt;&lt;br&gt;&lt;b&gt;token&lt;/b&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#DCE9F7;strokeColor=#3A5A8A;fontColor=#1B2A3B;fontFamily=Times New Roman;fontSize=17;align=center;verticalAlign=middle;spacing=3;" vertex="1" parent="1">
           <mxGeometry x="735" y="160" width="150" height="55" as="geometry"/>
         </mxCell>
@@ -168,7 +168,7 @@
         <mxCell id="legend_loss_text" value="loss / constraint" style="text;html=1;fontSize=10;align=left;verticalAlign=middle;fontColor=#5F6368;fontFamily=Times New Roman;" vertex="1" parent="1">
           <mxGeometry x="942" y="819" width="130" height="22" as="geometry"/>
         </mxCell>
-        <mxCell id="caption" value="Fig. 1. GAST: OES, GERE, ECTA (RMCM + EWSA), and the GapAwareGoalDecoder implementing GCIP for direct pedestrian forecasting under incomplete histories." style="text;html=1;fontSize=11;align=center;verticalAlign=middle;fontColor=#202124;fontFamily=Times New Roman;" vertex="1" parent="1">
+        <mxCell id="caption" value="Fig. 1. GAST: OES, GERE, ECTA (RMCM + EWSA), and the GAST Gap Aware Goal Decoder for direct pedestrian forecasting under incomplete histories." style="text;html=1;fontSize=11;align=center;verticalAlign=middle;fontColor=#202124;fontFamily=Times New Roman;" vertex="1" parent="1">
           <mxGeometry x="30" y="870" width="1220" height="22" as="geometry"/>
         </mxCell>
 

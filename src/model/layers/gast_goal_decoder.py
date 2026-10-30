@@ -6,6 +6,8 @@ from .transformer_blocks import Cross_Block
 
 
 class GapAwareGoalDecoder(nn.Module):
+    """Implementation of the GAST Gap Aware Goal Decoder."""
+
     def __init__(
         self,
         future_steps: int,
