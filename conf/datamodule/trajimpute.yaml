@@ -1,5 +1,4 @@
 name: trajimpute
-phase: default
 
 target:
   _target_: src.datamodule.trajimpute_dataset.TrajImputeDataModule

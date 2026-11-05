@@ -1,5 +1,4 @@
 name: ethucy_benchmark
-phase: default
 
 target:
   _target_: src.datamodule.ethucy_benchmark_datamodule.EthUcyBenchmarkDataModule

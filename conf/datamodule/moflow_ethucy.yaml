@@ -1,5 +1,4 @@
 name: moflow_ethucy
-phase: default
 
 target:
   _target_: src.datamodule.moflow_ethucy_datamodule.MoFlowEthUcyDataModule

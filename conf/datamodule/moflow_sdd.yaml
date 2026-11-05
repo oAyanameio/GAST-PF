@@ -1,5 +1,4 @@
 name: moflow_sdd
-phase: default
 
 target:
   _target_: src.datamodule.moflow_sdd_datamodule.MoFlowSddDataModule

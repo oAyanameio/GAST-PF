@@ -1,5 +1,4 @@
 name: ethucy
-phase: default
 
 target:
   _target_: src.datamodule.ethucy_datamodule.EthUcyDataModule

@@ -1,5 +1,4 @@
 name: gast
-phase: actor-only
 
 target:
   _target_: src.model.forecasting_module.ForecastingLightningModule
