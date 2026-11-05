@@ -12,7 +12,7 @@
 
 | Method | 论文 / 来源 | 定位 | 引入机制与本文改动 |
 |---|---|---|---|
-| **GAST** | 本工作；编码机制引入自 Sports-Traj / UniTraj (Xu and Fu, ICLR 2025, arXiv:2405.17680)，goal 条件化机制为本文设计 | **本文方法（当前滚动基线）**（完整 GAST） | GAST 编码器（GERE + ECTA：RMCM/EWSA）+ decoder 侧 goal 端点条件化（`loss_mode=final_consistent`、goal endpoint loss + mode diversity loss）；GSM/Temporal Decay/Mamba 引自 UniTraj，不主张原创；goal 条件化与证据路由的适配为本文工作 |
+| **GAST** | 本工作；编码机制引入自 Sports-Traj / UniTraj (Xu and Fu, ICLR 2025, arXiv:2405.17680)，goal 条件化机制为本文设计 | **本文方法（当前滚动基线）**（完整 GAST） | GAST 编码器（GERE + ECTA：可靠度调制的 Mamba 时序编码器＋可靠度加权读出）+ decoder 侧锚点条件化目标解码（`loss_mode=final_consistent` 即双指派多模态训练目标、goal endpoint loss + mode diversity loss）；ghost token/Temporal Decay/Mamba 引自 UniTraj，不主张原创；goal 条件化与证据路由的适配为本文工作 |
 | **MoFlow** | Fu, Yan, Wang, Li, Liao. CVPR 2025. arXiv:2503.09950 | 外部基线（官方实现） | 完整外部方法，作为上界参照；未做任何改动 |
 | **SocialLSTM** | Alahi, Goel, Ramanathan, Robicquet, Li, Savarese. CVPR 2016 | 外部基线（经典 social pooling） | 零填充 + 缺失帧跳过 LSTM 状态更新 + 高斯混合头（K=20）；social pooling 向量化；已移除原仓库会泄漏 GT 的未来粘贴补丁 |
 | **AgentFormer** | Yuan, Weng, Ou, Kitani. ICCV 2021. arXiv:2103.14023 | 外部基线（官方实现，5/5 完成） | 缺失历史以 mask-aware 场景原点填充（在 `*_scene_norm` 参照系下为 0）+ 逐帧有效性显式输入通道；解码锚点取最后有效观测。无模态概率，故 ADE@1/FDE@1 不适用 |

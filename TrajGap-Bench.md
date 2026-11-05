@@ -20,12 +20,11 @@ TrajGap-Bench 的底层数据来自 TrajImpute 官方 Easy/Hard release。本文
 ```text
 GAST
 ├── GAST gap-aware encoder
-│   ├── 单向 Mamba 时序编码
-│   ├── GERE 逐帧几何证据关系编码
-│   └── ECTA 观测证据条件化因果时间聚合
-│       ├── RMCM 可靠度调制的因果 Mamba
-│       └── EWSA 证据加权状态聚合
-└── Goal-conditioned future decoder
+│   ├── GERE 逐帧几何证据关系编码（Geometric Evidence Relational Encoding）
+│   └── ECTA 观测证据条件化因果时间聚合（Evidence-Conditioned Causal Temporal Aggregation）
+│       ├── 可靠度调制的 Mamba 时序编码器（reliability-modulated Mamba temporal encoder）
+│       └── 可靠度加权的历史读出（reliability-weighted readout）
+└── Goal-conditioned future decoder（锚点条件化目标解码器）
     ├── 终点条件化
     ├── final-consistent loss
     └── mode diversity regularization
@@ -182,11 +181,11 @@ TrajGap-Bench 正式主榜只报告两个指标：
 | 项目 | `GAST` |
 |---|---|
 | Encoder | `GAST`，单向 gap-aware Mamba |
-| Evidence-conditioned encoding | GERE + ECTA (RMCM + EWSA) |
+| Evidence-conditioned encoding | GERE + ECTA（输入调制＋可靠度加权读出） |
 | Decoder | GAST 内置 goal-conditioned future decoder |
 | Mode ranking | GAST 内置 trajectory-aware classification |
 | Prediction modes | `K=20` |
-| Loss | `final_consistent` |
+| Loss | `final_consistent`（正文称双指派多模态训练目标，dual-assignment multimodal objective） |
 | Checkpoint | Mixed-val `val_new_minFDE20` |
 | Seed | 2024 |
 | Epochs | 100 |
@@ -269,8 +268,8 @@ The complete method in this document is **GAST**:
 
 - unidirectional Mamba temporal encoding;
 - GERE frame-wise geometric evidence encoding;
-- RMCM reliability-modulated causal temporal encoding;
-- EWSA evidence-weighted state aggregation;
+- reliability-modulated Mamba temporal encoding（可靠度调制的 Mamba 时序编码）;
+- reliability-weighted readout（可靠度加权的历史读出）;
 - goal-conditioned future decoding;
 - final-consistent loss and mode-diversity regularization.
 

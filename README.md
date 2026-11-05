@@ -19,15 +19,14 @@ GAST 由缺失证据感知编码器与 goal 条件化解码器组成：
 ```text
 GAST
 ├── GAST gap-aware encoder
-│   ├── 单向 Mamba 时序编码
-│   ├── GERE  逐帧几何证据关系编码
-│   └── ECTA  观测证据条件化因果时间聚合
-│       ├── RMCM  可靠度调制的因果 Mamba
-│       └── EWSA  证据加权状态聚合
-└── Goal-conditioned future decoder
+│   ├── GERE  逐帧几何证据关系编码（Geometric Evidence Relational Encoding）
+│   └── ECTA  观测证据条件化因果时间聚合（Evidence-Conditioned Causal Temporal Aggregation）
+│       ├── 可靠度调制的 Mamba 时序编码器（reliability-modulated Mamba temporal encoder）
+│       └── 可靠度加权的历史读出（reliability-weighted readout）
+└── Goal-conditioned future decoder（锚点条件化目标解码器，anchor-conditioned goal decoder）
     ├── 锚点状态（Anchor State）+ 显式未来时间间隔
     ├── 终点偏移预测（相对最后有效观测位置）
-    └── final-consistent loss + mode diversity regularization
+    └── 双指派多模态训练目标（dual-assignment multimodal objective，`loss_mode=final_consistent`）+ mode diversity regularization
 ```
 
 goal 条件解码与轨迹级模式排序是 GAST 的内置设计，不单独注册为第二个模型；`gast_goal=false` / `M0` 路径仅用于消融与历史基线对照。
@@ -101,7 +100,7 @@ python eval.py checkpoint='/path/to/ckpt' test=true
 ```text
 conf/                 Hydra 配置（TrajImpute 主线与对照；模型见 conf/model/）
 src/model/            TrajectoryForecaster、loss 与 LightningModule
-src/model/layers/     gast_encoder.py（GERE/ECTA/RMCM/EWSA）、gast_goal_decoder.py、
+src/model/layers/     gast_encoder.py（GERE/ECTA 及内部调制与读出）、gast_goal_decoder.py、
                       mamba
 src/datamodule/       ETH/UCY、SDD 与 TrajImpute（TrajGapDataset）数据管线
 src/metrics/          minADE/minFDE/MR/brierFDE
