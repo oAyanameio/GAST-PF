@@ -8,28 +8,25 @@ GAST-PF 是面向**缺失历史直接未来预测**的研究代码库，包含�
 | 数据集与基准 | `TrajGap-Bench`：基于 TrajImpute 官方 Easy/Hard，按 Mixed split 组织并直接预测 |
 | 任务 | 8 帧历史（显式缺失掩码）→ 12 帧未来，`K=20` |
 | 指标 | `minADE20` / `minFDE20` |
-| 基线 | `M0`（同协议历史对照） |
 
 方法完整定义、协议细节与结果见 [TrajGap-Bench.md](TrajGap-Bench.md)。
 
 ## 方法概览
 
-GAST 由缺失证据感知编码器与 goal 条件化解码器组成：
+GAST 由观测证据感知时空编码器和终点引导解码器组成。编码器根据有效性掩码和缺失时长估计观测可靠度，并将其用于逐帧交互建模与历史信息汇总：
 
 ```text
 GAST
-├── GAST gap-aware encoder
-│   ├── GERE  逐帧几何证据关系编码（Geometric Evidence Relational Encoding）
-│   └── ECTA  观测证据条件化因果时间聚合（Evidence-Conditioned Causal Temporal Aggregation）
-│       ├── 可靠度调制的 Mamba 时序编码器（reliability-modulated Mamba temporal encoder）
-│       └── 可靠度加权的历史读出（reliability-weighted readout）
-└── Goal-conditioned future decoder（锚点条件化目标解码器，anchor-conditioned goal decoder）
-    ├── 锚点状态（Anchor State）+ 显式未来时间间隔
-    ├── 终点偏移预测（相对最后有效观测位置）
+├── 观测证据感知时空编码器
+│   ├── 逐帧几何交互建模
+│   └── 可靠度加权的时序聚合（可靠度调制的 Mamba 与历史状态汇总）
+└── 终点引导解码器
+    ├── 使用末次有效观测状态和实际预测间隔
+    ├── 多模态终点预测与未来轨迹生成
     └── 双指派多模态训练目标（dual-assignment multimodal objective，`loss_mode=final_consistent`）+ mode diversity regularization
 ```
 
-goal 条件解码与轨迹级模式排序是 GAST 的内置设计，不单独注册为第二个模型；`gast_goal=false` / `M0` 路径仅用于消融与历史基线对照。
+终点引导解码与轨迹级模式排序是 GAST 的内置设计。当前仓库的自有训练与评估入口只实现 GAST。
 
 ## 环境安装
 
@@ -39,24 +36,14 @@ conda activate gast-pf
 pip install torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu121
 pip install -r requirements.txt
 
-# Mamba（VideoMamba fork，支持 bimamba=True）
+# Mamba（VideoMamba fork）
 git clone git@github.com:OpenGVLab/VideoMamba.git
 cd VideoMamba
 pip install -e causal-conv1d
 pip install -e mamba
 ```
 
-注意：RTX 5880 Ada / CUDA 12.8 下 Triton RMSNorm 内核不兼容，`vim_mamba.py` 已改用 PyTorch 原生回退，详见 `docs/audits/`。
-
 ## 数据准备
-
-### ETH/UCY（完整数据）
-
-预处理产物位于 `data/ETHUCY_processed/`（5 场景 .pt，经典留一 LOO 划分），由 `conf/datamodule/ethucy.yaml` 直接读取。
-
-### SDD（Stanford Drone Dataset）
-
-仓库内不包含 SDD 预处理脚本，需自行准备标准 pkl/划分格式源数据至 `data/sdd/`。
 
 ### TrajImpute（缺失历史）
 
@@ -75,7 +62,7 @@ PYTHONPATH=. python train.py --config-name=config_missing_aware_trajimpute \
     scene=ETH-M difficulty=Mixed train_difficulties=[Mixed] val_difficulties=[Mixed] \
     hydra.run.dir=outputs/trajgap_smoke/GAST_ETH-M
 
-# 五场景 TrajGap-Bench 统一训练入口（仅注册 GAST / M0）
+# 五场景 TrajGap-Bench 统一训练入口（仅注册 GAST）
 PYTHONNOUSERSITE=1 PYTHONPATH=. python scripts/训练与评估/run_trajimpute_experiments.py \
     --protocol trajgap-bench --variant GAST \
     --scenes ETH-M HOTEL-M UNIV-M ZARA1-M ZARA2-M \
@@ -100,13 +87,14 @@ python eval.py checkpoint='/path/to/ckpt' test=true
 ```text
 conf/                 Hydra 配置（TrajImpute 主线与对照；模型见 conf/model/）
 src/model/            TrajectoryForecaster、loss 与 LightningModule
-src/model/layers/     gast_encoder.py（GERE/ECTA 及内部调制与读出）、gast_goal_decoder.py、
+src/model/layers/     gast_encoder.py（逐帧几何交互建模、可靠度加权的时序聚合）、
+                      gast_goal_decoder.py（终点引导解码器）、
                       mamba
-src/datamodule/       ETH/UCY、SDD 与 TrajImpute（TrajGapDataset）数据管线
+src/datamodule/       TrajImpute（TrajGapDataset）数据管线
 src/metrics/          minADE/minFDE/MR/brierFDE
 scripts/              训练与评估 / 结果分析 / 数据集构建 / 审计与校验
-tests/                数据集、编码器、goal 解码器、loss 与优化器契约单元测试
-docs/                 研究方案、实验总汇总、数据审计、文献与框架图
+tests/                数据集、编码器、终点引导解码器、loss 与优化器契约单元测试
+docs/                 研究方案、实验总汇总、数据审计与文献
 paper/                论文 LaTeX 源（本地草稿，未纳入版本控制）
 outputs/              训练与评估产物（逐折 results.json）
 ```
@@ -118,7 +106,6 @@ outputs/              训练与评估产物（逐折 results.json）
 - 唯一权威实验总汇总：`docs/results/实验总汇总.md`
 - TrajGap-Bench 榜单：`docs/results/trajgap_bench_leaderboard.md`
 - 数据审计：`docs/audits/trajimpute_release_审计.md`
-- 框架图：`docs/figures/`（当前 `GAST-Goal-framework.drawio` / `.png`，历史版本同目录）
 
 ## 当前结果
 
@@ -141,9 +128,9 @@ TrajGap-Bench（seed=2024；GAST 按最终预测头 `val_new_minFDE20` 选点；
 ```text
 GAST = Gap-Aware Spatio-Temporal Pedestrian Forecaster
 中文：缺失间隔感知时空行人轨迹预测模型
-GAST 为完整方法唯一名称；goal 条件解码与轨迹级模式排序属于其内置设计
+GAST 为完整方法唯一名称；终点引导解码与轨迹级模式排序属于其内置设计
 TrajGap-Bench 是基准名称，不是方法名称
-GAST-PF 为代码仓库名与历史产物前缀，仅作兼容保留
+`GAST-PF` 是代码仓库名；本文方法统一称为 GAST。
 ```
 
 致谢：[VideoMamba](https://github.com/OpenGVLab/VideoMamba)、[Forecast-MAE](https://github.com/jchengai/forecast-mae)、[StreamPETR](https://github.com/exiawsh/StreamPETR)
