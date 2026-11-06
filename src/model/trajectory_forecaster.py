@@ -6,6 +6,8 @@ from .layers.gast_encoder import GASTEncoder
 
 # Actor-centric trajectory forecaster.
 class TrajectoryForecaster(nn.Module):
+    """组装 GAST：GASTEncoder 编码历史，GapAwareGoalDecoder 执行终点引导解码。"""
+
     def __init__(
         self,
         embed_dim=128,

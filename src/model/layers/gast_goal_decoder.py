@@ -6,7 +6,7 @@ from .transformer_blocks import Cross_Block
 
 
 class GapAwareGoalDecoder(nn.Module):
-    """Generate future trajectories by decoding from predicted endpoints."""
+    """实现 GAST 的“终点引导解码器”；GapAwareGoalDecoder 是代码实现类名。"""
 
     def __init__(
         self,

@@ -1,4 +1,12 @@
-"""GAST encoder for frame-wise geometric interactions and reliability-weighted temporal aggregation."""
+"""GAST 历史编码器的实现。
+
+公开名称与实现类对应关系：
+- 观测证据感知时空编码器：GASTEncoder
+- 逐帧几何交互建模：GeometryEvidenceRelationalGSM
+- 可靠度加权的时序聚合：EvidenceConditionedCausalTemporalAggregation
+
+以上类名是代码实现标识，公开说明使用左侧名称。
+"""
 
 import torch
 import torch.nn as nn
@@ -102,7 +110,7 @@ def evidence_weighted_state_aggregation(
 
 
 class GeometryEvidenceRelationalGSM(nn.Module):
-    """Model geometric interactions among actors at each history frame."""
+    """实现“逐帧几何交互建模”阶段。"""
 
     def __init__(
         self,
@@ -244,7 +252,7 @@ class GeometryEvidenceRelationalGSM(nn.Module):
 
 
 class ReliabilityModulatedCausalMamba(nn.Module):
-    """Encode history with reliability-modulated Mamba blocks."""
+    """可靠度加权时序聚合内部的 Mamba 输入调制环节。"""
 
     def __init__(self, model_dim: int, depth: int = 4, p_dropout: float = 0.2,
                  drop_path: float = 0.2):
@@ -294,7 +302,7 @@ class ReliabilityModulatedCausalMamba(nn.Module):
 
 
 class EvidenceWeightedStateAggregation(nn.Module):
-    """Aggregate temporal states using content scores and observation reliability."""
+    """可靠度加权时序聚合内部的历史状态读出环节。"""
 
     def __init__(self, embed_dim: int):
         super().__init__()
@@ -313,7 +321,7 @@ class EvidenceWeightedStateAggregation(nn.Module):
 
 
 class EvidenceConditionedCausalTemporalAggregation(nn.Module):
-    """Combine Mamba encoding with reliability-weighted history aggregation."""
+    """实现“可靠度加权的时序聚合”，组合 Mamba 输入调制与历史状态读出。"""
 
     def __init__(
         self,
@@ -344,7 +352,7 @@ class EvidenceConditionedCausalTemporalAggregation(nn.Module):
 
 
 class GASTEncoder(nn.Module):
-    """Encode incomplete histories with frame-wise interactions and reliability-weighted temporal aggregation."""
+    """实现“观测证据感知时空编码器”，包含逐帧交互建模和可靠度加权的时序聚合。"""
 
     def __init__(
         self,

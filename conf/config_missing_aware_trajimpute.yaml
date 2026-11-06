@@ -62,8 +62,6 @@ test: false
 # 模型版本标签（仅用于 output 命名）。
 model_version: 'GAST'
 
-# TrajImpute 原始评估脚本使用 best-of-20；该覆盖只作用于 direct 配置，
-# 历史 ETH/UCY train_adapt 配置保持 K=6。
 model:
   target:
     model:
