@@ -39,11 +39,11 @@ LINE_STYLE = {
 }
 DISPLAY = {
     "GAST": "GAST (ours)",
-    "GAST ablation (standard decoder)": "GAST w/o goal decoder",
+    "GAST ablation (standard decoder)": "GAST w/o endpoint-guided decoding",
     "Social-STGCNN": "Social-STGCNN",
 }
-# 内部对照（M0 / 消融臂）不进图：图中只比较 GAST 与外部基线
-INTERNAL_EXCLUDE = {"M0", "GAST ablation (standard decoder)"}
+# 图中只比较 GAST 与外部基线。
+EXCLUDED_METHODS = {"GAST ablation (standard decoder)"}
 MISSING_METHODS = ["GAST", "MoFlow", "SocialLSTM"]
 
 plt.rcParams.update({
@@ -63,7 +63,7 @@ def fig_benchmark(data, outdir):
                                r"$\mathrm{minADE}_{20}$ (m)")):
         rows = []
         for m, d in data.items():
-            if m in INTERNAL_EXCLUDE:
+            if m in EXCLUDED_METHODS:
                 continue
             if len(d["per"]) == 5:
                 avg = float(np.mean([d["per"][s][key] for s in SCENES]))

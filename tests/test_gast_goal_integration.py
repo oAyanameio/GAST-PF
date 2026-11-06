@@ -18,13 +18,9 @@ def test_gast_forward_uses_goal_decoder_as_base_design():
         embed_dim=128,
         future_steps=12,
         num_heads=8,
-        num_actor_types=1,
         num_modes=6,
         dt=0.4,
         obs_len=8,
-        encoder_type="gast",
-        gast_gere_spatial=True,
-        gast_ecta=True,
     ).cuda().eval()
     data = {
         "x_positions_diff": torch.randn(2, 3, 8, 2, device="cuda"),

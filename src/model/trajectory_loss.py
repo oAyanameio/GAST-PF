@@ -9,14 +9,8 @@ def final_consistent_loss(
     endpoint_loss_weight: float = 1.0,
     mode_diversity_loss_weight: float = 0.05,
     mode_diversity_margin: float = 0.5,
-    classification_target_mode: str = "joint",
     tag: str = "",
 ):
-    if classification_target_mode not in {"joint", "trajectory"}:
-        raise ValueError(
-            "classification_target_mode must be 'joint' or 'trajectory', "
-            f"got {classification_target_mode!r}"
-        )
     prediction = (
         out["new_y_hat"] if out.get("new_y_hat") is not None else out["y_hat"]
     )
@@ -52,12 +46,7 @@ def final_consistent_loss(
         + endpoint_loss_weight * endpoint_error_by_mode
     )
     best_mode = joint_mode_error.argmin(dim=-1)
-    classification_mode_error = (
-        joint_mode_error
-        if classification_target_mode == "joint"
-        else trajectory_error_by_mode
-    )
-    classification_mode = classification_mode_error.argmin(dim=-1)
+    classification_mode = trajectory_error_by_mode.argmin(dim=-1)
 
     best_prediction = prediction[batch_indices, best_mode, :, :2]
     trajectory_error = F.smooth_l1_loss(

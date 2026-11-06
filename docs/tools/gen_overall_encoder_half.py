@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""在原图（UniTraj 编码器 + DeMo 解码器拼接图）上做像素级修正，使其表达 GAST-PF。
-v2：修正缺字符（×/→/· 用 STIX 绘制）、放大输入框字号、损失名避让、补 readout 并接通解码器主干。
-"""
+"""Render the encoder half of the current model framework diagram."""
 import os
 import math
 import numpy as np
@@ -278,7 +276,7 @@ log.append("E11 面板内容左移 %d px、面板收窄、画布裁到 3384" % S
 
 # ---------- E12 补 GSM Spatial Attention：历史分支原来在此断头 ----------
 # 原图把 GSM Module 直接连到 Spatial 网格，agent tokens 没有任何输出箭头；
-# 按 gast_encoder.py 的 GSMAttnBlock 补一级：agent tokens + ghost token -> 注意力 -> spatial
+# 按 gast_encoder.py 的 GeometryEvidenceRelationalGSM 补一级：agent tokens + ghost token -> 注意力 -> spatial
 # 实测原肘形连线：水平段 y 199..205、竖段 x 984..990、进网格段 y 415..421，线宽 7
 clear((966, 196, 996, 350), WHITE)      # 原肘形竖段与拐角
 clear((980, 200, 996, 412), WHITE)      # 原肘形竖段下半
@@ -292,7 +290,7 @@ arrow((970, 202), (970, 346), lw=7, size=18)
 arrow((1062, 418), (1117, 418), lw=7, size=18)                  # 注意力 -> spatial 网格
 log.append("E12 补 GSM Spatial Attention 一级（修历史分支断头 + ghost token 注入）")
 
-# ---------- E13 合并两个 GSM：代码里只有一个 GSMAttnBlock ----------
+# ---------- E13 合并两个 GSM：代码里只有一个 GeometryEvidenceRelationalGSM ----------
 # 去掉橙色 "GSM Module" 框（它只是 mask->ghost token 那一步），
 # mask 直接进注意力块，箭头旁标 "ghost token"，保留机制信息但不重复模块名。
 clear((604, 145, 902, 258), WHITE)                 # 清掉橙色 GSM Module 框
@@ -405,7 +403,7 @@ arrow((2740, 197), (2740, 243), lw=4, size=13)
 arrow((2846, 197), (2846, 243), lw=4, size=13)
 # (2) 去掉 (c) 右侧那条起点在两级之间、且叠了三个箭头头的线
 clear((2893, 346, 3142, 370), WHITE)
-# (3) (c) 的输出改为从最后一级 State BiMamba 底部引出 -> 预测扇面
+# (3) (c) 的输出改为从最后一级 State Consistency 模块底部引出 -> 预测扇面
 poly_arrow([(2788, 498), (2788, 520), (3122, 520), (3122, 442)], lw=4, size=15)
 # (4) 补完 (b)->张量 的竖线；(a)->张量 补箭头头
 arrow((2503, 496), (2503, 442), lw=4, size=15)
@@ -430,18 +428,17 @@ clear((686, 208, 815, 236), WHITE)
 log.append("E25 去掉 ghost token 小字")
 
 # ---------- E26 按当前 GAST 主线更新编码器尾段 ----------
-# 当前配置 GERE/ECTA 全开：
-# 1) GERE：GSM 变为 geometry-aware attention；
-# 2) RMCM：可靠度调制单向 Mamba 输入；
-# 3) EWSA：Mamba 后接 evidence-weighted state aggregation。
-#
-# GERE 标签：保留同一个 GSM 模块，不增设伪造的独立子模块。
+# 当前完整 GAST 编码器：
+# 1) 逐帧几何交互建模：在 GSM attention 中使用相对几何特征；
+# 2) 可靠度调制：按观测可靠度调节 Mamba 输入；
+# 3) 时序聚合：Mamba 后按内容分数和可靠度汇总历史。
+# 图中使用功能描述，不把中间计算步骤包装成独立模块名。
 clear((886, 354, 1054, 482), (191, 191, 191))
-tc("Geometry-aware", 970, 382, fit("Geometry-aware", CMB, 154), INK)
-tc("GSM Spatial", 970, 416, fit("GSM Spatial", CMB, 154), INK)
-tc("Attention", 970, 450, fit("Attention", CMB, 154), INK)
+tc("Frame-wise", 970, 382, fit("Frame-wise", CMB, 154), INK)
+tc("Geometric", 970, 416, fit("Geometric", CMB, 154), INK)
+tc("Interactions", 970, 450, fit("Interactions", CMB, 154), INK)
 
-# RMCM：删除旧 Temporal Decay/gamma 支路，改画 age -> reliability -> ⊙。
+# 观测可靠度调制：按当前实现画 age -> reliability -> ⊙。
 clear((1278, 84, 1540, 222), WHITE)
 clear((1272, 216, 1548, 340), WHITE)
 clear((1332, 412, 1622, 480), WHITE)
@@ -453,7 +450,7 @@ d.rounded_rectangle((1312, 107, 1502, 153), radius=7, outline=(46, 154, 168), wi
 for x0, x1 in [(1319, 1353), (1357, 1391), (1395, 1429), (1433, 1467), (1471, 1495)]:
     d.rectangle((x0, 114, x1, 146), fill=(242, 247, 252), outline=INK, width=2)
 tc("age", 1407, 130, fit("age", CMR, 45, start=18), INK)
-# RMCM reliability: reliability = exp(-tau * age), tau learnable; arrow feeds ⊙.
+# Reliability is exp(-tau * age), with learnable tau; the arrow feeds ⊙.
 d.rounded_rectangle((1295, 234, 1524, 323), radius=12, fill=(46, 154, 168),
                     outline=INK, width=3)
 tc("Reliability", 1409, 258, fit("Reliability", CMB, 200), WHITE)
@@ -465,27 +462,28 @@ for x0, x1 in [(1358, 1380), (1385, 1408), (1413, 1436), (1441, 1464), (1469, 15
     d.rectangle((x0, 440, x1, 457), fill=(76, 170, 179), outline=INK, width=1)
 arrow((1332, 448), (1350, 448), lw=4, size=11)
 
-# 单向 causal Mamba ×4。清掉原双向字样和叠卡残段，重画单个清晰模块。
+# Mamba ×4。重画单个清晰模块。
 clear((1608, 100, 1861, 620), WHITE)
 d.rounded_rectangle((1626, 140, 1738, 612), radius=12, fill=(242, 242, 242), outline=INK, width=3)
-vtext("Causal Temporal Mamba Block", 1682, 376, CMB, 21)
+vtext("Mamba Block", 1682, 376, CMB, 21)
 ink_left("×", 1744, 143, F(STIX, 25), MUTED)
 ink_left("4", 1768, 143, F(CMR, 27), MUTED)
 arrow((1507, 448), (1624, 448), lw=7, size=18)
 
-# EWSA：Mamba 后进行证据加权状态聚合，再接解码器分叉主干。
+# Mamba 后按内容分数和观测可靠度汇总历史，再接解码器分叉主干。
 d.rounded_rectangle((1760, 294, 1858, 470), radius=10, fill=(242, 242, 242), outline=INK, width=3)
-tc("Evidence", 1809, 338, F(CMB, 15), INK)
+tc("Reliability", 1809, 328, F(CMB, 14), INK)
 tc("weighted", 1809, 382, F(CMB, 15), INK)
-tc("readout", 1809, 426, F(CMB, 15), INK)
+tc("history", 1809, 408, F(CMB, 15), INK)
+tc("aggregation", 1809, 442, F(CMB, 13), INK)
 # 输入/输出连接贴到框的中线，框内文字不被连线穿过
 arrow((1740, 382), (1758, 382), lw=4, size=8)
 d.line([(1858, 382), (1862, 382)], fill=INK, width=4)
-log.append("E26 GAST 主线：GERE geometry-aware GSM；RMCM reliability exp(-tau*age) 调制；causal Mamba ×4；EWSA aggregation")
+log.append("GAST encoder: frame-wise geometric interactions; reliability modulation; Mamba; reliability-weighted history aggregation")
 
 # ---------- E27 顶部观测证据状态支路 ----------
 # 参考图风格：把 e(i,t)=(s,a,r) 统一画在主干最上方，
-# s/a/r 分别以橙色虚线注入 GERE、Reliability modulation、Evidence-weighted state aggregation。
+# s/a/r 分别以橙色虚线注入逐帧交互、可靠度调制和历史状态汇总。
 # 先清掉旧的顶部 age 小条及其旧水平连接，避免两套证据支路重复。
 clear((965, 194, 1415, 210), WHITE)
 clear((1278, 84, 1540, 222), WHITE)
@@ -493,8 +491,8 @@ clear((1278, 84, 1540, 222), WHITE)
 clear((480, 6, 1940, 98), WHITE)
 d.rounded_rectangle((500, 8, 1935, 94), radius=12,
                     fill=(255, 245, 235), outline=ORANGE, width=3)
-tc("Observation evidence state", 675, 29,
-   fit("Observation evidence state", CMB, 300, start=24), ORANGE)
+tc("Observation status and reliability", 675, 29,
+   fit("Observation status and reliability", CMB, 300, start=24), ORANGE)
 tc("e(i,t) = (s, a, r)", 675, 68, F(STIX, 20), INK)
 
 # 三个状态分量：只保留定义，不再添加模块下方解释小字。
@@ -521,10 +519,10 @@ def evidence_arrow(p0, p1, dash=10, gap=7, lw=3, size=10):
         pos += dash + gap
     head(p1, math.atan2(dy, dx), size, ORANGE)
 
-evidence_arrow((975, 96), (970, 348))    # s -> geometry-aware GSM
+evidence_arrow((975, 96), (970, 348))    # s -> frame-wise interactions
 evidence_arrow((1409, 96), (1409, 228))  # a -> reliability modulation
-evidence_arrow((1809, 96), (1809, 286))  # r -> evidence-weighted readout
-log.append("E27 顶部观测证据状态：e(i,t)=(s,a,r)，三条虚线注入 GERE/RMCM/EWSA")
+evidence_arrow((1809, 96), (1809, 286))  # r -> reliability-weighted aggregation
+log.append("Observation status and reliability feed frame-wise interactions, input modulation, and history aggregation")
 
 im.save(OUT)
 print("saved", OUT, im.size)

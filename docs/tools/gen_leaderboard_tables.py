@@ -10,23 +10,14 @@
 import argparse
 import json
 import os
+from pathlib import Path
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCENES = ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
 
-# 每个方法的产物路径（相对 REPO，或绝对路径）
-# GAST 五场景正式记录：采用同一完整实验轮次，五场景 manifest 使用同一代码 revision
-# （2026-10-30 核定；正式轮次为 trajgap_gast_goal_3gpu_retry）。
-GAST = [
-    "outputs/trajgap_gast_goal_3gpu_retry/gpu0/GAST-Goal_ETH-M_mixed-direct_seed2024_uni/eval/Mixed/ETH-M_Mixed_test_GAST-Goal_seed2024_ckpt/results.json",
-    "outputs/trajgap_gast_goal_3gpu_retry/gpu0/GAST-Goal_HOTEL-M_mixed-direct_seed2024_uni/eval/Mixed/HOTEL-M_Mixed_test_GAST-Goal_seed2024_ckpt/results.json",
-    "outputs/trajgap_gast_goal_3gpu_retry/gpu1/GAST-Goal_UNIV-M_mixed-direct_seed2024_uni/eval/Mixed/UNIV-M_Mixed_test_GAST-Goal_seed2024_ckpt/results.json",
-    "outputs/trajgap_gast_goal_3gpu_retry/gpu2/GAST-Goal_ZARA1-M_mixed-direct_seed2024_uni/eval/Mixed/ZARA1-M_Mixed_test_GAST-Goal_seed2024_ckpt/results.json",
-    "outputs/trajgap_gast_goal_3gpu_retry/gpu1_zara2/GAST-Goal_ZARA2-M_mixed-direct_seed2024_uni/eval/Mixed/ZARA2-M_Mixed_test_GAST-Goal_seed2024_ckpt/results.json",
-]
-
+# External baseline paths; GAST results are selected from run metadata.
 METHODS = {
-    "GAST": GAST,
+    "GAST": None,
     "MoFlow": [f"/home/lbh/MoFlow/results_trajimpute_mixed/{s.split('-')[0].lower()}/mixed/results.json"
                for s in SCENES],
     "SocialLSTM": [
@@ -46,50 +37,6 @@ METHODS = {
         f"/home/lbh/Social-STGCNN/results_trajgap/STGCNN_{s}_mixed-direct_seed2024_uni/eval/Mixed/{s}_Mixed_test_STGCNN_seed2024_ckpt/results.json"
         for s in SCENES],
 }
-
-# 表 0：方法出处与机制引入
-# 术语统一：完整方法统一称为 GAST；goal 条件解码和轨迹级模式排序是 GAST 内部设计。
-# 引入机制须随引用标注来源（用户纪律：引入到新任务的机制与适配属于本文设计内容）。
-PROVENANCE = [
-    ("GAST",
-     "本工作；编码机制引入自 Sports-Traj / UniTraj (Xu and Fu, ICLR 2025, arXiv:2405.17680)，goal 条件化机制为本文设计",
-     "**本文方法（当前滚动基线）**（完整 GAST）",
-     "GAST 编码器（GERE + ECTA：RMCM/EWSA）+ decoder 侧 goal 端点条件化"
-     "（`loss_mode=final_consistent`、goal endpoint loss + mode diversity loss）；"
-     "GSM/Temporal Decay/Mamba 引自 UniTraj，不主张原创；goal 条件化与证据路由的适配为本文工作"),
-    ("MoFlow",
-     "Fu, Yan, Wang, Li, Liao. CVPR 2025. arXiv:2503.09950",
-     "外部基线（官方实现）",
-     "完整外部方法，作为上界参照；未做任何改动"),
-    ("SocialLSTM",
-     "Alahi, Goel, Ramanathan, Robicquet, Li, Savarese. CVPR 2016",
-     "外部基线（经典 social pooling）",
-     "零填充 + 缺失帧跳过 LSTM 状态更新 + 高斯混合头（K=20）；social pooling 向量化；"
-     "已移除原仓库会泄漏 GT 的未来粘贴补丁"),
-    ("AgentFormer",
-     "Yuan, Weng, Ou, Kitani. ICCV 2021. arXiv:2103.14023",
-     "外部基线（官方实现，5/5 完成）",
-     "缺失历史以 mask-aware 场景原点填充（在 `*_scene_norm` 参照系下为 0）"
-     "+ 逐帧有效性显式输入通道；解码锚点取最后有效观测。无模态概率，故 ADE@1/FDE@1 不适用"),
-    ("Re",
-     "Mao et al. ICCV 2025. arXiv:2412.02447（Resonance: Learning to Predict Social-Aware "
-     "Pedestrian Trajectories as Co-Vibrations）",
-     "外部基线（官方实现，5/5 完成）",
-     "完整外部方法；缺失历史按上游口径零填充（anchor 保持），K=20 随机采样；"
-     "无概率排序头，ADE@1/FDE@1 不可引用（首候选非最优模式）"),
-    ("MS-TIP",
-     "Wang et al. ICML 2024（MS-TIP: Imputation Aware Pedestrian Trajectory Prediction）",
-     "外部基线（官方实现，5/5 完成）",
-     "SAITS 插补感知联合训练（插补分支与预测分支端到端）；采样式输出，无模态概率，"
-     "ADE@1/FDE@1 不适用；训练含 NaN 守卫（上游 GMM 数值不稳定，跳过脏 batch 回滚权重）"),
-    ("Social-STGCNN",
-     "Mohamed et al. CVPR 2020（Social-STGCNN: A Social Spatio-Temporal Graph "
-     "Convolutional Neural Network for Human Trajectory Prediction）",
-     "外部基线（官方实现，5/5 完成）",
-     "官方 pkl→逐帧图序列：有效帧以 obs_traj_rel 非 NaN 判定（差分口径）；缺失帧为图上"
-     "幽灵节点（坐标置 0、邻接行列置 0，不收发消息），社交距离用最后有效位置；"
-     "训练目标从 anchor（最后有效位置）差分；高斯头 K=20 采样，无概率排序，@1 不适用"),
-]
 
 TOP1_METHODS = {"GAST", "MoFlow", "SocialLSTM"}
 
@@ -133,9 +80,81 @@ def load(path):
     return out, full
 
 
+def discover_gast_results():
+    """Select the unique confirmatory five-scene GAST result set."""
+    output_root = Path(REPO) / "outputs"
+    groups = {}
+    for result_path in output_root.rglob("results.json"):
+        try:
+            payload = json.loads(result_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+
+        meta = payload.get("meta", {})
+        scene = meta.get("scene")
+        if not (
+            scene in SCENES
+            and meta.get("split") == "test"
+            and meta.get("difficulty") == "Mixed"
+            and meta.get("protocol") == "mixed-direct"
+            and meta.get("K") == 20
+            and meta.get("seed") == 2024
+            and not meta.get("untrained_smoke", False)
+        ):
+            continue
+
+        manifest_path = next(
+            (
+                parent / "manifest.json"
+                for parent in result_path.parents
+                if (parent / "manifest.json").is_file()
+            ),
+            None,
+        )
+        if manifest_path is None:
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+
+        model_config = manifest.get("model_config", {})
+        is_gast = (
+            manifest.get("model_version") == "GAST"
+            or model_config.get("encoder_type") == "gast"
+        )
+        revision = meta.get("git_revision")
+        if (
+            manifest.get("experiment_class") != "confirmatory"
+            or not is_gast
+            or not revision
+            or manifest.get("git_revision") != revision
+        ):
+            continue
+        groups.setdefault(revision, {}).setdefault(scene, []).append(
+            str(result_path.relative_to(REPO))
+        )
+
+    complete = {
+        revision: per_scene
+        for revision, per_scene in groups.items()
+        if all(len(per_scene.get(scene, [])) == 1 for scene in SCENES)
+    }
+    if len(complete) != 1:
+        raise RuntimeError(
+            "expected one confirmatory GAST result set with one test result "
+            f"per scene and a shared revision; found {len(complete)}"
+        )
+
+    per_scene = next(iter(complete.values()))
+    return [per_scene[scene][0] for scene in SCENES]
+
+
 def collect():
     data = {}
     for method, paths in METHODS.items():
+        if method == "GAST":
+            paths = discover_gast_results()
         per, missing = {}, []
         for p in paths:
             rec, full = load(p)
@@ -198,14 +217,6 @@ def best_in_col(data, key, scene, methods, pct=False):
 def emit_md(data):
     L = []
     methods = ["GAST", "MoFlow", "SocialLSTM", "AgentFormer", "Re", "MS-TIP", "Social-STGCNN"]
-
-    # ---- 表 0 出处
-    L.append("## 表 0 · 方法出处与机制引入\n")
-    L.append("| Method | 论文 / 来源 | 定位 | 引入机制与本文改动 |")
-    L.append("|---|---|---|---|")
-    for name, src, role, bound in PROVENANCE:
-        L.append(f"| **{name}** | {src} | {role} | {bound} |")
-    L.append("")
 
     # ---- 表 1-3：逐场景
     specs = [
@@ -362,7 +373,7 @@ MD_HEADER = """# TrajGap-Bench 对比实验表
 > 数据集与基准：TrajGap-Bench；TrajImpute 官方 Easy+Hard 同一 split 合并为 Mixed，任务为无插补直接预测。seed 2024，K=20，100 epochs。GAST 按最终预测头 `val_new_minFDE20` 选点；外部方法沿用各自的训练与选点流程。
 > 测试样本数（所有方法完全一致）：ETH-M 1,629 / HOTEL-M 9,477 / UNIV-M 219,006 / ZARA1-M 20,277 / ZARA2-M 52,497，合计 302,886。
 > `Avg` = 五场景宏平均；`micro` = 按样本数加权。所有指标**越低越好**。加粗 = 该列最优。
-> **术语统一**：全文「本文方法」均指 **GAST**；历史实验产物标签 `UT-ENC`、`GAST-PF` 和 `GAST-Goal` 仅用于路径溯源，不作为当前正式方法名称。
+> 本文方法统一称为 **GAST**；终点引导解码与轨迹级模式排序属于完整方法设计。
 
 > 本文件由 `docs/tools/gen_leaderboard_tables.py` 从各方法 `results.json` 现算生成，不手工转抄。
 > 重新生成：`python docs/tools/gen_leaderboard_tables.py --write`
@@ -384,7 +395,7 @@ MD_NOTES = """
 
 | 方法 | 产物路径 |
 |---|---|
-| GAST | `outputs/trajgap_gast_goal_3gpu_retry/`（五场景同 revision 完整轮次） |
+| GAST | 五场景完整结果（manifest revision 一致） |
 | MoFlow | `/home/lbh/MoFlow/results_trajimpute_mixed/` |
 | SocialLSTM | `/home/lbh/SocialLSTM/trajgap_bench/artifacts/sociallstm_bench/` |
 | AgentFormer | `/home/lbh/AgentFormer/results/trajgap_agentformer/`（5/5） |
@@ -416,55 +427,6 @@ TEX_HEADER = """% ==============================================================
 
 """
 
-TEX_PROVENANCE = """% ---------------------------------------------------------------------
-% Table 0: method provenance and adopted mechanisms
-% ---------------------------------------------------------------------
-\\begin{table*}[t]
-  \\centering
-  \\caption{Method provenance on \\textbf{TrajGap-Bench}. We distinguish
-  methods that adapt mechanisms from prior work to the missing-history
-  direct-prediction task from external baselines run unchanged, and
-  record what was adapted for the protocol.}
-  \\label{tab:tgbench-provenance}
-  \\small
-  \\setlength{\\tabcolsep}{5pt}
-  \\begin{tabular}{p{2.0cm} p{4.4cm} p{3.0cm} p{5.4cm}}
-    \\toprule
-    Method & Source & Role & Adapted mechanisms and modifications \\\\
-    \\midrule
-    GAST & \\textbf{our method}; encoder mechanisms adapted from
-      Sports-Traj / UniTraj \\cite{xu2025sportstraj}
-      & \\textbf{our method} (\\texttt{encoder\\_type=gast}, default)
-      & GSM per-frame spatial attention with ghost token, Temporal Decay and
-        bidirectional Mamba are introduced to the missing-history task and
-        adapted into the GAST encoder; goal decoder, loss, metrics and the
-        TrajGap protocol are this work's and held fixed \\\\
-    MoFlow & \\cite{fu2025moflow} & external baseline (official code)
-      & run unchanged; upper-bound reference \\\\
-    SocialLSTM & \\cite{alahi2016sociallstm}
-      & external baseline (classical social pooling)
-      & zero-filled input, LSTM state update skipped on missing frames,
-        Gaussian-mixture head (K=20); social pooling vectorised; the upstream
-        future-pasting patch that leaks ground truth was removed \\\\
-    AgentFormer & \\cite{yuan2021agentformer}
-      & external baseline (5/5 scenes completed)
-      & missing history filled with the mask-aware scene origin (exactly 0 in
-        the \\texttt{*_scene_norm} frame) plus an explicit per-frame validity
-        input channel; the decoder anchor is taken at the last valid
-        observation. Samples $z$, so ADE@1/FDE@1 are undefined \\\\
-    Re & external baseline (5/5 scenes completed) & random-sampling output; ADE@1/FDE@1 not applicable \\\\
-    MS-TIP & external imputation-aware baseline (5/5 scenes completed) & joint imputation and forecasting; ADE@1/FDE@1 not applicable \\\\
-    Social-STGCNN & external baseline (5/5 scenes completed) & Gaussian sampling output; ADE@1/FDE@1 not applicable \\\\
-    \\bottomrule
-  \\end{tabular}
-  \\begin{flushleft}
-    \\footnotesize
-    GAST includes the goal-conditioned decoder and trajectory-aware mode ranking.
-  \\end{flushleft}
-\\end{table*}
-
-"""
-
 TEX_FOOTER = """
 % ---------------------------------------------------------------------
 % Notes for the caption / text:
@@ -476,33 +438,6 @@ TEX_FOOTER = """
 %  * The formal primary metrics are minADE20 and minFDE20. ADE@1/FDE@1
 %    are auxiliary diagnostics; no MR or composite score is computed.
 %  * b-minFDE20 cannot be aligned because the direct evaluator does not emit it.
-%  * BibTeX keys used above:
-%      @inproceedings{xu2025sportstraj,
-%        title={Sports-Traj: A Unified Trajectory Generation Model for
-%               Multi-Agent Movement in Sports},
-%        author={Xu, Yi and Fu, Yun},
-%        booktitle={ICLR}, year={2025}}
-%      @inproceedings{fu2025moflow,
-%        title={MoFlow: One-Step Flow Matching for Human Trajectory
-%               Forecasting via Implicit Maximum Likelihood Estimation
-%               Distillation},
-%        author={Fu, Yuxiang and Yan, Qi and Wang, Lele and Li, Ke and
-%                Liao, Renjie},
-%        booktitle={CVPR}, year={2025}}
-%      @inproceedings{alahi2016sociallstm,
-%        title={Social LSTM: Human Trajectory Prediction in Crowded Spaces},
-%        author={Alahi, Alexandre and Goel, Kratarth and Ramanathan, Vignesh
-%                and Robicquet, Alexandre and Li, Fei-Fei and Savarese, Silvio},
-%        booktitle={CVPR}, year={2016}}
-%      @inproceedings{yuan2021agentformer,
-%        title={AgentFormer: Agent-Aware Transformers for Socio-Temporal
-%               Multi-Agent Forecasting},
-%        author={Yuan, Ye and Weng, Xinshuo and Ou, Yanglan and Kitani, Kris},
-%        booktitle={ICCV}, year={2021}}
-%      @article{trajimpute2024,
-%        title={TrajImpute: A Training-Free Approach for the Missing
-%               Trajectory Prediction},
-%        journal={arXiv preprint arXiv:2411.00174}, year={2024}}
 % ---------------------------------------------------------------------
 """
 
@@ -581,7 +516,7 @@ def emit_tex_extra(data):
 
 
 def emit_full_tex(data):
-    return TEX_HEADER + TEX_PROVENANCE + emit_tex(data) + emit_tex_extra(data) + TEX_FOOTER
+    return TEX_HEADER + emit_tex(data) + emit_tex_extra(data) + TEX_FOOTER
 
 
 def main():

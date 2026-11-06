@@ -1,63 +1,10 @@
-"""GAST Encoder for GAST-PF.
-
-来源：colorfulfuture/UniTraj-pytorch（ICLR'25 Sports-Traj）
-    models/encoder_decoder.py :: Past_Encoder / Spatial_Encoder / Temporal_Encoder
-    models/modules.py        :: Attn_Block / Mamba_Block / Temporal_Decay
-
-机制引入：GSM 空间注意力（mask ghost token + 逐帧 agent 自注意力）、
-Temporal_Decay 缺失衰减、单向 Mamba 时序状态引入自 Sports-Traj / UniTraj
-（colorfulfuture/UniTraj-pytorch），适配为缺失历史直接预测任务的编码器组件；
-GAST-PF 的 decoder、loss、指标与 TrajGap 协议保持不变。
-本文件不含外部方法的 Future_Encoder、CVAE 潜变量或 diverse loss。
-
-与源实现的适配差异（逐条为 TrajGap 契约所需，非机制改动）：
-1. 布局：源 [B,T,N,C] -> 本文件入口 [B,N,T,C]（GAST-PF batch 字段口径），内部
-   转置到源布局后复用原计算图。
-2. 动态 N + padding：源 Attn_Block 假设固定球员槽位（pos_embed 长度固定、
-   MHA 无 key_padding_mask）。TrajGap 批内 N 可变：去除固定槽位 pos_embed
-   （focal 恒在 0 位，邻居无序，槽位身份编码无依据——skill 裁定 actor 文件
-   顺序不是社会排序），并给 MHA 传 key_padding_mask 屏蔽 padding actor。
-   ghost token 恒可参加注意力（有效 actor >= 1 由数据层保证）。
-3. mask 极性：源 mask=1 表示 observed（set_input 中 `torch.mul(x, m` 掩出
-   观测）。TrajGap 的 x_valid_mask=True 同为有效，语义一致，直接使用。
-4. delta：源 get_delta 递归产生前/后向距最近观测步数（观测点=1，缺口气累积，
-   全缺行仍递增）。本文件向量化复现同一数值约定（观测点 1 起算），喂给
-   Temporal_Decay 的 exp(-ReLU(Linear(.))) 衰减头，宽度=embed_dim。
-5. 宽度：model_dim 由源默认 64 提到 128，与 GAST-PF decoder 隐藏维对齐，省去接口
-   投影；参数量变化须记录在实验 manifest。
-6. 时序方向：固定采用因果单向 Mamba，并由 Uni 或 GAST 的读出规则生成 actor 表示。
-"""
+"""GAST encoder for frame-wise geometric interactions and reliability-weighted temporal aggregation."""
 
 import torch
 import torch.nn as nn
+from mamba_ssm.ops.triton.layernorm import RMSNorm, rms_norm_fn
 
-from .mamba.vim_mamba import create_block
-
-try:
-    from mamba_ssm.ops.triton.layernorm import RMSNorm, layer_norm_fn, rms_norm_fn
-except ImportError:
-    RMSNorm, layer_norm_fn, rms_norm_fn = None, None, None
-
-
-def missing_run_ages(mask: torch.Tensor) -> torch.Tensor:
-    """Compute forward missing-run ages using the UniTraj recursion.
-
-    Input : mask [B, N, T] bool/float，True=该帧有效观测（源 mask=1 同义）。
-    Output: d_forw [B, N, T] float——源递归 d[0]=0；t>=1 时
-            d[t] = 1 + (1 - m[t]) * d[t-1]：观测点=1，其后连续缺失
-            2,3,4...；前缀全缺时 d[t]=t。
-    """
-    obs = (mask.float() > 0).float()
-
-    def _scan(o):
-        d = torch.zeros_like(o)
-        prev = torch.zeros(*o.shape[:-1], device=o.device, dtype=o.dtype)
-        for t in range(1, o.shape[-1]):
-            prev = 1.0 + (1.0 - o[..., t]) * prev
-            d[..., t] = prev
-        return d
-
-    return _scan(obs)
+from .mamba.mamba_block import create_causal_mamba_block
 
 
 def construct_observation_evidence_state(
@@ -140,7 +87,7 @@ def evidence_weighted_state_aggregation(
     beta: torch.Tensor | float = 1.0,
     eps: float = 1e-8,
 ):
-    """Aggregate temporal states using content scores and observation evidence."""
+    """Aggregate temporal states using content scores and observation reliability."""
     logits = content_scores.squeeze(-1) + torch.as_tensor(
         beta, dtype=hidden.dtype, device=hidden.device
     ) * torch.log(reliability.to(hidden.dtype).clamp_min(eps))
@@ -154,13 +101,8 @@ def evidence_weighted_state_aggregation(
     return output, weights
 
 
-class GSMAttnBlock(nn.Module):
-    """UniTraj Attn_Block 移植：patch embed + mask ghost token + 逐帧自注意力。
-
-    源结构：patch_embed -> ghost(mask 池化) 拼接 [B*T,N+1,C] -> (pos_embed)
-    -> MHA -> FFN 残差 -> norm -> 去 ghost。本移植去除固定槽位 pos_embed
-    （动态 N），MHA 增加 key_padding_mask 屏蔽 padding actor。
-    """
+class GeometryEvidenceRelationalGSM(nn.Module):
+    """Model geometric interactions among actors at each history frame."""
 
     def __init__(
         self,
@@ -169,15 +111,11 @@ class GSMAttnBlock(nn.Module):
         num_heads: int,
         operator: str = "max",
         p_dropout: float = 0.2,
-        geometry_evidence_relational_encoding: bool = False,
     ):
         super().__init__()
         if operator not in {"mean", "sum", "max"}:
             raise ValueError(f"unsupported GSM operator={operator!r}")
         self.operator = operator
-        self.geometry_evidence_relational_encoding = bool(
-            geometry_evidence_relational_encoding
-        )
         self.patch_embed = nn.Sequential(
             nn.Linear(input_dim, model_dim, bias=False),
             nn.LayerNorm(model_dim),
@@ -205,18 +143,16 @@ class GSMAttnBlock(nn.Module):
             nn.LeakyReLU(),
             nn.Dropout(p_dropout),
         )
-        if self.geometry_evidence_relational_encoding:
-            self.geometry_bias = nn.Sequential(
-                nn.Linear(7, max(model_dim // 4, 16)),
-                nn.GELU(),
-                nn.Linear(max(model_dim // 4, 16), num_heads),
-            )
-            nn.init.zeros_(self.geometry_bias[-1].weight)
-            nn.init.zeros_(self.geometry_bias[-1].bias)
+        self.geometry_bias = nn.Sequential(
+            nn.Linear(7, max(model_dim // 4, 16)),
+            nn.GELU(),
+            nn.Linear(max(model_dim // 4, 16), num_heads),
+        )
+        nn.init.zeros_(self.geometry_bias[-1].weight)
+        nn.init.zeros_(self.geometry_bias[-1].bias)
         self.apply(self._init_weights)
-        if self.geometry_evidence_relational_encoding:
-            nn.init.zeros_(self.geometry_bias[-1].weight)
-            nn.init.zeros_(self.geometry_bias[-1].bias)
+        nn.init.zeros_(self.geometry_bias[-1].weight)
+        nn.init.zeros_(self.geometry_bias[-1].bias)
 
     @staticmethod
     def _init_weights(m):
@@ -229,10 +165,7 @@ class GSMAttnBlock(nn.Module):
             nn.init.constant_(m.weight, 1.0)
 
     def _ghost(self, mask_bt_n: torch.Tensor, key_padding_bt: torch.Tensor) -> torch.Tensor:
-        """mask [B*T, N] -> ghost token [B*T, 1, C]（源 get_mask_headpatch，padding 行除外）。
-
-        源语义：mask 值先 repeat 到 C 维再过 mask_embed（Linear C->C）。
-        """
+        """Pool valid-actor observation masks into one ghost token."""
         keep = (~key_padding_bt).float().unsqueeze(-1)  # [B*T,N,1]
         mask_bt_n = mask_bt_n.float() * keep.squeeze(-1)  # padding 行置 0
         c = self.mask_embed[0].in_features
@@ -249,8 +182,8 @@ class GSMAttnBlock(nn.Module):
         return masked.max(dim=1, keepdim=True).values
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor,
-                key_padding: torch.Tensor, positions: torch.Tensor | None = None,
-                source_eligibility: torch.Tensor | None = None) -> torch.Tensor:
+                key_padding: torch.Tensor, positions: torch.Tensor,
+                source_eligibility: torch.Tensor) -> torch.Tensor:
         """x [B,T,N,C_in]，mask [B,T,N]（有效=1），key_padding [B,N]（True=padding）。
 
         返回 [B,T,N,C]。
@@ -268,70 +201,50 @@ class GSMAttnBlock(nn.Module):
         )  # [B*T, N+1, C]
 
         qkv = self.norm1(tokens)
-        # ghost(槽位 0) 恒有效；agent 槽位按 key_padding 屏蔽
-        attn_key_padding = torch.cat(
-            [torch.zeros(B * T, 1, dtype=torch.bool, device=x.device),
-             key_padding.unsqueeze(1).expand(B, T, N).reshape(B * T, N)], dim=1)
-        if self.geometry_evidence_relational_encoding:
-            if positions is None or source_eligibility is None:
-                raise ValueError(
-                    "GERE requires positions and source eligibility"
-                )
-            geometry = relative_geometry_features(
-                positions, source_eligibility.bool()
-            )
-            geometry_bias = self.geometry_bias(geometry).permute(0, 1, 4, 2, 3)
-            geometry_bias = geometry_bias.reshape(
-                B * T * self.attn_layer.num_heads, N, N
-            )
-            geometry_bias = geometry_bias.to(dtype=qkv.dtype)
-            source_allowed = torch.cat(
-                [
-                    torch.ones(B, T, 1, dtype=torch.bool, device=x.device),
-                    source_eligibility.bool().permute(0, 2, 1)
-                    & ~key_padding.unsqueeze(1),
-                ],
-                dim=-1,
-            ).reshape(B * T, N + 1)
-            attn_mask = qkv.new_zeros(
-                B * T, N + 1, N + 1
-            ).reshape(B * T, 1, N + 1, N + 1).expand(
-                B * T, self.attn_layer.num_heads, N + 1, N + 1
-            ).clone()
-            attn_mask[..., 1:, 1:] = geometry_bias.reshape(
-                B * T, self.attn_layer.num_heads, N, N
-            )
-            attn_mask = attn_mask.masked_fill(
-                ~source_allowed[:, None, None, :], float("-inf")
-            )
-            attn_out, _ = self.attn_layer(
-                qkv,
-                qkv,
-                qkv,
-                attn_mask=attn_mask.reshape(
-                    B * T * self.attn_layer.num_heads, N + 1, N + 1
-                ),
-                need_weights=False,
-            )
-        else:
-            attn_out, _ = self.attn_layer(qkv, qkv, qkv,
-                                          key_padding_mask=attn_key_padding)
-        x_attn = attn_out  # 源实现：Try no Res
+        geometry = relative_geometry_features(
+            positions, source_eligibility.bool()
+        )
+        geometry_bias = self.geometry_bias(geometry).permute(0, 1, 4, 2, 3)
+        geometry_bias = geometry_bias.reshape(
+            B * T * self.attn_layer.num_heads, N, N
+        )
+        geometry_bias = geometry_bias.to(dtype=qkv.dtype)
+        source_allowed = torch.cat(
+            [
+                torch.ones(B, T, 1, dtype=torch.bool, device=x.device),
+                source_eligibility.bool().permute(0, 2, 1)
+                & ~key_padding.unsqueeze(1),
+            ],
+            dim=-1,
+        ).reshape(B * T, N + 1)
+        attn_mask = qkv.new_zeros(
+            B * T, N + 1, N + 1
+        ).reshape(B * T, 1, N + 1, N + 1).expand(
+            B * T, self.attn_layer.num_heads, N + 1, N + 1
+        ).clone()
+        attn_mask[..., 1:, 1:] = geometry_bias.reshape(
+            B * T, self.attn_layer.num_heads, N, N
+        )
+        attn_mask = attn_mask.masked_fill(
+            ~source_allowed[:, None, None, :], float("-inf")
+        )
+        attn_out, _ = self.attn_layer(
+            qkv,
+            qkv,
+            qkv,
+            attn_mask=attn_mask.reshape(
+                B * T * self.attn_layer.num_heads, N + 1, N + 1
+            ),
+            need_weights=False,
+        )
+        x_attn = attn_out
         x_attn = self.ffn(self.norm2(x_attn)) + x_attn
         y = self.norm3(x_attn)[:, 1:, :].reshape(B, T, N, -1)
         return y
 
 
-class GeometryEvidenceRelationalGSM(GSMAttnBlock):
-    """GERE spatial stage: geometry- and evidence-conditioned GSM."""
-
-    def __init__(self, *args, **kwargs):
-        kwargs["geometry_evidence_relational_encoding"] = True
-        super().__init__(*args, **kwargs)
-
-
-class TemporalEncoder(nn.Module):
-    """Unidirectional gap-aware temporal Mamba encoder."""
+class ReliabilityModulatedCausalMamba(nn.Module):
+    """Encode history with reliability-modulated Mamba blocks."""
 
     def __init__(self, model_dim: int, depth: int = 4, p_dropout: float = 0.2,
                  drop_path: float = 0.2):
@@ -348,8 +261,11 @@ class TemporalEncoder(nn.Module):
     @staticmethod
     def _stack(model_dim, depth, drop_path, offset):
         return nn.ModuleList([
-            create_block(d_model=model_dim, layer_idx=offset + i,
-                         drop_path=drop_path, bimamba=False, rms_norm=True)
+            create_causal_mamba_block(
+                d_model=model_dim,
+                layer_idx=offset + i,
+                drop_path=drop_path,
+            )
             for i in range(depth)
         ])
 
@@ -357,32 +273,28 @@ class TemporalEncoder(nn.Module):
         residual = None
         for blk in stack:
             x, residual = blk(x, residual)
-        fused = rms_norm_fn if isinstance(norm, RMSNorm) else layer_norm_fn
-        return fused(x, norm.weight, norm.bias, eps=norm.eps, residual=residual,
-                     prenorm=False, residual_in_fp32=True)
+        return rms_norm_fn(
+            x,
+            norm.weight,
+            norm.bias,
+            eps=norm.eps,
+            residual=residual,
+            prenorm=False,
+            residual_in_fp32=True,
+        )
 
-    def forward(self, x_b_t_n_c: torch.Tensor, gamma_forw=None,
-                reliability: torch.Tensor | None = None):
-        """Return causal states with shape ``[B,N,T,C]``."""
+    def forward(self, x_b_t_n_c: torch.Tensor, reliability: torch.Tensor):
+        """Return forward-only temporal states with shape ``[B,N,T,C]``."""
         B, T, N, C = x_b_t_n_c.shape
         x_forw = self.mlp(x_b_t_n_c).permute(0, 2, 1, 3).reshape(B * N, T, C)
-
-        if reliability is None:
-            x_forw = x_forw * gamma_forw.reshape(B * N, T, C)
-        else:
-            reliability_flat = reliability.reshape(B * N, T, 1).to(x_forw.dtype)
-            x_forw = x_forw * reliability_flat
-
+        reliability_flat = reliability.reshape(B * N, T, 1).to(x_forw.dtype)
+        x_forw = x_forw * reliability_flat
         y_forw = self._run(x_forw, self.ssm_forw, self.norm_f_forw)
         return y_forw.reshape(B, N, T, C)
 
 
-class ReliabilityModulatedCausalMamba(TemporalEncoder):
-    """Reliability-modulated causal temporal encoder used by GAST."""
-
-
 class EvidenceWeightedStateAggregation(nn.Module):
-    """Aggregate temporal states according to content and evidence strength."""
+    """Aggregate temporal states using content scores and observation reliability."""
 
     def __init__(self, embed_dim: int):
         super().__init__()
@@ -401,7 +313,7 @@ class EvidenceWeightedStateAggregation(nn.Module):
 
 
 class EvidenceConditionedCausalTemporalAggregation(nn.Module):
-    """Compose reliability-modulated Mamba and evidence-weighted aggregation."""
+    """Combine Mamba encoding with reliability-weighted history aggregation."""
 
     def __init__(
         self,
@@ -431,27 +343,8 @@ class EvidenceConditionedCausalTemporalAggregation(nn.Module):
         return self.state_aggregation(hidden, reliability)
 
 
-class TemporalDecay(nn.Module):
-    """UniTraj Temporal_Decay 移植：exp(-ReLU(Linear(delta))) 衰减头。"""
-
-    def __init__(self, model_dim: int, delta_dim: int = 2):
-        super().__init__()
-        self.delta_dim = delta_dim
-        self.mlp = nn.Linear(delta_dim, model_dim, bias=False)
-        self.relu = nn.ReLU()
-
-    def forward(self, delta_b_n_t: torch.Tensor) -> torch.Tensor:
-        """delta [B,N,T,delta_dim] -> [B,N,T,C]，元素落在 (0,1]。"""
-        if delta_b_n_t.shape[-1] != self.delta_dim:
-            raise ValueError(
-                f"expected delta_dim={self.delta_dim}, got {delta_b_n_t.shape[-1]}"
-            )
-        x = self.relu(self.mlp(delta_b_n_t))
-        return torch.exp(-x)
-
-
 class GASTEncoder(nn.Module):
-    """Unidirectional GAST encoder with GERE and ECTA."""
+    """Encode incomplete histories with frame-wise interactions and reliability-weighted temporal aggregation."""
 
     def __init__(
         self,
@@ -462,109 +355,48 @@ class GASTEncoder(nn.Module):
         operator: str = "max",
         p_dropout: float = 0.2,
         drop_path: float = 0.2,
-        geometry_evidence_relational_encoding: bool = False,
-        evidence_conditioned_causal_temporal_aggregation: bool = False,
     ):
         super().__init__()
-        self.geometry_evidence_relational_encoding = bool(
-            geometry_evidence_relational_encoding
-        )
-        self.evidence_conditioned_causal_temporal_aggregation = bool(
-            evidence_conditioned_causal_temporal_aggregation
-        )
-        self.evidence_enabled = (
-            self.geometry_evidence_relational_encoding
-            or self.evidence_conditioned_causal_temporal_aggregation
-        )
-        if (
-            self.geometry_evidence_relational_encoding
-            != self.evidence_conditioned_causal_temporal_aggregation
-        ):
-            raise ValueError("GAST enables GERE and ECTA together")
-
-        spatial_cls = (
-            GeometryEvidenceRelationalGSM
-            if self.geometry_evidence_relational_encoding else GSMAttnBlock
-        )
-        self.spatial = spatial_cls(
+        self.spatial = GeometryEvidenceRelationalGSM(
             input_dim,
             embed_dim,
             num_heads,
             operator=operator,
             p_dropout=p_dropout,
         )
-        if self.evidence_enabled:
-            self.evidence_tau_logit = nn.Parameter(torch.tensor(-2.2521685))
-        if self.evidence_conditioned_causal_temporal_aggregation:
-            self.temporal_aggregation = (
-                EvidenceConditionedCausalTemporalAggregation(
-                    embed_dim,
-                    depth=depth,
-                    p_dropout=p_dropout,
-                    drop_path=drop_path,
-                )
-            )
-        else:
-            self.temporal = TemporalEncoder(
-                embed_dim,
-                depth=depth,
-                p_dropout=p_dropout,
-                drop_path=drop_path,
-            )
-            self.temporal_decay = TemporalDecay(embed_dim, delta_dim=2)
+        self.evidence_tau_logit = nn.Parameter(torch.tensor(-2.2521685))
+        self.temporal_aggregation = EvidenceConditionedCausalTemporalAggregation(
+            embed_dim,
+            depth=depth,
+            p_dropout=p_dropout,
+            drop_path=drop_path,
+        )
 
     @property
     def evidence_tau(self):
-        if not self.evidence_enabled:
-            raise AttributeError(
-                "evidence_tau is only available when evidence modules are enabled"
-            )
         return torch.nn.functional.softplus(self.evidence_tau_logit)
-
-    def _regular_temporal_readout(self, x_spa, valid_mask):
-        delta = missing_run_ages(valid_mask).unsqueeze(-1).expand(
-            *valid_mask.shape, 2
-        )
-        decay = self.temporal_decay(delta)
-        states = self.temporal(x_spa, gamma_forw=decay)
-        return states[:, :, -1]
 
     def forward(
         self,
         hist_feat: torch.Tensor,
         valid_mask: torch.Tensor,
         key_padding: torch.Tensor,
-        positions: torch.Tensor | None = None,
+        positions: torch.Tensor,
     ):
         x = hist_feat.permute(0, 2, 1, 3)
         mask = valid_mask.permute(0, 2, 1).float()
         padding = key_padding
 
-        if self.evidence_enabled:
-            source_eligibility, reliability, _ = construct_observation_evidence_state(
-                valid_mask, self.evidence_tau, padding
-            )
-        else:
-            source_eligibility = reliability = None
-
-        if self.geometry_evidence_relational_encoding:
-            if positions is None:
-                raise ValueError(
-                    "GERE requires observed positions for relational attention"
-                )
-            x_spa = self.spatial(
-                x,
-                mask,
-                padding,
-                positions=positions,
-                source_eligibility=source_eligibility,
-            )
-        else:
-            x_spa = self.spatial(x, mask, padding)
-
-        if self.evidence_conditioned_causal_temporal_aggregation:
-            output, _ = self.temporal_aggregation(x_spa, reliability)
-        else:
-            output = self._regular_temporal_readout(x_spa, valid_mask)
+        source_eligibility, reliability, _ = construct_observation_evidence_state(
+            valid_mask, self.evidence_tau, padding
+        )
+        x_spa = self.spatial(
+            x,
+            mask,
+            padding,
+            positions=positions,
+            source_eligibility=source_eligibility,
+        )
+        output, _ = self.temporal_aggregation(x_spa, reliability)
 
         return output * (~padding).unsqueeze(-1).to(output.dtype)

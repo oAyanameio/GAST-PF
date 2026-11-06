@@ -24,11 +24,9 @@ import pytorch_lightning as pl
 # 模块组划分：顺序敏感（先匹配更具体的前缀）
 _GROUP_RULES = (
     ("gast_encoder.spatial", "enc.spatial"),
-    ("gast_encoder.temporal_decay", "enc.temporal_decay"),
-    ("gast_encoder.evidence_tau_logit", "enc.readout"),
-    ("gast_encoder.temporal_aggregation.state_aggregation", "enc.aggregation"),
-    ("gast_encoder.temporal_aggregation.temporal_mamba", "enc.aggregation"),
-    ("gast_encoder.temporal", "enc.temporal"),
+    ("gast_encoder.evidence_tau_logit", "enc.evidence"),
+    ("gast_encoder.temporal_aggregation.state_aggregation", "enc.readout"),
+    ("gast_encoder.temporal_aggregation.temporal_mamba", "enc.temporal"),
     ("gast_encoder", "enc.other"),
     ("goal_decoder", "decoder"),
     ("neighbor_prediction_head", "aux.neighbor_head"),

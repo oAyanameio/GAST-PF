@@ -14,53 +14,6 @@
 %  Mixed-test result artifacts using the fixed GAST selection rule.
 % =====================================================================
 
-% ---------------------------------------------------------------------
-% Table 0: method provenance and adopted mechanisms
-% ---------------------------------------------------------------------
-\begin{table*}[t]
-  \centering
-  \caption{Method provenance on \textbf{TrajGap-Bench}. We distinguish
-  methods that adapt mechanisms from prior work to the missing-history
-  direct-prediction task from external baselines run unchanged, and
-  record what was adapted for the protocol.}
-  \label{tab:tgbench-provenance}
-  \small
-  \setlength{\tabcolsep}{5pt}
-  \begin{tabular}{p{2.0cm} p{4.4cm} p{3.0cm} p{5.4cm}}
-    \toprule
-    Method & Source & Role & Adapted mechanisms and modifications \\
-    \midrule
-    GAST & \textbf{our method}; encoder mechanisms adapted from
-      Sports-Traj / UniTraj \cite{xu2025sportstraj}
-      & \textbf{our method} (\texttt{encoder\_type=gast}, default)
-      & GSM per-frame spatial attention with ghost token, Temporal Decay and
-        bidirectional Mamba are introduced to the missing-history task and
-        adapted into the GAST encoder; goal decoder, loss, metrics and the
-        TrajGap protocol are this work's and held fixed \\
-    MoFlow & \cite{fu2025moflow} & external baseline (official code)
-      & run unchanged; upper-bound reference \\
-    SocialLSTM & \cite{alahi2016sociallstm}
-      & external baseline (classical social pooling)
-      & zero-filled input, LSTM state update skipped on missing frames,
-        Gaussian-mixture head (K=20); social pooling vectorised; the upstream
-        future-pasting patch that leaks ground truth was removed \\
-    AgentFormer & \cite{yuan2021agentformer}
-      & external baseline (5/5 scenes completed)
-      & missing history filled with the mask-aware scene origin (exactly 0 in
-        the \texttt{*_scene_norm} frame) plus an explicit per-frame validity
-        input channel; the decoder anchor is taken at the last valid
-        observation. Samples $z$, so ADE@1/FDE@1 are undefined \\
-    Re & external baseline (5/5 scenes completed) & random-sampling output; ADE@1/FDE@1 not applicable \\
-    MS-TIP & external imputation-aware baseline (5/5 scenes completed) & joint imputation and forecasting; ADE@1/FDE@1 not applicable \\
-    Social-STGCNN & external baseline (5/5 scenes completed) & Gaussian sampling output; ADE@1/FDE@1 not applicable \\
-    \bottomrule
-  \end{tabular}
-  \begin{flushleft}
-    \footnotesize
-    GAST includes the goal-conditioned decoder and trajectory-aware mode ranking.
-  \end{flushleft}
-\end{table*}
-
 \begin{table*}[t]
   \centering
   \caption{TrajGap-Bench (Mixed): minADE$_{20}$\,/\,minFDE$_{20}$ (meters). ``Avg'' is the macro average over five scenes. Best per column in \textbf{bold}. Lower is better.}
@@ -163,31 +116,4 @@
 %  * The formal primary metrics are minADE20 and minFDE20. ADE@1/FDE@1
 %    are auxiliary diagnostics; no MR or composite score is computed.
 %  * b-minFDE20 cannot be aligned because the direct evaluator does not emit it.
-%  * BibTeX keys used above:
-%      @inproceedings{xu2025sportstraj,
-%        title={Sports-Traj: A Unified Trajectory Generation Model for
-%               Multi-Agent Movement in Sports},
-%        author={Xu, Yi and Fu, Yun},
-%        booktitle={ICLR}, year={2025}}
-%      @inproceedings{fu2025moflow,
-%        title={MoFlow: One-Step Flow Matching for Human Trajectory
-%               Forecasting via Implicit Maximum Likelihood Estimation
-%               Distillation},
-%        author={Fu, Yuxiang and Yan, Qi and Wang, Lele and Li, Ke and
-%                Liao, Renjie},
-%        booktitle={CVPR}, year={2025}}
-%      @inproceedings{alahi2016sociallstm,
-%        title={Social LSTM: Human Trajectory Prediction in Crowded Spaces},
-%        author={Alahi, Alexandre and Goel, Kratarth and Ramanathan, Vignesh
-%                and Robicquet, Alexandre and Li, Fei-Fei and Savarese, Silvio},
-%        booktitle={CVPR}, year={2016}}
-%      @inproceedings{yuan2021agentformer,
-%        title={AgentFormer: Agent-Aware Transformers for Socio-Temporal
-%               Multi-Agent Forecasting},
-%        author={Yuan, Ye and Weng, Xinshuo and Ou, Yanglan and Kitani, Kris},
-%        booktitle={ICCV}, year={2021}}
-%      @article{trajimpute2024,
-%        title={TrajImpute: A Training-Free Approach for the Missing
-%               Trajectory Prediction},
-%        journal={arXiv preprint arXiv:2411.00174}, year={2024}}
 % ---------------------------------------------------------------------

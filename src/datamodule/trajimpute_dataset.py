@@ -1,4 +1,4 @@
-"""TrajImpute 官方 release -> GAST-PF actor-centric 直接缺失预测适配器。
+"""Actor-centric dataset for direct prediction from incomplete TrajImpute histories.
 
 官方字段语义（2026-09-07 release 审计 30/30，见 docs/audits/trajimpute_release_审计.md）：
     obs_traj     [N, 8, 2] float32，缺失位置为 NaN
@@ -6,7 +6,7 @@
     missing_mask [N, 8, 2] bool，True=缺失，与 obs_traj 的 NaN 严格一致
     seq_start_end [(s, e)] 每个场景序列的行人行范围
 
-与历史 v1/v2/v3 相邻帧协议的关键差异（适配任务书 §六/§七/§八）：
+输入与特征规则：
     1. frame_missing = missing_mask.any(-1)；x_valid_mask = ~frame_missing
     2. 局部坐标原点 = focal 最后一个有效历史位置（末帧缺失不得取帧 7）
     3. 朝向 = 最近两个有效观测的连线（允许跨缺口）；单有效帧 -> 0（degenerate）
@@ -253,7 +253,7 @@ def build_sample(
     obs_len: int = 8,
     pred_len: int = 12,
 ):
-    """由一个场景（focal 已置于 actor 0）构造 GAST-PF batch 字段。
+    """Build one actor-centric batch from a scene with focal actor at index 0.
 
     Args:
         hist_world: [A, 8, 2] 世界坐标，缺失处 NaN

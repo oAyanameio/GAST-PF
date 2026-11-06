@@ -18,9 +18,6 @@ def _make_dummy_batch_actor_only(
     data = {
         "x_positions_diff": torch.randn(B, N, obs_len, 2, device=device),
         "x_positions": torch.randn(B, N, obs_len, 2, device=device),
-        "x_attr": torch.zeros(B, N, 3, dtype=torch.uint8, device=device),
-        "x_centers": torch.randn(B, N, 2, device=device),
-        "x_angles": torch.randn(B, N, obs_len, device=device),
         "x_velocity": torch.randn(B, N, obs_len, device=device),
         "x_velocity_diff": torch.randn(B, N, obs_len, device=device),
         "x_valid_mask": torch.ones(B, N, obs_len, dtype=torch.bool, device=device),
@@ -38,7 +35,6 @@ def _make_model():
     return TrajectoryForecaster(
         embed_dim=128,
         future_steps=12,
-        num_actor_types=1,
         num_modes=6,  # 显式指定：正式主链默认 20，本测试只测机制不测默认值
     ).to(DEVICE)
 
@@ -49,7 +45,6 @@ class TestTrajectoryForecasterActorOnly:
     def test_model_init(self):
         model = _make_model()
         assert model.future_steps == 12
-        assert model.num_actor_types == 1
         assert model.dt == 0.4
         # 模型不含任何地图/车道属性
         assert not hasattr(model, "use_map")

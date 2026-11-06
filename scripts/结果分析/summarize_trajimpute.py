@@ -2,7 +2,7 @@
 
 扫描 TrajGap-Bench 输出根目录下的 Mixed results.json，
 按 scene/seed/variant 聚合 minFDE20 等指标，输出：
-  summary.json / summary.csv / comparison.md（含配对差值）
+  summary.json / summary.csv / comparison.md
 
 只纳入 TrajGap-Bench 和 K=20；历史 Easy/Hard 子集结果不会进入正式汇总。
 """
@@ -44,7 +44,6 @@ def collect(root: Path):
             "protocol": protocol_label(manifest, meta),
             "seed": meta["seed"],
             "K": meta["K"],
-            "backbone": manifest.get("backbone", {}).get("bimamba", False),
             "n": ov.get("n"),
             "ckpt": meta.get("checkpoint", {}).get("path") if isinstance(meta.get("checkpoint"), dict) else None,
             "run_dir": str(run_dir),
@@ -79,29 +78,6 @@ def agg(rows, key_fields):
     return out
 
 
-def paired_diff(rows, base_variant, comp_variant, protocol, seed, backbone=True):
-    """同 scene/protocol/seed 配对：comp - base（minFDE 越低越好，负值=comp 更好）。"""
-    def index(variant):
-        return {r["scene"]: r for r in rows
-                if r["variant"] == variant and r["protocol"] == protocol
-                and r["seed"] == seed and r["backbone"] == backbone}
-    b, c = index(base_variant), index(comp_variant)
-    diffs = []
-    for scene in SCENES:
-        if scene in b and scene in c:
-            for m in METRICS:
-                if b[scene][m] is None or c[scene][m] is None:
-                    continue
-            d = {m: c[scene][m] - b[scene][m] for m in METRICS}
-            d["scene"] = scene
-            d["base_minFDE"] = b[scene]["minFDE_K"]
-            d["comp_minFDE"] = c[scene]["minFDE_K"]
-            d["rel_minFDE_pct"] = (d["minFDE_K"] / b[scene]["minFDE_K"] * 100
-                                   if b[scene]["minFDE_K"] else None)
-            diffs.append(d)
-    return diffs
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default="outputs/trajgap_bench")
@@ -132,7 +108,7 @@ def main():
 
     # 明细
     detail_path = root / "summary.json"
-    by_variant = agg(rows, ["protocol", "variant", "seed", "backbone", "K"])
+    by_variant = agg(rows, ["protocol", "variant", "seed", "K"])
     payload = {
         "formal_K": FORMAL_K,
         "rows": rows,
@@ -143,13 +119,13 @@ def main():
 
     # CSV
     csv_path = root / "summary.csv"
-    fields = ["variant", "scene", "protocol", "seed", "backbone", "K", "n"] + METRICS
+    fields = ["variant", "scene", "protocol", "seed", "K", "n"] + METRICS
     with open(csv_path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
         w.writeheader()
         w.writerows(rows)
 
-    # comparison.md：配对比较 + 聚合表
+    # comparison.md：明细与聚合表
     md = ["# TrajGap-Bench 模型重训结果汇总\n"]
     md.append("数据来源：`" + str(root) + "`；训练与评估均为 direct 重训，K=20；")
     md.append("训练、验证和测试均为 TrajGap Mixed；所有误差指标越低越好。\n")
@@ -162,24 +138,6 @@ def main():
             f"| {r['variant']} | {r['scene']} | {r['protocol']} | {r['seed']} | {r['n']} "
             f"| {r['minADE_K']:.4f} | {r['minFDE_K']:.4f} | {r['ADE@1']:.4f} "
             f"| {r['FDE@1']:.4f} |")
-
-    # 对每个候选 variant 与 M0 做同协议配对差。
-    seeds = sorted({r["seed"] for r in rows})
-    for seed in seeds:
-        for proto in sorted({r["protocol"] for r in rows}):
-            variants = sorted({r["variant"] for r in rows if r["variant"] != "M0"})
-            for comp in variants:
-                diffs = paired_diff(rows, "M0", comp, proto, seed)
-                if not diffs:
-                    continue
-                md.append(f"\n## 配对差 {comp} − M0（{proto}，seed={seed}，负值={comp} 更好）\n")
-                md.append("| scene | ΔminADE | ΔminFDE | ΔminFDE% |")
-                md.append("|---|---:|---:|---:|")
-                for d in diffs:
-                    md.append(f"| {d['scene']} | {d['minADE_K']:+.4f} | {d['minFDE_K']:+.4f} "
-                              f"| {d['rel_minFDE_pct']:+.1f}% |")
-                n_better = sum(1 for d in diffs if d["minFDE_K"] < 0)
-                md.append(f"\nminFDE 改善场景数：{n_better}/{len(diffs)}")
 
     md.append("\n## 聚合（protocol × variant × seed × K）\n")
     md.append("| protocol | variant | seed | K | runs | minFDE20均值 | minFDE20最好 | minFDE20最差 | minFDE20标准差 |")

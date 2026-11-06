@@ -255,11 +255,11 @@ def _collated_batch(scene="ETH-M", difficulty="Easy", split="test", n=4):
 
 
 @pytest.mark.skipif(not GPU, reason="需要 GPU（Mamba CUDA）")
-def test_batch_m0_forward_and_backward():
+def test_batch_gast_forward_and_backward():
     from src.model.trajectory_forecaster import TrajectoryForecaster
     batch = _collated_batch()
     batch = {k: (v.cuda() if torch.is_tensor(v) else v) for k, v in batch.items()}
-    model = TrajectoryForecaster(num_modes=6, bimamba=True).cuda()
+    model = TrajectoryForecaster(num_modes=6).cuda()
     out = model(batch)
     assert out["new_y_hat"].shape[1] == 6
     # loss（复用 trainer.cal_loss 的核心项）
@@ -276,11 +276,11 @@ def test_batch_m0_forward_and_backward():
 
 
 @pytest.mark.skipif(not GPU, reason="需要 GPU（Mamba CUDA）")
-def test_batch_m0_forward_hard():
+def test_batch_gast_forward_hard():
     from src.model.trajectory_forecaster import TrajectoryForecaster
     batch = _collated_batch(difficulty="Hard", n=3)
     batch = {k: (v.cuda() if torch.is_tensor(v) else v) for k, v in batch.items()}
-    model = TrajectoryForecaster(num_modes=6, bimamba=True).cuda()
+    model = TrajectoryForecaster(num_modes=6).cuda()
     out = model(batch)
     assert torch.isfinite(out["new_y_hat"]).all()
 
@@ -313,7 +313,7 @@ def test_collate_padding_semantics():
     ])
 
     # The first sample has two padded actors; they must be false for all
-    # forecast steps so trainer_forecast cannot include them in others loss.
+    # forecast steps so the forecasting module cannot include them in others loss.
     assert batch["target_mask"].shape == (2, 3, 12)
     assert bool(batch["target_mask"][0, 0].all())
     assert not bool(batch["target_mask"][0, 1:].any())

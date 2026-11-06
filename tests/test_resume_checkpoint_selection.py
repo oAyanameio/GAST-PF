@@ -252,9 +252,9 @@ def test_eval_output_reuses_valid_existing_result(tmp_path):
     from run_trajimpute_experiments import prepare_eval_output
 
     root = tmp_path / "eval" / "Mixed"
-    result_dir = _write_eval_result(root, "ETH-M", "Mixed", "GAST-PF", 2024, 1629)
+    result_dir = _write_eval_result(root, "ETH-M", "Mixed", "GAST", 2024, 1629)
 
-    payload = prepare_eval_output(root, "ETH-M", "Mixed", "GAST-PF", 2024)
+    payload = prepare_eval_output(root, "ETH-M", "Mixed", "GAST", 2024)
     assert payload is not None
     assert payload["results"]["overall"]["n"] == 1629
     assert (result_dir / "results.json").is_file()
@@ -264,9 +264,9 @@ def test_eval_output_clears_zero_sample_partial_result(tmp_path):
     from run_trajimpute_experiments import prepare_eval_output
 
     root = tmp_path / "eval" / "Mixed"
-    result_dir = _write_eval_result(root, "ETH-M", "Mixed", "GAST-PF", 2024, 0)
+    result_dir = _write_eval_result(root, "ETH-M", "Mixed", "GAST", 2024, 0)
 
-    assert prepare_eval_output(root, "ETH-M", "Mixed", "GAST-PF", 2024) is None
+    assert prepare_eval_output(root, "ETH-M", "Mixed", "GAST", 2024) is None
     assert not result_dir.exists()
 
 
@@ -274,27 +274,18 @@ def test_eval_output_leaves_other_scene_results_untouched(tmp_path):
     from run_trajimpute_experiments import prepare_eval_output
 
     root = tmp_path / "eval" / "Mixed"
-    other = _write_eval_result(root, "HOTEL-M", "Mixed", "GAST-PF", 2024, 9477)
-    stale = root / "ETH-M_Mixed_test_GAST-PF_seed2024_ckpt"
+    other = _write_eval_result(root, "HOTEL-M", "Mixed", "GAST", 2024, 9477)
+    stale = root / "ETH-M_Mixed_test_GAST_seed2024_ckpt"
     stale.mkdir(parents=True)
     (stale / "partial.tmp").write_text("half-written")
 
-    assert prepare_eval_output(root, "ETH-M", "Mixed", "GAST-PF", 2024) is None
+    assert prepare_eval_output(root, "ETH-M", "Mixed", "GAST", 2024) is None
     assert not stale.exists()
     assert (other / "results.json").is_file()
 
 
-def test_folds_map_to_scene_names():
+def test_scene_selection_uses_scene_names():
     from run_trajimpute_experiments import resolve_scenes
 
-    assert resolve_scenes(None, ["ETH"]) == ["ETH-M"]
-    assert resolve_scenes(None, ["ETH", "ZARA2"]) == ["ETH-M", "ZARA2-M"]
-    assert resolve_scenes(None, None) == ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
-    assert resolve_scenes(["HOTEL-M"], None) == ["HOTEL-M"]
-
-
-def test_folds_and_scenes_are_mutually_exclusive():
-    from run_trajimpute_experiments import resolve_scenes
-
-    with pytest.raises(SystemExit):
-        resolve_scenes(["ETH-M"], ["ETH"])
+    assert resolve_scenes(None) == ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
+    assert resolve_scenes(["HOTEL-M"]) == ["HOTEL-M"]

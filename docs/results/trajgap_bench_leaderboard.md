@@ -3,22 +3,10 @@
 > 数据集与基准：TrajGap-Bench；TrajImpute 官方 Easy+Hard 同一 split 合并为 Mixed，任务为无插补直接预测。seed 2024，K=20，100 epochs。GAST 按最终预测头 `val_new_minFDE20` 选点；外部方法沿用各自的训练与选点流程。
 > 测试样本数（所有方法完全一致）：ETH-M 1,629 / HOTEL-M 9,477 / UNIV-M 219,006 / ZARA1-M 20,277 / ZARA2-M 52,497，合计 302,886。
 > `Avg` = 五场景宏平均；`micro` = 按样本数加权。所有指标**越低越好**。加粗 = 该列最优。
-> **术语统一**：全文「本文方法」均指 **GAST**；历史实验产物标签 `UT-ENC`、`GAST-PF` 和 `GAST-Goal` 仅用于路径溯源，不作为当前正式方法名称。
+> 本文方法统一称为 **GAST**；终点引导解码与轨迹级模式排序属于完整方法设计。
 
 > 本文件由 `docs/tools/gen_leaderboard_tables.py` 从各方法 `results.json` 现算生成，不手工转抄。
 > 重新生成：`python docs/tools/gen_leaderboard_tables.py --write`
-
-## 表 0 · 方法出处与机制引入
-
-| Method | 论文 / 来源 | 定位 | 引入机制与本文改动 |
-|---|---|---|---|
-| **GAST** | 本工作；编码机制引入自 Sports-Traj / UniTraj (Xu and Fu, ICLR 2025, arXiv:2405.17680)，goal 条件化机制为本文设计 | **本文方法（当前滚动基线）**（完整 GAST） | GAST 编码器（GERE + ECTA：可靠度调制的 Mamba 时序编码器＋可靠度加权读出）+ decoder 侧锚点条件化目标解码（`loss_mode=final_consistent` 即双指派多模态训练目标、goal endpoint loss + mode diversity loss）；ghost token/Temporal Decay/Mamba 引自 UniTraj，不主张原创；goal 条件化与证据路由的适配为本文工作 |
-| **MoFlow** | Fu, Yan, Wang, Li, Liao. CVPR 2025. arXiv:2503.09950 | 外部基线（官方实现） | 完整外部方法，作为上界参照；未做任何改动 |
-| **SocialLSTM** | Alahi, Goel, Ramanathan, Robicquet, Li, Savarese. CVPR 2016 | 外部基线（经典 social pooling） | 零填充 + 缺失帧跳过 LSTM 状态更新 + 高斯混合头（K=20）；social pooling 向量化；已移除原仓库会泄漏 GT 的未来粘贴补丁 |
-| **AgentFormer** | Yuan, Weng, Ou, Kitani. ICCV 2021. arXiv:2103.14023 | 外部基线（官方实现，5/5 完成） | 缺失历史以 mask-aware 场景原点填充（在 `*_scene_norm` 参照系下为 0）+ 逐帧有效性显式输入通道；解码锚点取最后有效观测。无模态概率，故 ADE@1/FDE@1 不适用 |
-| **Re** | Mao et al. ICCV 2025. arXiv:2412.02447（Resonance: Learning to Predict Social-Aware Pedestrian Trajectories as Co-Vibrations） | 外部基线（官方实现，5/5 完成） | 完整外部方法；缺失历史按上游口径零填充（anchor 保持），K=20 随机采样；无概率排序头，ADE@1/FDE@1 不可引用（首候选非最优模式） |
-| **MS-TIP** | Wang et al. ICML 2024（MS-TIP: Imputation Aware Pedestrian Trajectory Prediction） | 外部基线（官方实现，5/5 完成） | SAITS 插补感知联合训练（插补分支与预测分支端到端）；采样式输出，无模态概率，ADE@1/FDE@1 不适用；训练含 NaN 守卫（上游 GMM 数值不稳定，跳过脏 batch 回滚权重） |
-| **Social-STGCNN** | Mohamed et al. CVPR 2020（Social-STGCNN: A Social Spatio-Temporal Graph Convolutional Neural Network for Human Trajectory Prediction） | 外部基线（官方实现，5/5 完成） | 官方 pkl→逐帧图序列：有效帧以 obs_traj_rel 非 NaN 判定（差分口径）；缺失帧为图上幽灵节点（坐标置 0、邻接行列置 0，不收发消息），社交距离用最后有效位置；训练目标从 anchor（最后有效位置）差分；高斯头 K=20 采样，无概率排序，@1 不适用 |
 
 ## 表 1 · 精度（minADE20 / minFDE20，米）
 
@@ -83,7 +71,7 @@
 
 | 方法 | 产物路径 |
 |---|---|
-| GAST | `outputs/trajgap_gast_goal_3gpu_retry/`（五场景同 revision 完整轮次） |
+| GAST | 五场景完整结果（manifest revision 一致） |
 | MoFlow | `/home/lbh/MoFlow/results_trajimpute_mixed/` |
 | SocialLSTM | `/home/lbh/SocialLSTM/trajgap_bench/artifacts/sociallstm_bench/` |
 | AgentFormer | `/home/lbh/AgentFormer/results/trajgap_agentformer/`（5/5） |

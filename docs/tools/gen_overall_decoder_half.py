@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw, ImageFont
 import matplotlib
 
 SRC = "/home/lbh/.hermes/cache/scratch/edited_overall.png"
-OUT = "/home/lbh/GAST-PF/docs/figures/gast_pf_overall_reference_style.png"
+OUT = "/home/lbh/GAST-PF/docs/figures/gast_overall_reference_style.png"
 FDIR = os.path.join(os.path.dirname(matplotlib.__file__), "mpl-data", "fonts", "ttf")
 CMB, CMR, CMMI = FDIR + "/cmb10.ttf", FDIR + "/cmr10.ttf", FDIR + "/cmmi10.ttf"
 STIX = FDIR + "/STIXGeneral.ttf"
@@ -211,7 +211,7 @@ box(AX, Y(A_C - BH // 2), BX + BW, Y(A_C + BH // 2), ["Mode Localization Module"
 arrow((2413, Y(A_C - 2)), (2413, Y(A_C - 34)), lw=4, size=13)
 loss_badge(2413, Y(A_C - 56), "m", 32, tag="loss_a")
 
-# ---- (b) 支：CrossAttn + BiMamba 合并为一个模块，只暴露综合名；竖向长框 ----
+# ---- (b) 支：CrossAttn + State Consistency 合并为一个模块；竖向长框 ----
 box(AX, Y(B_C - BH // 2), BX + BW, Y(B_C + BH // 2), ["State Consistency Module"], fill=SALMON, name="b1")
 arrow((2413, Y(B_C + 2)), (2413, Y(B_C + 62)), lw=4, size=13)
 loss_badge(2413, Y(B_C + 84), "s", 32, tag="loss_b")

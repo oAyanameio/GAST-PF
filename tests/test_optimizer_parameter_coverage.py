@@ -1,4 +1,4 @@
-"""Regression tests for the M0 AdamW parameter-group policy."""
+"""Regression tests for complete GAST AdamW parameter coverage."""
 
 from src.model.forecasting_module import ForecastingLightningModule
 
@@ -13,11 +13,14 @@ def _make_module():
             "mlp_ratio": 4.0,
             "qkv_bias": False,
             "drop_path": 0.2,
-            "num_actor_types": 1,
             "num_modes": 20,
             "dt": 0.4,
             "obs_len": 8,
-            "bimamba": False,
+            "gast_depth": 4,
+            "gast_gsm_operator": "max",
+            "goal_endpoint_loss_weight": 1.0,
+            "mode_diversity_loss_weight": 0.05,
+            "mode_diversity_margin": 0.5,
         },
         lr=1e-3,
         warmup_epochs=5,
@@ -26,7 +29,7 @@ def _make_module():
     )
 
 
-def test_m0_adamw_groups_cover_each_trainable_parameter_once():
+def test_gast_adamw_groups_cover_each_trainable_parameter_once():
     module = _make_module()
     optimizers, _ = module.configure_optimizers()
     optimizer = optimizers[0]
@@ -47,7 +50,7 @@ def test_m0_adamw_groups_cover_each_trainable_parameter_once():
     assert set(grouped_ids) == set(trainable)
 
 
-def test_m0_custom_norm_weights_are_in_optimizer():
+def test_gast_custom_norm_weights_are_in_optimizer():
     module = _make_module()
     optimizers, _ = module.configure_optimizers()
     norm_params = [

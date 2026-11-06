@@ -6,7 +6,7 @@ from .transformer_blocks import Cross_Block
 
 
 class GapAwareGoalDecoder(nn.Module):
-    """Implementation of the GAST Gap Aware Goal Decoder."""
+    """Generate future trajectories by decoding from predicted endpoints."""
 
     def __init__(
         self,
@@ -54,7 +54,7 @@ class GapAwareGoalDecoder(nn.Module):
         )
 
     def _anchor_state(self, data: dict):
-        """Build the seven-dimensional Anchor State from observed history."""
+        """Build decoder conditioning features from the last valid observation."""
         positions = data["x_positions"][:, 0]
         valid = data["x_valid_mask"][:, 0].bool()
         batch_size, history_steps = valid.shape

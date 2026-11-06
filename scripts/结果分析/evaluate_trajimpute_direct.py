@@ -29,35 +29,14 @@ from src.datamodule.trajimpute_dataset import (  # noqa: E402
 from src.evaluation.trajimpute_direct import DirectEvaluator, save_results  # noqa: E402
 
 VARIANTS = {
-    "M0": {
-        "encoder_type": "m0",
-        "gast_gere_spatial": False,
-        "gast_ecta": False,
-        "goal_endpoint_loss_weight": 1.0,
-        "mode_diversity_loss_weight": 0.05,
-        "mode_diversity_margin": 0.5,
-        "classification_target_mode": "joint",
-    },
     "GAST": {
-        "encoder_type": "gast",
         "gast_depth": 4,
         "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_gere_spatial": True,
-        "gast_ecta": True,
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05,
         "mode_diversity_margin": 0.5,
-        "classification_target_mode": "trajectory",
     },
 }
-
-LEGACY_VARIANT_ALIASES = {}
-
-
-def canonical_variant(variant: str) -> str:
-    return LEGACY_VARIANT_ALIASES.get(variant, variant)
-
 
 def get_git_revision():
     try:
@@ -76,9 +55,7 @@ def build_model(variant: str, num_modes: int):
         "mlp_ratio": 4.0,
         "qkv_bias": False,
         "drop_path": 0.2,
-        "num_actor_types": 1,
         "num_modes": num_modes,
-        "bimamba": False,
         "dt": 0.4,
         "obs_len": 8,
     }
@@ -96,53 +73,11 @@ def load_checkpoint(model, ckpt_path):
             f"checkpoint num_modes={checkpoint_modes} 与评估 K={expected_modes} 不一致"
         )
     checkpoint_variant = ckpt.get("meta", {}).get("variant")
-    checkpoint_variant = (
-        canonical_variant(checkpoint_variant) if checkpoint_variant else None
-    )
-    expected_variant = canonical_variant(
-        model_config.get("model_version", checkpoint_variant)
-    )
+    expected_variant = model_config.get("model_version", checkpoint_variant)
     if checkpoint_variant and checkpoint_variant != expected_variant:
         raise ValueError(
             f"checkpoint variant metadata mismatch: {checkpoint_variant} vs "
             f"{expected_variant}"
-        )
-    # Encoder and GAST module switches must match the selected variant.
-    checkpoint_encoder = model_config.get("encoder_type", "m0") if hasattr(model_config, "get") else "m0"
-    expected_encoder = model.encoder_type
-    if checkpoint_encoder != expected_encoder:
-        raise ValueError(
-            f"checkpoint encoder_type={checkpoint_encoder} does not match "
-            f"variant encoder_type={expected_encoder}"
-        )
-    switch_specs = {
-        "gast_gere_spatial": "gast_gere_spatial",
-        "gast_ecta": "gast_ecta",
-    }
-    for switch, config_key in switch_specs.items():
-        ckpt_switch = (
-            bool(model_config.get(config_key, False))
-            if hasattr(model_config, "get")
-            else False
-        )
-        model_switch = bool(getattr(model, switch, False))
-        if ckpt_switch != model_switch:
-            raise ValueError(
-                f"checkpoint {switch}={ckpt_switch} does not match "
-                f"variant {switch}={model_switch}"
-            )
-    checkpoint_classification_target = (
-        model_config.get("classification_target_mode")
-        if hasattr(model_config, "get") else None
-    )
-    if (
-        checkpoint_classification_target is not None
-        and checkpoint_classification_target != model.classification_target_mode
-    ):
-        raise ValueError(
-            "checkpoint classification_target_mode="
-            f"{checkpoint_classification_target} does not match variant "
-            f"classification_target_mode={model.classification_target_mode}"
         )
     for key in (
         "goal_endpoint_loss_weight",
@@ -159,21 +94,8 @@ def load_checkpoint(model, ckpt_path):
                 f"checkpoint {key}={checkpoint_value} does not match "
                 f"variant {key}={getattr(model, key)}"
             )
-    checkpoint_direction = (
-        model_config.get("gast_temporal_direction", "unidirectional")
-        if hasattr(model_config, "get") else "unidirectional"
-    )
-    if checkpoint_direction != model.gast_temporal_direction:
-        raise ValueError(
-            "checkpoint gast_temporal_direction="
-            f"{checkpoint_direction} does not match variant "
-            f"gast_temporal_direction={model.gast_temporal_direction}"
-        )
     state = ckpt.get("state_dict", ckpt)
     cleaned = {k[len("net."):]: v for k, v in state.items() if k.startswith("net.")}
-    # Let TrajectoryForecaster migrate legacy parameter paths first; validate
-    # the post-migration contract rather than rejecting old M0 checkpoints by
-    # their pre-migration key names.
     incompatible = model.load_state_dict(cleaned, strict=False)
     missing_keys = set(incompatible.missing_keys)
     unexpected_keys = set(incompatible.unexpected_keys)
@@ -247,8 +169,6 @@ def main():
     ap.add_argument("--checkpoint", default=None)
     ap.add_argument("--untrained", action="store_true",
                     help="未训练模型冒烟（结果无意义，仅验证管线）")
-    ap.add_argument("--zero-missing-only", action="store_true",
-                    help="已废弃：TrajGap Mixed 主协议不允许子集筛选")
     ap.add_argument("--max-batches", type=int, default=None)
     ap.add_argument("--output-root", default="outputs/trajgap_bench")
     ap.add_argument("--device", default="cuda:0")
@@ -260,13 +180,11 @@ def main():
     torch.manual_seed(args.seed)
     if args.difficulty != MIXED_DIFFICULTY:
         raise SystemExit("TrajGap-Bench 正式评估只允许 Mixed")
-    if args.zero_missing_only:
-        raise SystemExit("Mixed 协议不支持 zero_missing_only 诊断筛选")
     dataset = TrajGapDataset(args.data_root, args.scene, args.split)
     # Mixed 主协议不做子集过滤；保留总行数用于完整性审计。
     n_total_rows = int(dataset.missing_counts.shape[0])
     n_kept_focal = len(dataset)
-    n_filtered_out = n_total_rows - n_kept_focal if args.zero_missing_only else 0
+    n_filtered_out = 0
     model = build_model(args.variant, args.K)
 
     ckpt_info = None
@@ -309,7 +227,7 @@ def main():
         "external_reference": None,
         "release_subset": inspect_clean_source(args.data_root),
         "protocol": BENCHMARK_NAME,
-        "zero_missing_only": bool(args.zero_missing_only),
+        "zero_missing_only": False,
         "n_samples_kept": n_kept_focal,
         "n_samples_total_rows": n_total_rows,
         "n_filtered_out": n_filtered_out,

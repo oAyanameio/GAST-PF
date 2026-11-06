@@ -10,23 +10,16 @@ target:
     mlp_ratio: 4.0
     qkv_bias: False
     drop_path: 0.2
-    num_actor_types: 1
     num_modes: 20
     dt: 0.4
     obs_len: 8
-    bimamba: ${bimamba}
-    encoder_type: 'gast'
     gast_depth: 4
     gast_gsm_operator: 'max'
-    gast_temporal_direction: 'unidirectional'
-    gast_gere_spatial: true
-    gast_ecta: true
-    # Goal-conditioned decoding and trajectory-aware mode ranking are
+    # Endpoint-guided decoding and trajectory-aware mode ranking are
     # intrinsic parts of GAST, not a separate model variant.
     goal_endpoint_loss_weight: 1.0
     mode_diversity_loss_weight: 0.05
     mode_diversity_margin: 0.5
-    classification_target_mode: 'trajectory'
   pretrained_weights: ${pretrained_weights}
   lr: ${lr}
   weight_decay: ${weight_decay}

@@ -1,10 +1,10 @@
 """向量化等价性验收（第二阶段提速，2026-09-22）。
 
-参考实现 = 逐帧/逐 actor 循环版（改造前原代码的逐字拷贝）。
+参考实现为逐帧、逐 actor 的循环版本。
 验收标准：所有张量字段逐位相等（torch.equal / bitwise identical），
 只允许两类文档化差异：
-  1. 零有效帧 actor：旧版在 last_valid_idx 循环处 IndexError 崩溃，
-     新版返回 0（官方数据加载时已校验不存在零有效帧样本，不可达路径）。
+  1. 零有效帧 actor：参考实现会在 last_valid_idx 处抛出 IndexError；
+     当前数据加载已校验不存在此类样本，因此该路径不可达。
   2. 类型元数据（dtype 本身相同；仅标量 Python 包装差异不存在）。
 
 覆盖：
@@ -36,7 +36,7 @@ HAVE_RELEASE = Path(TRAJIMPUTE_ROOT).exists()
 needs_release = pytest.mark.skipif(not HAVE_RELEASE, reason="release 未下载")
 
 
-# ---------------------------------------------------------------- 参考实现（改造前原代码）
+# ---------------------------------------------------------------- 参考实现
 def build_gap_aware_motion_ref(hist_pos: torch.Tensor, hist_valid: torch.Tensor):
     A, T, _ = hist_pos.shape
     diff = torch.zeros(A, T, 2, dtype=hist_pos.dtype)
@@ -61,7 +61,7 @@ def last_valid_idx_ref(hist_valid: torch.Tensor) -> torch.Tensor:
     for i in range(A):
         vi = torch.nonzero(hist_valid[i]).flatten()
         if vi.numel() == 0:
-            raise IndexError("ref: zero-valid actor (旧行为=崩溃)")
+            raise IndexError("ref: zero-valid actor")
         out[i] = int(vi[-1].item())
     return out
 
@@ -79,7 +79,7 @@ def compute_gap_aware_theta_ref(hist_pos, hist_valid_row, eps: float = 1e-4):
 
 def build_sample_ref(hist_world, future_world, hist_valid, scene_id, track_id,
                      obs_len: int = 8, pred_len: int = 12):
-    """改造前 build_sample 的逐字拷贝（循环版）。"""
+    """Build a sample with the reference loop implementation."""
     A = hist_world.shape[0]
     positions = torch.cat([hist_world, future_world], dim=1).double()
 

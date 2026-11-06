@@ -150,11 +150,11 @@ PYTHONNOUSERSITE=1 PYTHONPATH=. \
 /home/lbh/.conda/envs/DeMo/bin/python \
 scripts/训练与评估/run_trajimpute_experiments.py \
   --protocol trajgap-bench \
-  --variant M0 \
+  --variant GAST \
   --scenes ETH-M HOTEL-M UNIV-M ZARA1-M ZARA2-M \
   --seed 2024 \
   --gpu 3 \
-  --output-root outputs/trajgap_bench_m0_seed2024
+  --output-root outputs/trajgap_bench_gast_seed2024
 ```
 
 ## 6. 当前范围边界

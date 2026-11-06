@@ -11,14 +11,8 @@ from src.model.layers.gast_encoder import (  # noqa: E402
     GASTEncoder,
     construct_observation_evidence_state,
     evidence_weighted_state_aggregation,
-    missing_run_ages,
     relative_geometry_features,
 )
-
-
-def test_missing_run_ages_matches_forward_recursion():
-    valid = torch.tensor([[[1, 1, 0, 0, 1, 0]]], dtype=torch.bool)
-    assert missing_run_ages(valid).tolist() == [[[0, 1, 2, 3, 1, 2]]]
 
 
 def test_observation_evidence_state_tracks_age_reliability_and_padding():
@@ -56,20 +50,12 @@ def test_evidence_weighted_state_aggregation_uses_terminal_state_when_history_is
     assert torch.isfinite(weights).all()
 
 
-def test_gast_variants_have_only_forward_mamba_and_expected_modules():
-    uni = GASTEncoder(embed_dim=16, num_heads=4, depth=1)
-    gast = GASTEncoder(
-        embed_dim=16,
-        num_heads=4,
-        depth=1,
-        geometry_evidence_relational_encoding=True,
-        evidence_conditioned_causal_temporal_aggregation=True,
-    )
-    assert not hasattr(uni.temporal, "ssm_back")
-    assert not hasattr(gast.temporal_aggregation.temporal_mamba, "ssm_back")
+def test_gast_uses_complete_evidence_stages():
+    gast = GASTEncoder(embed_dim=16, num_heads=4, depth=1)
     assert hasattr(gast.spatial, "geometry_bias")
     assert hasattr(gast.temporal_aggregation.state_aggregation, "score")
-    assert not hasattr(gast, "directional_readout")
+    blocks = gast.temporal_aggregation.temporal_mamba.ssm_forw
+    assert len(blocks) == 1
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="GAST Mamba forward requires CUDA")
@@ -83,8 +69,6 @@ def test_gast_encoder_outputs_are_finite_and_zero_padding_actors():
         depth=1,
         p_dropout=0,
         drop_path=0,
-        geometry_evidence_relational_encoding=True,
-        evidence_conditioned_causal_temporal_aggregation=True,
     ).to(device).eval()
     valid = torch.tensor(
         [[[1, 1, 0, 0], [1, 1, 1, 0], [0, 0, 0, 0]]], dtype=torch.bool
@@ -101,15 +85,6 @@ def test_gast_encoder_outputs_are_finite_and_zero_padding_actors():
     assert torch.equal(output[:, 2], torch.zeros_like(output[:, 2]))
 
 
-def test_gast_requires_all_evidence_stages_together():
-    with pytest.raises(ValueError, match="GERE and ECTA together"):
-        GASTEncoder(
-            embed_dim=16,
-            num_heads=4,
-            geometry_evidence_relational_encoding=True,
-        )
-
-
 def test_training_and_evaluation_expose_only_selected_variants():
     from scripts.训练与评估.run_trajimpute_experiments import (
         DEFAULT_VARIANT,
@@ -118,40 +93,29 @@ def test_training_and_evaluation_expose_only_selected_variants():
     from scripts.结果分析.evaluate_trajimpute_direct import VARIANTS as eval_variants
 
     assert DEFAULT_VARIANT == "GAST"
-    assert set(train_variants) == {"M0", "GAST"}
+    assert set(train_variants) == {"GAST"}
     assert train_variants.keys() == eval_variants.keys()
     assert train_variants["GAST"] == eval_variants["GAST"]
-    assert train_variants["GAST"]["classification_target_mode"] == "trajectory"
+    assert train_variants["GAST"]["gast_depth"] == 4
 
 
-def test_gast_yaml_uses_trajectory_target_and_goal_decoder_by_default():
+def test_gast_yaml_uses_full_method_by_default():
     import yaml
 
     config = yaml.safe_load(
         (REPO / "conf/model/gast_model_forecast.yaml").read_text()
     )
     model = config["target"]["model"]
-    assert model["classification_target_mode"] == "trajectory"
+    assert model["gast_depth"] == 4
+    assert model["gast_gsm_operator"] == "max"
 
 
-def test_forecaster_registers_gast_and_preserves_m0_state_dict():
+def test_forecaster_builds_only_the_gast_encoder():
     from src.model.trajectory_forecaster import TrajectoryForecaster
 
-    torch.manual_seed(2024)
-    m0_a = TrajectoryForecaster(num_modes=4)
-    torch.manual_seed(2024)
-    m0_b = TrajectoryForecaster(num_modes=4, encoder_type="m0")
-    assert all(torch.equal(value, m0_b.state_dict()[key]) for key, value in m0_a.state_dict().items())
-
-    model = TrajectoryForecaster(
-        num_modes=4,
-        encoder_type="gast",
-        gast_gere_spatial=True,
-        gast_ecta=True,
-    )
-    assert model.gast_method_name == "GAST"
+    model = TrajectoryForecaster(num_modes=4)
+    assert hasattr(model, "gast_encoder")
     assert not hasattr(model, "gast_scene_tail")
-    assert not any(key.startswith("history_input_projection.") for key in model.state_dict())
 
 
 def test_current_gast_checkpoint_loads_into_gast(tmp_path):
@@ -169,14 +133,9 @@ def test_current_gast_checkpoint_loads_into_gast(tmp_path):
             "model": {
                 **{
                     "num_modes": 4,
-                    "encoder_type": "gast",
-                    "gast_gere_spatial": True,
-                    "gast_ecta": True,
-                    "classification_target_mode": "trajectory",
                     "goal_endpoint_loss_weight": 1.0,
                     "mode_diversity_loss_weight": 0.05,
                     "mode_diversity_margin": 0.5,
-                    "gast_temporal_direction": "unidirectional",
                 }
             }
         },

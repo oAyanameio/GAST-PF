@@ -19,18 +19,17 @@ TrajGap-Bench 的底层数据来自 TrajImpute 官方 Easy/Hard release。本文
 
 ```text
 GAST
-├── GAST gap-aware encoder
-│   ├── GERE 逐帧几何证据关系编码（Geometric Evidence Relational Encoding）
-│   └── ECTA 观测证据条件化因果时间聚合（Evidence-Conditioned Causal Temporal Aggregation）
-│       ├── 可靠度调制的 Mamba 时序编码器（reliability-modulated Mamba temporal encoder）
-│       └── 可靠度加权的历史读出（reliability-weighted readout）
-└── Goal-conditioned future decoder（锚点条件化目标解码器）
-    ├── 终点条件化
+├── 观测证据感知时空编码器
+│   ├── 逐帧几何交互建模
+│   └── 可靠度加权的时序聚合（可靠度调制的 Mamba 与历史状态汇总）
+└── 终点引导解码器
+    ├── 使用末次有效观测状态和实际预测间隔
+    ├── 多模态终点预测与未来轨迹生成
     ├── final-consistent loss
     └── mode diversity regularization
 ```
 
-goal 条件解码和轨迹级模式排序是 GAST 的内置设计，不单独注册为第二个模型。实验配置统一使用 GAST，M0 仅作为历史对照。
+终点引导解码和轨迹级模式排序是 GAST 的内置设计，不单独注册为第二个模型。当前仓库的自有训练与评估入口只实现 GAST。
 
 ### 1.2 研究问题
 
@@ -39,7 +38,7 @@ goal 条件解码和轨迹级模式排序是 GAST 的内置设计，不单独注
 1. 模型能否直接利用不完整历史，而不是依赖外部插补？
 2. 在相同缺失数量下，缺失位置和时间结构是否会改变预测难度？
 3. 模型性能是否能在可观测证据减少时平稳退化？
-4. GAST 的 goal 条件化是否能改善缺失历史下的多模态未来覆盖？
+4. GAST 的终点引导解码是否能改善缺失历史下的多模态未来覆盖？
 
 ## 2. 数据集与任务
 
@@ -170,7 +169,7 @@ TrajGap-Bench 正式主榜只报告两个指标：
 
 ### 4.1 结果说明
 
-完整逐场景、宏/微平均、排序诊断和缺失分层表由 [`docs/results/trajgap_bench_leaderboard.md`](docs/results/trajgap_bench_leaderboard.md) 自动生成并维护。正式采用的 GAST 完整五场景轮次为 `outputs/trajgap_gast_goal_3gpu_retry/`，五场景 manifest revision 一致，宏平均 `minADE20/minFDE20` 为 **0.3168/0.4831**；MoFlow 为 **0.3496/0.5227**。六个外部对照均完成五场景。另一套 `trajgap_gast_5scene_seed2024` 虽有五份评估结果，但场景 manifest revisions 不一致，不作为严格完整轮次汇总。
+完整逐场景、宏/微平均、排序诊断和缺失分层表由 [`docs/results/trajgap_bench_leaderboard.md`](docs/results/trajgap_bench_leaderboard.md) 自动生成并维护。正式结果采用五场景 manifest revision 一致的完整 GAST 轮次，宏平均 `minADE20/minFDE20` 为 **0.3168/0.4831**；MoFlow 为 **0.3496/0.5227**。六个外部对照均完成五场景。其他结果因场景间 revision 不一致，不合并为完整轮次。
 
 ### 4.2 当前结果
 
@@ -180,9 +179,10 @@ TrajGap-Bench 正式主榜只报告两个指标：
 
 | 项目 | `GAST` |
 |---|---|
-| Encoder | `GAST`，单向 gap-aware Mamba |
-| Evidence-conditioned encoding | GERE + ECTA（输入调制＋可靠度加权读出） |
-| Decoder | GAST 内置 goal-conditioned future decoder |
+| Encoder | 观测证据感知时空编码器（Mamba） |
+| Spatial modeling | 逐帧几何交互建模 |
+| Temporal aggregation | 可靠度加权的时序聚合 |
+| Decoder | 终点引导解码器 |
 | Mode ranking | GAST 内置 trajectory-aware classification |
 | Prediction modes | `K=20` |
 | Loss | `final_consistent`（正文称双指派多模态训练目标，dual-assignment multimodal objective） |
@@ -266,14 +266,13 @@ The benchmark reuses the official TrajImpute Easy/Hard release. Its contribution
 
 The complete method in this document is **GAST**:
 
-- unidirectional Mamba temporal encoding;
-- GERE frame-wise geometric evidence encoding;
-- reliability-modulated Mamba temporal encoding（可靠度调制的 Mamba 时序编码）;
-- reliability-weighted readout（可靠度加权的历史读出）;
-- goal-conditioned future decoding;
+- observation reliability derived from validity masks and missing duration;
+- frame-wise geometric interaction modeling;
+- reliability-weighted temporal aggregation with Mamba;
+- endpoint-guided trajectory decoding based on the last valid observation;
 - final-consistent loss and mode-diversity regularization.
 
-Goal-conditioned decoding and trajectory-aware mode ranking are internal components of GAST, not separate model names. Experimental configurations use GAST consistently, with M0 retained only as the historical reference.
+Endpoint-guided decoding and trajectory-aware mode ranking are internal components of GAST, not separate model names. The repository's first-party training and evaluation entry points implement GAST only.
 
 ## 2. Dataset and task
 
@@ -316,7 +315,7 @@ Methods may use an internal latent completion mechanism, but external imputation
 
 ## 4. Comparison experiments
 
-The complete scene-wise comparison, macro/micro averages, ranking diagnostics, and missingness-stratified results are generated in [`docs/results/trajgap_bench_leaderboard.md`](docs/results/trajgap_bench_leaderboard.md), the single numerical source for this benchmark. The selected GAST complete run is `outputs/trajgap_gast_goal_3gpu_retry/`; all five scene manifests share one code revision, and its macro `minADE20/minFDE20` is **0.3168/0.4831**. MoFlow is **0.3496/0.5227**. All six external baselines have completed all five scenes. A second five-scene result directory contains different scene revisions and is not treated as one strict complete run.
+The complete scene-wise comparison, macro/micro averages, ranking diagnostics, and missingness-stratified results are generated in [`docs/results/trajgap_bench_leaderboard.md`](docs/results/trajgap_bench_leaderboard.md), the single numerical source for this benchmark. The selected GAST run has matching code revisions across all five scenes, with macro `minADE20/minFDE20` of **0.3168/0.4831**. MoFlow is **0.3496/0.5227**. All six external baselines have completed all five scenes. Other results with mismatched scene revisions are not combined into a single run.
 
 The protocol document does not duplicate static result tables. It retains model configuration, reproduction commands, and evaluation limitations.
 

@@ -106,7 +106,7 @@ def test_final_consistent_loss_matches_goal_and_non_goal_output_contracts():
     assert torch.isfinite(scale.grad).all()
 
 
-def test_goal_trajectory_classification_uses_full_trajectory_best_mode():
+def test_goal_classification_uses_full_trajectory_best_mode():
     target = torch.zeros(1, 1, 4, 2)
     prediction = torch.tensor(
         [[
@@ -131,22 +131,7 @@ def test_goal_trajectory_classification_uses_full_trajectory_best_mode():
         "goal_endpoints": prediction[..., -1, :],
     }
 
-    _, joint_logs = final_consistent_loss(output, data, LaplaceNLLLoss())
-    _, trajectory_logs = final_consistent_loss(
-        output,
-        data,
-        LaplaceNLLLoss(),
-        classification_target_mode="trajectory",
-    )
-
     assert torch.allclose(
-        joint_logs["cls_loss"],
-        torch.nn.functional.cross_entropy(logits, torch.tensor([1]), label_smoothing=0.2),
-    )
-    assert torch.allclose(
-        trajectory_logs["cls_loss"],
+        final_consistent_loss(output, data, LaplaceNLLLoss())[1]["cls_loss"],
         torch.nn.functional.cross_entropy(logits, torch.tensor([0]), label_smoothing=0.2),
     )
-    assert not torch.allclose(joint_logs["cls_loss"], trajectory_logs["cls_loss"])
-    for key in ("reg_loss", "endpoint_loss", "laplace_loss", "diversity_loss"):
-        assert torch.allclose(joint_logs[key], trajectory_logs[key])

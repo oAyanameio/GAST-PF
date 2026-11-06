@@ -36,36 +36,20 @@ CONFIG_NAME = "config_missing_aware_trajimpute"
 EVAl_SCRIPT = REPO / "scripts/结果分析/evaluate_trajimpute_direct.py"
 
 SCENES = ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
-FOLDS = ["ETH", "HOTEL", "UNIV", "ZARA1", "ZARA2"]
 DIRECT_NUM_MODES = 20
 CANONICAL_BENCHMARK = "TrajGap-Bench"
 DEFAULT_PROTOCOL = "trajgap-bench"
 DEFAULT_VARIANT = "GAST"
 OPTIMIZER_POLICY = "adamw_complete_module_local_v1"
 
-# Keep one proposed method name. Goal-conditioned decoding and trajectory-aware
-# mode ranking are built into GAST; M0 remains the historical reference.
+# Endpoint-guided decoding and trajectory-aware mode ranking are built into GAST.
 VARIANTS = {
-    "M0": {
-        "encoder_type": "m0",
-        "gast_gere_spatial": False,
-        "gast_ecta": False,
-        "goal_endpoint_loss_weight": 1.0,
-        "mode_diversity_loss_weight": 0.05,
-        "mode_diversity_margin": 0.5,
-        "classification_target_mode": "joint",
-    },
     "GAST": {
-        "encoder_type": "gast",
         "gast_depth": 4,
         "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
-        "gast_gere_spatial": True,
-        "gast_ecta": True,
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05,
         "mode_diversity_margin": 0.5,
-        "classification_target_mode": "trajectory",
     },
 }
 
@@ -77,28 +61,22 @@ PROTOCOLS = {
         "val_difficulties": ["Mixed"],
         "test_difficulties": ["Mixed"],
         "train_sampling_scheme": "natural",
-        "zero_missing_only": False,
         "suffix": "_trajgap",
     },
 }
 
-RESUME_CONTRACT_VERSION = 1
+RESUME_CONTRACT_VERSION = 2
 RESUME_CONTRACT_FIELDS = (
     "protocol", "dataset", "data_root", "files", "scene", "model_version",
-    "encoder_type", "encoder_config", "model_config", "seed", "batch_size",
+    "model_config", "seed", "batch_size",
     "epochs", "precision", "lr", "weight_decay", "optimizer_policy",
     "train_sampling_scheme", "train_sampling_seed", "monitor", "K",
-    "backbone", "initialization_checkpoint", "git_revision",
+    "initialization_checkpoint", "git_revision",
     "laplace_loss_impl", "runner_contract_version", "optimizer_signature",
 )
 
 
-def resolve_scenes(scenes, folds):
-    """Map the legacy --folds spelling onto scene names; the two are exclusive."""
-    if folds and scenes:
-        raise SystemExit("--folds 与 --scenes 互斥；请只用其中一种指定场景")
-    if folds:
-        return [f"{fold}-M" for fold in folds]
+def resolve_scenes(scenes):
     if scenes:
         return list(scenes)
     return list(SCENES)
@@ -239,15 +217,13 @@ def _model_config(args):
     config = {
         "embed_dim": 128, "future_steps": 12, "num_heads": 8,
         "mlp_ratio": 4.0, "qkv_bias": False, "drop_path": 0.2,
-        "num_actor_types": 1, "num_modes": args.K, "dt": 0.4,
-        "obs_len": 8, "bimamba": False,
-        "encoder_type": "gast", "gast_depth": 4,
+        "num_modes": args.K, "dt": 0.4,
+        "obs_len": 8,
+        "gast_depth": 4,
         "gast_gsm_operator": "max",
-        "gast_temporal_direction": "unidirectional",
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05,
         "mode_diversity_margin": 0.5,
-        "classification_target_mode": "trajectory",
     }
     config.update(VARIANTS[args.variant])
     return config
@@ -516,15 +492,8 @@ def build_manifest(args, protocol_cfg):
         "python": sys.executable,
         "env": env_info(),
         "model_version": args.variant,
-        "encoder_type": VARIANTS[args.variant].get("encoder_type", "m0"),
-        "encoder_source": "GAST Encoder" if VARIANTS[args.variant].get("encoder_type") == "gast" else "M0",
-        "encoder_config": {
-            key: value for key, value in VARIANTS[args.variant].items()
-            if key.startswith("gast_")
-        },
         "model_config": _model_config(args),
         "scene_partition": bool(getattr(args, "allow_scene_partition", False)),
-        "backbone": {"bimamba": False},
         "seed": args.seed,
         "batch_size": args.batch_size,
         "epochs": args.epochs,
@@ -546,7 +515,6 @@ def build_manifest(args, protocol_cfg):
         "training_mode": "retrain_missing_data",
         "zero_missing_only": False,
         "gpu": args.gpu,
-        "folds": args.folds,
         "started": datetime.now().isoformat(timespec="seconds"),
         "experiment_class": "smoke" if args.smoke else (
             "screening" if args.screening else "confirmatory"),
@@ -626,7 +594,7 @@ def _run_one_scene_locked(args, scene, protocol_cfg, manifest, gpu_env):
         f"val_difficulties={protocol_cfg.get('val_difficulties', [protocol_cfg['difficulty']])}",
         f"train_sampling_scheme={protocol_cfg.get('train_sampling_scheme', 'natural')}",
         f"train_sampling_seed={args.train_sampling_seed}",
-        f"zero_missing_only={str(protocol_cfg['zero_missing_only']).lower()}",
+        "zero_missing_only=false",
         f"data_root={args.data_root}",
         f"seed={args.seed}",
         f"batch_size={args.batch_size}",
@@ -638,7 +606,6 @@ def _run_one_scene_locked(args, scene, protocol_cfg, manifest, gpu_env):
         f"model.target.model.num_modes={args.K}",
         f"lr={args.lr}",
         f"weight_decay={args.weight_decay}",
-        "bimamba=false",
         f"clean_suffix={protocol_cfg['suffix']}",
     ]
     train_overrides.append(f"model_version={args.variant}")
@@ -727,8 +694,6 @@ def _run_one_scene_locked(args, scene, protocol_cfg, manifest, gpu_env):
             "--checkpoint", str(ckpt),
             "--output-root", str(run_dir / "eval" / test_difficulty),
         ]
-        if protocol_cfg["zero_missing_only"]:
-            eval_cmd += ["--zero-missing-only"]
         if args.smoke:
             eval_cmd += ["--max-batches", str(args.limit_batches)]
         rc_eval = sh(eval_cmd, log, env=gpu_env)
@@ -769,8 +734,6 @@ def main():
     ap.add_argument("--protocol", default=DEFAULT_PROTOCOL, choices=list(PROTOCOLS))
     ap.add_argument("--variant", default=DEFAULT_VARIANT, choices=list(VARIANTS))
     ap.add_argument("--scenes", nargs="+", default=None)
-    ap.add_argument("--folds", nargs="+", default=None, choices=FOLDS,
-                    help="显式替代 --scenes 的等价写法（ETH -> ETH-M）")
     ap.add_argument("--data-root", default="/home/lbh/TrajImpute/dataset/TrajImpute")
     ap.add_argument("--precision", default="bf16")
     ap.add_argument("--seed", type=int, default=2024)
@@ -788,7 +751,7 @@ def main():
     ap.add_argument(
         "--init-checkpoint",
         default=None,
-        help="optional M0 initialization checkpoint loaded before training",
+        help="optional compatible GAST checkpoint loaded before training",
     )
     ap.add_argument("--allow-scene-partition", action="store_true",
                     help="allow disjoint subsets of the five scenes for coordinated GPU lanes")
@@ -802,8 +765,7 @@ def main():
     if args.train_sampling_seed is None:
         args.train_sampling_seed = args.seed
 
-    args.scenes = resolve_scenes(args.scenes, args.folds)
-    args.folds = args.folds or []
+    args.scenes = resolve_scenes(args.scenes)
 
     if args.K != DIRECT_NUM_MODES:
         raise SystemExit("TrajGap-Bench 正式重训协议固定 K=20")
@@ -813,8 +775,6 @@ def main():
         raise SystemExit("正式实验只允许 TrajGap-Bench")
     if protocol_cfg["dataset"] != "trajgap":
         raise SystemExit("正式实验必须使用 TrajGap 数据适配器")
-    if protocol_cfg["zero_missing_only"]:
-        raise SystemExit("TrajGap-Bench 正式重训禁止 zero_missing_only")
     args.data_root = str(Path(args.data_root).expanduser().resolve())
     if args.init_checkpoint is not None:
         args.init_checkpoint = str(Path(args.init_checkpoint).expanduser().resolve())

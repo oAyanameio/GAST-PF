@@ -129,7 +129,7 @@ def test_evaluator_real_data_grouping_end_to_end():
     from src.model.trajectory_forecaster import TrajectoryForecaster
     from src.datamodule.trajimpute_dataset import trajimpute_collate_fn
     ds = TrajImputeDataset(TRAJIMPUTE_ROOT, "ETH-M", "Hard", "test")
-    model = TrajectoryForecaster(num_modes=6, bimamba=True).cuda().eval()
+    model = TrajectoryForecaster(num_modes=6).cuda().eval()
     ev = DirectEvaluator()
     with torch.no_grad():
         items = [ds[i] for i in range(0, 12)]

@@ -138,9 +138,9 @@ def main():
         from src.model.forecasting_module import ForecastingLightningModule
 
         cfg = dict(type="TrajectoryForecaster", embed_dim=128, future_steps=12, num_heads=8,
-                   mlp_ratio=4.0, qkv_bias=False, drop_path=0.2, num_actor_types=1,
-                   num_modes=20, dt=0.4, obs_len=8, bimamba=False,
-                   encoder_type="gast", gast_depth=4, gast_gsm_operator="max")
+                   mlp_ratio=4.0, qkv_bias=False, drop_path=0.2,
+                   num_modes=20, dt=0.4, obs_len=8,
+                   gast_depth=4, gast_gsm_operator="max")
         dev = "cuda:0" if torch.cuda.is_available() else "cpu"
         autocast_dev = "cuda" if torch.cuda.is_available() else "cpu"
         lm = ForecastingLightningModule(model=dict(cfg), lr=1e-3, weight_decay=1e-4,
