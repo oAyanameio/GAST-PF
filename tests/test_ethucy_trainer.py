@@ -1,11 +1,11 @@
-"""ETH/UCY Trainer 单元测试。
+"""ETH/UCY forecasting module unit tests.
 
-测试 Trainer 的损失函数和训练步骤。
+测试 Lightning module 的损失函数和训练步骤。
 """
 
 import torch
 
-from src.model.trainer_forecast import Trainer
+from src.model.forecasting_module import ForecastingLightningModule
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -31,57 +31,54 @@ def _make_dummy_batch_actor_only(B=2, N=10, obs_len=8, pred_len=12):
     return data
 
 
-def _make_trainer():
-    trainer = Trainer(
+def _make_module():
+    module = ForecastingLightningModule(
         model={
             "type": "TrajectoryForecaster",
             "embed_dim": 128,
             "future_steps": 12,
-            "num_actor_types": 1,
         },
         lr=0.001,
         epochs=100,
         warmup_epochs=5,
     )
-    return trainer.to(DEVICE)
+    return module.to(DEVICE)
 
 
-class TestTrainerEthUcy:
-    """测试 ETH/UCY 模式下的 Trainer。"""
+class TestForecastingLightningModuleEthUcy:
+    """测试 ETH/UCY 数据上的 Lightning module。"""
 
-    def test_trainer_init(self):
-        trainer = _make_trainer()
-        assert trainer.net.future_steps == 12
-        # Trainer 固定使用 SubmissionEthUcy
-        assert type(trainer.submission_handler).__name__ == "SubmissionEthUcy"
+    def test_module_init(self):
+        module = _make_module()
+        assert module.net.future_steps == 12
 
     def test_training_step_no_nan(self):
-        trainer = _make_trainer()
-        trainer.train()
+        module = _make_module()
+        module.train()
         data = _make_dummy_batch_actor_only(B=2, N=10, obs_len=8, pred_len=12)
 
-        loss = trainer.training_step(data, batch_idx=0)
+        loss = module.training_step(data, batch_idx=0)
 
         assert loss is not None
         assert not torch.isnan(loss)
         assert not torch.isinf(loss)
 
     def test_validation_step(self):
-        trainer = _make_trainer()
-        trainer.eval()
+        module = _make_module()
+        module.eval()
         data = _make_dummy_batch_actor_only(B=2, N=10, obs_len=8, pred_len=12)
 
         # 验证步骤不应抛出异常
-        trainer.validation_step(data, batch_idx=0)
+        module.validation_step(data, batch_idx=0)
 
     def test_loss_no_other_agents(self):
         """测试没有其他行人目标时损失仍为有限值。"""
-        trainer = _make_trainer()
-        trainer.train()
+        module = _make_module()
+        module.train()
 
         # 只有 focal agent，没有其他行人
         data = _make_dummy_batch_actor_only(B=2, N=1, obs_len=8, pred_len=12)
-        loss = trainer.training_step(data, batch_idx=0)
+        loss = module.training_step(data, batch_idx=0)
 
         assert not torch.isnan(loss)
         assert not torch.isinf(loss)

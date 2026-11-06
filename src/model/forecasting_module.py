@@ -1,23 +1,12 @@
-import datetime
-from pathlib import Path
-import time
-import pickle
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torchmetrics import MetricCollection
-from torch.optim.lr_scheduler import CosineAnnealingLR
 from src.metrics import MR, minADE, minFDE, brier_minFDE
 from src.utils.optim import WarmupCosLR
 from src.utils.LaplaceNLLLoss import LaplaceNLLLoss
 from .trajectory_forecaster import TrajectoryForecaster
 from .trajectory_loss import final_consistent_loss
-
-
-def _log_detach(x):
-    """日志标量统一 detach：tensor 去梯度，标量原样返回（避免对 0 调 .detach）。"""
-    return x.detach() if torch.is_tensor(x) else x
 
 
 class ForecastingLightningModule(pl.LightningModule):
@@ -30,14 +19,12 @@ class ForecastingLightningModule(pl.LightningModule):
         epochs: int = 60,
         weight_decay: float = 1e-4,
     ) -> None:
-        super(Trainer, self).__init__()
+        super().__init__()
         self.warmup_epochs = warmup_epochs
         self.epochs = epochs
         self.lr = lr
         self.weight_decay = weight_decay
         self.save_hyperparameters()
-        from src.utils.submission_ethucy import SubmissionEthUcy
-        self.submission_handler = SubmissionEthUcy()
 
         model_type = model.pop('type')
 
@@ -73,19 +60,6 @@ class ForecastingLightningModule(pl.LightningModule):
     def forward(self, data):
         return self.net(data)
 
-    def predict(self, data):
-        predictions = []
-        probs = []
-        for i in range(len(data)):
-            cur_data = data[i]
-            out = self(cur_data)
-            prediction, prob = self.submission_handler.format_data(
-                cur_data, out["y_hat"], out["pi"], inference=True)
-            predictions.append(prediction)
-            probs.append(prob)
-
-        return predictions, probs
-
     def _cal_loss_final_consistent(self, out, data, tag=''):
         return final_consistent_loss(
             out=out,
@@ -94,7 +68,6 @@ class ForecastingLightningModule(pl.LightningModule):
             endpoint_loss_weight=self.net.goal_endpoint_loss_weight,
             mode_diversity_loss_weight=self.net.mode_diversity_loss_weight,
             mode_diversity_margin=self.net.mode_diversity_margin,
-            classification_target_mode=self.net.classification_target_mode,
             tag=tag,
         )
 
@@ -145,10 +118,6 @@ class ForecastingLightningModule(pl.LightningModule):
             )
 
     def on_test_start(self) -> None:
-        save_dir = Path("./submission")
-        save_dir.mkdir(exist_ok=True)
-        from src.utils.submission_ethucy import SubmissionEthUcy
-        self.submission_handler = SubmissionEthUcy(save_dir=str(save_dir))
         self.test_metrics = self.val_metrics.clone(prefix="test_")
 
     def test_step(self, data, batch_idx) -> None:
@@ -156,7 +125,6 @@ class ForecastingLightningModule(pl.LightningModule):
         if out['new_y_hat'] is not None:
             out['y_hat'] = out['new_y_hat']
             out['pi'] = out['new_pi']
-        self.submission_handler.format_data(data, out["y_hat"], out["pi"])
         metrics = self.test_metrics(out, data['target'][:, 0])
         self.log_dict(
             metrics,
@@ -167,12 +135,11 @@ class ForecastingLightningModule(pl.LightningModule):
         )
 
     def on_test_end(self) -> None:
-        self.submission_handler.generate_submission_file()
         print("TEST METRICS:", self.test_metrics.compute())
 
     def configure_optimizers(self):
-        # M0 baseline policy: enumerate module-local parameters and retain
-        # custom mixer/RMSNorm weights in the no-decay group by default.
+        # Enumerate module-local parameters so custom mixer/RMSNorm weights
+        # are covered even when they are not in the standard decay whitelist.
         decay = set()
         no_decay = set()
         whitelist_weight_modules = (
@@ -247,7 +214,3 @@ class ForecastingLightningModule(pl.LightningModule):
             epochs=self.epochs,
         )
         return [optimizer], [scheduler]
-
-
-# Legacy class name kept for old Hydra targets and scripts.
-Trainer = ForecastingLightningModule
