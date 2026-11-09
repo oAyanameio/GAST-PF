@@ -20,7 +20,7 @@ TrajGap-Bench 的底层数据来自 TrajImpute 官方 Easy/Hard release。本文
 ```text
 GAST
 ├── 观测证据感知时空编码器
-│   ├── 逐帧几何交互建模
+│   ├── 逐帧交互建模
 │   └── 可靠度加权的时序聚合（可靠度调制的 Mamba 与历史状态汇总）
 └── 终点引导解码器
     ├── 使用末次有效观测状态和实际预测间隔
@@ -180,7 +180,7 @@ TrajGap-Bench 正式主榜只报告两个指标：
 | 项目 | `GAST` |
 |---|---|
 | Encoder | 观测证据感知时空编码器（Mamba） |
-| Spatial modeling | 逐帧几何交互建模 |
+| Interaction modeling | 逐帧交互建模（含相对关系偏置） |
 | Temporal aggregation | 可靠度加权的时序聚合 |
 | Decoder | 终点引导解码器 |
 | Mode ranking | GAST 内置 trajectory-aware classification |
@@ -267,7 +267,7 @@ The benchmark reuses the official TrajImpute Easy/Hard release. Its contribution
 The complete method in this document is **GAST**:
 
 - observation reliability derived from validity masks and missing duration;
-- frame-wise geometric interaction modeling;
+- frame-wise actor interaction modeling;
 - reliability-weighted temporal aggregation with Mamba;
 - endpoint-guided trajectory decoding based on the last valid observation;
 - final-consistent loss and mode-diversity regularization.

@@ -13,7 +13,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-METRICS = ["minADE_K", "minFDE_K", "ADE@1", "FDE@1"]
+METRICS = ["minADE20", "minFDE20"]
 SCENES = ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
 FORMAL_K = 20
 CANONICAL_PROTOCOL = "TrajGap-Bench"
@@ -49,7 +49,8 @@ def collect(root: Path):
             "run_dir": str(run_dir),
         }
         for m in METRICS:
-            row[m] = ov.get(m)
+            legacy_key = {"minADE20": "minADE_K", "minFDE20": "minFDE_K"}[m]
+            row[m] = ov.get(m, ov.get(legacy_key))
         rows.append(row)
     return rows
 
@@ -131,23 +132,22 @@ def main():
     md.append("训练、验证和测试均为 TrajGap Mixed；所有误差指标越低越好。\n")
 
     md.append("## 各版本×场景×seed 明细\n")
-    md.append("| variant | scene | protocol | seed | n | minADE20 | minFDE20 | ADE@1 | FDE@1 |")
-    md.append("|---|---|---|---|---:|---:|---:|---:|---:|")
+    md.append("| variant | scene | protocol | seed | n | minADE20 | minFDE20 |")
+    md.append("|---|---|---|---|---:|---:|---:|")
     for r in sorted(rows, key=lambda x: (x["protocol"], x["variant"], x["seed"], SCENES.index(x["scene"]))):
         md.append(
             f"| {r['variant']} | {r['scene']} | {r['protocol']} | {r['seed']} | {r['n']} "
-            f"| {r['minADE_K']:.4f} | {r['minFDE_K']:.4f} | {r['ADE@1']:.4f} "
-            f"| {r['FDE@1']:.4f} |")
+            f"| {r['minADE20']:.4f} | {r['minFDE20']:.4f} |")
 
     md.append("\n## 聚合（protocol × variant × seed × K）\n")
-    md.append("| protocol | variant | seed | K | runs | minFDE20均值 | minFDE20最好 | minFDE20最差 | minFDE20标准差 |")
+    md.append("| protocol | variant | seed | K | runs | minADE20均值 | minADE20标准差 | minFDE20均值 | minFDE20标准差 |")
     md.append("|---|---|---|---:|---:|---:|---:|---:|---:|")
     for e in by_variant:
         md.append(f"| {e['protocol']} | {e['variant']} | {e['seed']} | {e['K']} | {e['n_runs']} "
-                  f"| {e.get('minFDE_K_mean', float('nan')):.4f} "
-                  f"| {e.get('minFDE_K_min', float('nan')):.4f} "
-                  f"| {e.get('minFDE_K_max', float('nan')):.4f} "
-                  f"| {e.get('minFDE_K_std', 0):.4f} |")
+                  f"| {e.get('minADE20_mean', float('nan')):.4f} "
+                  f"| {e.get('minADE20_std', 0):.4f} "
+                  f"| {e.get('minFDE20_mean', float('nan')):.4f} "
+                  f"| {e.get('minFDE20_std', 0):.4f} |")
 
     (root / "comparison.md").write_text("\n".join(md), encoding="utf-8")
     print(f"[summary] {detail_path}")

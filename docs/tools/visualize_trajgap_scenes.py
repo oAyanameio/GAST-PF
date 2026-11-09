@@ -1,4 +1,4 @@
-"""TrajGap 定性可视化：把 GAST 模型输出轨迹投到 ETH/UCY 原版场景图上。
+"""TrajGap 多模态定性可视化：将 GAST 的全部未来模式叠加到场景图。
 
 用法（DeMo env，仓库根目录）：
   PYTHONPATH=outputs/trajgap_gast_goal_3gpu_retry/gpu0/GAST-Goal_ETH-M_mixed-direct_seed2024_uni/train \
@@ -15,8 +15,14 @@
               （官方 UCY 对角缩放，Habiba-Amroune CSV 拟合残差 0；落图 ~99.9%）
 
 选样规则（防选择性展示）：
-  每场景按 focal missing_count 分 4 层（0 / 1-2 / 3-4 / >=5），每层抽 128 样本
-  前向，取 minFDE20 最接近该层中位数的样本。即"各缺失条件典型样本"，非最好看样本。
+  每场景按 focal missing_count 分 3 层（0 / 1-4 / >=5），固定种子抽取最多 32 个候选
+  前向；要求 best-of-20 和 GT 预测跨度 >=28px、路径长度 >=40px，历史至少有一段
+  连续移动。合格候选中取联合可见度最接近第 75 百分位者；这是轨迹形态展示，
+  不作为随机代表样本或性能证据。
+
+输出：每场景/缺失层一张高清图，以及 3 缺失层 × 5 场景的 PNG/PDF 汇总图；
+图中绘制观测历史、真实未来和按最小 FDE 选出的 best-of-20 预测。背景为静态场景图，
+不是逐时刻同步的原始视频帧（当前数据目录不含视频帧）。
 """
 
 import argparse
@@ -36,6 +42,7 @@ sys.path.insert(0, str(SNAPSHOT_ROOT))
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 from PIL import Image
 
 from src.datamodule.trajimpute_dataset import (  # noqa: E402
@@ -46,6 +53,11 @@ from src.model.trajectory_forecaster import TrajectoryForecaster  # noqa: E402
 # ---------------------------------------------------------------- 场景映射
 
 MAPS_DIR = REPO / "docs/figures/scene_maps"
+MOFLOW_LAYERS = (
+    ("m0", "0 missing"),
+    ("m14", "1-4 missing"),
+    ("m5p", "5+ missing"),
+)
 
 H_ETH_OFFICIAL = np.array([
     [2.0091900e-03, 2.8128700e-02, -4.6693600e+00],
@@ -137,14 +149,13 @@ def build_model(scene: str):
 # ---------------------------------------------------------------- 选样与前向
 
 def stratify(dataset, per_layer=128, seed=2024):
-    """missing_count 分 4 层，每层随机抽 per_layer 个索引。"""
+    """Sample focal histories from three missingness strata."""
     rng = np.random.default_rng(seed)
     mc = dataset.missing_counts.numpy() if torch.is_tensor(dataset.missing_counts) \
         else np.asarray(dataset.missing_counts)
     layers = [
         ("m0", np.where(mc == 0)[0]),
-        ("m12", np.where((mc >= 1) & (mc <= 2))[0]),
-        ("m34", np.where((mc >= 3) & (mc <= 4))[0]),
+        ("m14", np.where((mc >= 1) & (mc <= 4))[0]),
         ("m5p", np.where(mc >= 5)[0]),
     ]
     out = {}
@@ -157,10 +168,9 @@ def stratify(dataset, per_layer=128, seed=2024):
 
 
 @torch.no_grad()
-def forward_indices(model, dataset, indices, device, batch_size=16):
+def forward_indices(model, dataset, indices, device, batch_size=4):
     """对给定索引跑前向，返回 {idx: (pred_world(K,12,2), pi(K), minfde, top1)}。"""
     model = model.to(device).eval()
-    from torch.utils.data import DataLoader
     results = {}
     for s in range(0, len(indices), batch_size):
         chunk = np.asarray(indices[s:s + batch_size])
@@ -177,60 +187,121 @@ def forward_indices(model, dataset, indices, device, batch_size=16):
         origin = batch["origin"].numpy()                     # (B,2)
         theta = batch["theta"].numpy()                       # (B,)
         target = batch["target"][:, 0].numpy()               # (B,T,2) 局部
+        obs_local = batch["x_positions"][:, 0].float().cpu().numpy()
+        obs_valid = batch["x_valid_mask"][:, 0].cpu().numpy()
         for j, idx in enumerate(chunk):
             pw = local2world(pred[j], origin[j], float(theta[j]))
             tw = local2world(target[j][None], origin[j], float(theta[j]))[0]
+            ow = local2world(obs_local[j][None], origin[j], float(theta[j]))[0]
             fde = np.linalg.norm(pw[:, -1] - tw[-1], axis=-1)  # (K,)
             results[int(idx)] = dict(
                 pred_world=pw, gt_world=tw, pi=pi[j],
                 minfde=float(fde.min()), top1=int(np.argmax(pi[j])),
+                obs_world=ow, obs_valid=obs_valid[j],
             )
     return results
 
 
-def pick_typical(results, indices):
-    """取 minFDE20 最接近层内中位数的样本。"""
-    vals = np.array([results[i]["minfde"] for i in indices])
-    med = np.median(vals)
-    return indices[int(np.argmin(np.abs(vals - med)))], med
+def best_of_k_index(pred_world, gt_world):
+    """Select the oracle best-of-K trajectory by final displacement error."""
+    pred_world = np.asarray(pred_world)
+    gt_world = np.asarray(gt_world)
+    if pred_world.ndim != 3 or pred_world.shape[-1] != 2:
+        raise ValueError(f"expected predictions (K,T,2), got {pred_world.shape}")
+    if gt_world.ndim != 2 or gt_world.shape[-1] != 2:
+        raise ValueError(f"expected ground truth (T,2), got {gt_world.shape}")
+    if pred_world.shape[1] != len(gt_world):
+        raise ValueError("prediction and ground-truth horizons do not match")
+    final_errors = np.linalg.norm(pred_world[:, -1] - gt_world[-1], axis=-1)
+    return int(np.argmin(final_errors))
+
+
+def trajectory_visibility(scene, trajectory_world):
+    """Measure a trajectory's pixel-space bounding-box span and arc length."""
+    points = world2pix(scene, np.asarray(trajectory_world))
+    span = float(np.linalg.norm(np.ptp(points, axis=0)))
+    arc = float(np.linalg.norm(np.diff(points, axis=0), axis=-1).sum())
+    return span, arc
+
+
+def observed_visibility(scene, result):
+    """Measure focal-history span and arc without connecting across missing frames."""
+    points = world2pix(scene, result["obs_world"])
+    valid = np.asarray(result["obs_valid"], dtype=bool)
+    visible = points[valid]
+    if len(visible) < 2:
+        return 0.0, 0.0, 0
+    span = float(np.linalg.norm(np.ptp(visible, axis=0)))
+    adjacent = valid[:-1] & valid[1:]
+    steps = np.linalg.norm(np.diff(points, axis=0), axis=-1)
+    arc = float(steps[adjacent].sum())
+    run = current = 0
+    for is_valid in valid:
+        current = current + 1 if is_valid else 0
+        run = max(run, current)
+    return span, arc, run
+
+
+def pick_visible_sample(results, indices, scene, min_span_px=28, min_arc_px=40):
+    """Pick a visible prediction/ground-truth pair near the upper quartile."""
+    metrics = []
+    for index in indices:
+        result = results[int(index)]
+        mode = best_of_k_index(result["pred_world"], result["gt_world"])
+        pred_span, pred_arc = trajectory_visibility(
+            scene, result["pred_world"][mode]
+        )
+        gt_span, gt_arc = trajectory_visibility(scene, result["gt_world"])
+        obs_span, obs_arc, obs_run = observed_visibility(scene, result)
+        score = min(
+            pred_span / min_span_px, pred_arc / min_arc_px,
+            gt_span / min_span_px, gt_arc / min_arc_px,
+            obs_span / 8.0, obs_arc / 12.0,
+        )
+        metrics.append((int(index), pred_span, pred_arc, gt_span, gt_arc,
+                        obs_span, obs_arc, obs_run, score))
+
+    eligible = [item for item in metrics
+                if item[1] >= min_span_px and item[2] >= min_arc_px
+                and item[3] >= min_span_px and item[4] >= min_arc_px
+                and item[6] >= 12 and item[7] >= 2]
+    pool = eligible or metrics
+    target = float(np.quantile([item[8] for item in pool], 0.75))
+    selected = min(pool, key=lambda item: abs(item[8] - target))
+    return (*selected[:8], len(eligible))
 
 
 # ---------------------------------------------------------------- 绘图
 
-COL_GT = "#111111"
-COL_OBS = "#0072B2"
-COL_BEST = "#D55E00"
-COL_TOP1 = "#009E73"
-COL_CAND = "#B0B0B0"
-
-
-def render_one(scene, sample, res, out_png, zoom_pad_px=120):
-    """sample: dataset[i]（含 x_positions 局部 + origin/theta + target）。"""
+def render_one(
+    scene, sample, res, out_png, zoom_pad_px=120, ax=None, title=None,
+    show_legend=True,
+):
+    """Draw one MoFlow-style history / ground-truth / best-of-K panel."""
+    owns_figure = ax is None
+    if owns_figure:
+        fig, ax = plt.subplots(figsize=(4.6, 4.2), dpi=200)
     img = Image.open(MAPS_DIR / SCENE_CONF[scene]["img"])
     W, H = img.size
 
     origin = sample["origin"].numpy()                   # (1,2)
     theta = float(sample["theta"])
-    # 观测世界坐标：局部 -> 世界（x_positions 已是局部）
+    # 观测世界坐标：复用预测轨迹的局部坐标逆变换。
     obs_local = sample["x_positions"].numpy()           # (A,8,2)
-    rot = np.array([[np.cos(theta), np.sin(theta)],
-                    [-np.sin(theta), np.cos(theta)]])
-    obs_world = obs_local @ rot.T + origin.reshape(1, 1, 2)  # origin (1,2)
+    obs_world = local2world(obs_local, origin, theta)
     valid = sample["x_valid_mask"].numpy()              # (A,8)
     gt_world = res["gt_world"]                          # (12,2) focal GT 世界坐标
-    pred_world = res["pred_world"]                      # (20,12,2)
-    pi = res["pi"]
-    best = int(np.argmin(np.linalg.norm(pred_world[:, -1] - gt_world[-1], axis=-1)))
-    top1 = res["top1"]
+    pred_world = res["pred_world"]                      # (K,12,2)
+    best = best_of_k_index(pred_world, gt_world)
 
     # 全部像素坐标
     focal_obs_px = world2pix(scene, obs_world[0])
     focal_valid = valid[0]
     gt_px = world2pix(scene, gt_world)
-    pred_px = world2pix(scene, pred_world.reshape(-1, 2)).reshape(20, 12, 2)
+    best_px = world2pix(scene, pred_world[best])
 
     # 显示窗口
-    pts = np.concatenate([focal_obs_px[focal_valid], gt_px, pred_px.reshape(-1, 2)])
+    pts = np.concatenate([focal_obs_px[focal_valid], gt_px, best_px])
     u0, u1 = pts[:, 0].min() - zoom_pad_px, pts[:, 0].max() + zoom_pad_px
     v0, v1 = pts[:, 1].min() - zoom_pad_px, pts[:, 1].max() + zoom_pad_px
     u0, v0 = max(u0, 0), max(v0, 0)
@@ -238,40 +309,102 @@ def render_one(scene, sample, res, out_png, zoom_pad_px=120):
     if u1 - u0 < 200: u1 = min(u0 + 200, W)
     if v1 - v0 < 200: v1 = min(v0 + 200, H)
 
-    fig, ax = plt.subplots(figsize=(4.6, 4.2), dpi=200)
     ax.imshow(img)
     ax.set_xlim(u0, u1)
     ax.set_ylim(v1, v0)
     ax.axis("off")
 
-    # K=20 候选（细灰）
-    for k in range(pred_px.shape[0]):
-        if k in (best, top1):
-            continue
-        ax.plot(pred_px[k, :, 0], pred_px[k, :, 1], color=COL_CAND,
-                lw=0.7, alpha=0.45, zorder=2)
-    # top-1（概率最大）
-    ax.plot(pred_px[top1, :, 0], pred_px[top1, :, 1], color=COL_TOP1,
-            lw=1.7, alpha=0.9, zorder=4, label=f"top-1 (p={pi[top1]:.2f})")
-    # best-of-K
-    ax.plot(pred_px[best, :, 0], pred_px[best, :, 1], color=COL_BEST,
-            lw=2.2, zorder=4, label=f"best-of-20 (FDE={res['minfde']:.2f}m)")
-    # GT
-    ax.plot(gt_px[:, 0], gt_px[:, 1], "--", color=COL_GT, lw=1.6,
-            zorder=5, dashes=(5, 3), label="ground truth")
-    ax.plot(gt_px[-1, 0], gt_px[-1, 1], "*", color=COL_GT, ms=9, zorder=6)
-    # 观测（有效帧实线；缺口断开）
-    op = focal_obs_px[focal_valid]
-    ax.plot(op[:, 0], op[:, 1], "-", color=COL_OBS, lw=2.2, zorder=5,
-            label="observed")
-    ax.plot(op[:, 0], op[:, 1], "o", color=COL_OBS, ms=2.5, zorder=6)
-    ax.plot(op[-1, 0], op[-1, 1], "s", color=COL_OBS, ms=7, zorder=6)
+    ax.plot(
+        gt_px[:, 0], gt_px[:, 1], "-o", color="#20A36A", lw=1.8,
+        ms=2.5, mec="#20A36A", mew=0, zorder=5,
+    )
+    ax.plot(
+        best_px[:, 0], best_px[:, 1], "-o", color="#F2C230", lw=2.0,
+        ms=2.7, mec="#F2C230", mew=0, zorder=6,
+    )
+    # Keep the original time positions and break the line at missing frames.
+    obs_line_px = mask_invalid_observations(focal_obs_px, focal_valid)
+    ax.plot(
+        obs_line_px[:, 0], obs_line_px[:, 1], "-x", color="#F28E2B",
+        lw=1.8, ms=4.0, mew=1.2, zorder=7,
+    )
 
-    ax.legend(loc="upper left", fontsize=6.5, framealpha=0.85,
-              handlelength=1.6, borderpad=0.4)
-    fig.tight_layout(pad=0.3)
-    fig.savefig(out_png, bbox_inches="tight", facecolor="white")
+    if title:
+        ax.set_title(title, fontsize=8, pad=3)
+    ax.axis("off")
+    if show_legend:
+        ax.legend(
+            handles=moflow_legend_handles(), loc="upper left", ncol=1,
+            fontsize=7, framealpha=0.9, handlelength=1.5, borderpad=0.4,
+        )
+    if owns_figure:
+        fig.tight_layout(pad=0.3)
+        fig.savefig(out_png, bbox_inches="tight", facecolor="white")
+        plt.close(fig)
+
+
+def moflow_legend_handles():
+    return [
+        Line2D([], [], color="#F28E2B", marker="x", lw=1.8, ms=4,
+               label="Past trajectory"),
+        Line2D([], [], color="#20A36A", marker="o", lw=1.8, ms=3,
+               label="Ground truth"),
+        Line2D([], [], color="#F2C230", marker="o", lw=2.0, ms=3,
+               label="Best-of-20 prediction (oracle minFDE)"),
+    ]
+
+
+def render_moflow_grid(panels, scenes, out_dir):
+    """Create a 3-by-5 MoFlow-style qualitative grid."""
+    fig, axes = plt.subplots(
+        len(MOFLOW_LAYERS), len(scenes),
+        figsize=(2.55 * len(scenes), 1.9 * len(MOFLOW_LAYERS)),
+        dpi=220, squeeze=False,
+    )
+    for row, (layer, layer_label) in enumerate(MOFLOW_LAYERS):
+        for col, scene in enumerate(scenes):
+            ax = axes[row, col]
+            entry = panels.get((scene, layer))
+            if entry is None:
+                ax.axis("off")
+                ax.text(0.5, 0.5, "No sample", ha="center", va="center",
+                        transform=ax.transAxes, fontsize=8)
+                continue
+            sample, res = entry
+            missing = int((~sample["x_valid_mask"][0].numpy()).sum())
+            render_one(
+                scene, sample, res, out_png=None, ax=ax, show_legend=False,
+                title=scene if row == 0 else None, zoom_pad_px=90,
+            )
+            ax.set_gid(f"{scene}:{layer_label}:missing={missing}")
+    fig.subplots_adjust(top=0.94, bottom=0.12, left=0.055, right=0.995,
+                        wspace=0.025, hspace=0.06)
+    fig.canvas.draw()
+    for row, (_, label) in enumerate(MOFLOW_LAYERS):
+        bbox = axes[row, 0].get_position()
+        fig.text(0.018, (bbox.y0 + bbox.y1) / 2, label, rotation=90,
+                 ha="center", va="center", fontsize=8)
+    fig.legend(
+        handles=moflow_legend_handles(), loc="lower center", ncol=3,
+        bbox_to_anchor=(0.53, 0.012), frameon=False, fontsize=8.5,
+        handlelength=1.8, columnspacing=2.2,
+    )
+    for ext in ("png", "pdf"):
+        fig.savefig(out_dir / f"gast_moflow_style_samples.{ext}",
+                    dpi=220, bbox_inches="tight", facecolor="white")
     plt.close(fig)
+
+
+def mask_invalid_observations(points: np.ndarray, valid: np.ndarray) -> np.ndarray:
+    """Set missing observation positions to NaN so plotted lines break there."""
+    points = np.asarray(points, dtype=float).copy()
+    valid = np.asarray(valid, dtype=bool)
+    if points.shape[:-1] != valid.shape:
+        raise ValueError(
+            f"point shape {points.shape} and validity shape {valid.shape} do not align"
+        )
+    points[~valid] = np.nan
+    return points
 
 
 # ---------------------------------------------------------------- main
@@ -282,12 +415,14 @@ def main():
                     help="可多次指定；默认全部五场景")
     ap.add_argument("--data-root", default="/home/lbh/TrajImpute/dataset/TrajImpute")
     ap.add_argument("--device", default="cuda:0")
-    ap.add_argument("--per-layer", type=int, default=128)
-    ap.add_argument("--out-dir", default=str(REPO / "docs/figures/trajgap_qualitative"))
+    ap.add_argument("--per-layer", type=int, default=32)
+    ap.add_argument("--batch-size", type=int, default=1)
+    ap.add_argument("--out-dir", default=str(REPO / "docs/figures/trajgap_qualitative_moflow"))
     args = ap.parse_args()
     scenes = args.scenes or list(SCENE_CONF)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    panels = {}
 
     for scene in scenes:
         ckpt = CKPTS[scene]
@@ -298,18 +433,30 @@ def main():
 
         model = build_model(scene)
         all_idx = np.concatenate(list(layers.values()))
-        results = forward_indices(model, dataset, all_idx, args.device)
+        results = forward_indices(
+            model, dataset, all_idx, args.device, batch_size=args.batch_size
+        )
 
         for lname, idxs in layers.items():
-            pick, med = pick_typical(results, idxs)
+            (pick, pred_span, pred_arc, gt_span, gt_arc,
+             obs_span, obs_arc, obs_run, eligible) = pick_visible_sample(
+                results, idxs, scene
+            )
             sample = dataset[int(pick)]
             res = results[int(pick)]
             out_png = out_dir / f"{scene}_{lname}_minFDE{res['minfde']:.2f}.png"
             render_one(scene, sample, res, out_png)
-            print(f"  {lname}: idx={pick} layer-median minFDE20={med:.3f} "
+            panels[(scene, lname)] = (sample, res)
+            print(f"  {lname}: idx={pick} visible_candidates={eligible}/{len(idxs)} "
+                  f"pred_span={pred_span:.1f}px pred_arc={pred_arc:.1f}px "
+                  f"gt_span={gt_span:.1f}px gt_arc={gt_arc:.1f}px "
+                  f"obs_span={obs_span:.1f}px obs_arc={obs_arc:.1f}px "
+                  f"obs_run={obs_run} frames "
                   f"-> {out_png.name}")
         del model
         torch.cuda.empty_cache()
+    render_moflow_grid(panels, scenes, out_dir)
+    print(f"  -> {out_dir / 'gast_moflow_style_samples.{png,pdf}'}")
 
 
 if __name__ == "__main__":

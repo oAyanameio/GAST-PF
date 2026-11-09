@@ -1,8 +1,8 @@
 """从 results.json 现算生成结果图（不手工转抄数据）。
 
-用法：python docs/tools/gen_results_figures.py [--outdir paper/figures]
+用法：python docs/tools/gen_results_figures.py [--outdir docs/figures/results]
 
-- Fig 1  scene_benchmark：九方法五场景 minFDE20 / minADE20 dot plot（按宏平均排序）
+- Fig 1  scene_benchmark：七方法五场景 minFDE20 / minADE20 dot plot（按宏平均排序）
 - Fig 2  missing_degradation：minFDE20 相对 missing=0 的退化比值（宏平均，log 轴）
 
 数据源复用 gen_leaderboard_tables.collect()，路径变更只需改该文件。
@@ -61,14 +61,7 @@ def fig_benchmark(data, outdir):
     for ax, key, label in zip(axes, ("minFDE_K", "minADE_K"),
                               (r"$\mathrm{minFDE}_{20}$ (m)",
                                r"$\mathrm{minADE}_{20}$ (m)")):
-        rows = []
-        for m, d in data.items():
-            if m in EXCLUDED_METHODS:
-                continue
-            if len(d["per"]) == 5:
-                avg = float(np.mean([d["per"][s][key] for s in SCENES]))
-                rows.append((avg, m))
-        rows.sort(reverse=True)  # 最优(小)在上
+        rows = benchmark_rows(data, key)
         names = [m for _, m in rows]
 
         for i, m in enumerate(names):
@@ -109,6 +102,19 @@ def fig_benchmark(data, outdir):
     plt.close(fig)
 
 
+def benchmark_rows(data, key):
+    """Return complete methods ordered from lowest to highest macro error."""
+    rows = []
+    for method, record in data.items():
+        if method in EXCLUDED_METHODS:
+            continue
+        per_scene = record["per"]
+        if set(per_scene) == set(SCENES):
+            avg = float(np.mean([per_scene[scene][key] for scene in SCENES]))
+            rows.append((avg, method))
+    return sorted(rows)
+
+
 def fig_degradation(data, outdir):
     fig, ax = plt.subplots(figsize=(3.4, 2.5), dpi=300,
                            constrained_layout=True)
@@ -119,8 +125,12 @@ def fig_degradation(data, outdir):
         curves = []
         for s in SCENES:
             bg = per[s]["_by_group"]
-            c = np.array([bg[f"{s}/Mixed/test/missing={i}"]["minFDE_K"]
-                          for i in range(8)])
+            c = np.array([
+                bg[f"{s}/Mixed/test/missing={i}"].get(
+                    "minFDE20", bg[f"{s}/Mixed/test/missing={i}"].get("minFDE_K")
+                )
+                for i in range(8)
+            ])
             curves.append(c / c[0])
         ratio = np.mean(np.stack(curves), axis=0)
         ms = 3.4 if m == "GAST" else 2.8
@@ -146,7 +156,7 @@ def fig_degradation(data, outdir):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--outdir", default="paper/figures")
+    ap.add_argument("--outdir", default="docs/figures/results")
     args = ap.parse_args()
     outdir = REPO / args.outdir
     outdir.mkdir(parents=True, exist_ok=True)

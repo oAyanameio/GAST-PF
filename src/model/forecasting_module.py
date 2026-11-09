@@ -2,7 +2,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 from torchmetrics import MetricCollection
-from src.metrics import MR, minADE, minFDE, brier_minFDE
+from src.metrics import minADE, minFDE
 from src.utils.optim import WarmupCosLR
 from src.utils.LaplaceNLLLoss import LaplaceNLLLoss
 from .trajectory_forecaster import TrajectoryForecaster
@@ -38,12 +38,8 @@ class ForecastingLightningModule(pl.LightningModule):
 
         metrics = MetricCollection(
             {
-                "minADE1": minADE(k=1),
                 f"minADE{num_modes}": minADE(k=num_modes),
-                "minFDE1": minFDE(k=1),
                 f"minFDE{num_modes}": minFDE(k=num_modes),
-                "MR": MR(),
-                f"b-minFDE{num_modes}": brier_minFDE(k=num_modes),
             }
         )
         self.laplace_loss = LaplaceNLLLoss()

@@ -276,7 +276,7 @@ log.append("E11 面板内容左移 %d px、面板收窄、画布裁到 3384" % S
 
 # ---------- E12 补 GSM Spatial Attention：历史分支原来在此断头 ----------
 # 原图把 GSM Module 直接连到 Spatial 网格，agent tokens 没有任何输出箭头；
-# 按 gast_encoder.py 的 GeometryEvidenceRelationalGSM 补一级：agent tokens + ghost token -> 注意力 -> spatial
+# 按 gast_encoder.py 的 EvidenceRelationalGSM 补一级：agent tokens + ghost token -> 注意力 -> spatial
 # 实测原肘形连线：水平段 y 199..205、竖段 x 984..990、进网格段 y 415..421，线宽 7
 clear((966, 196, 996, 350), WHITE)      # 原肘形竖段与拐角
 clear((980, 200, 996, 412), WHITE)      # 原肘形竖段下半
@@ -290,7 +290,7 @@ arrow((970, 202), (970, 346), lw=7, size=18)
 arrow((1062, 418), (1117, 418), lw=7, size=18)                  # 注意力 -> spatial 网格
 log.append("E12 补 GSM Spatial Attention 一级（修历史分支断头 + ghost token 注入）")
 
-# ---------- E13 合并两个 GSM：代码里只有一个 GeometryEvidenceRelationalGSM ----------
+# ---------- E13 合并两个 GSM：代码里只有一个 EvidenceRelationalGSM ----------
 # 去掉橙色 "GSM Module" 框（它只是 mask->ghost token 那一步），
 # mask 直接进注意力块，箭头旁标 "ghost token"，保留机制信息但不重复模块名。
 clear((604, 145, 902, 258), WHITE)                 # 清掉橙色 GSM Module 框
@@ -429,13 +429,13 @@ log.append("E25 去掉 ghost token 小字")
 
 # ---------- E26 按当前 GAST 主线更新编码器尾段 ----------
 # 当前完整 GAST 编码器：
-# 1) 逐帧几何交互建模：在 GSM attention 中使用相对几何特征；
+# 1) 逐帧交互建模：在 GSM attention 中使用 actor tokens、ghost token、相对关系特征和 source eligibility；
 # 2) 可靠度调制：按观测可靠度调节 Mamba 输入；
 # 3) 时序聚合：Mamba 后按内容分数和可靠度汇总历史。
 # 图中使用功能描述，不把中间计算步骤包装成独立模块名。
 clear((886, 354, 1054, 482), (191, 191, 191))
 tc("Frame-wise", 970, 382, fit("Frame-wise", CMB, 154), INK)
-tc("Geometric", 970, 416, fit("Geometric", CMB, 154), INK)
+tc("Actor", 970, 416, fit("Actor", CMB, 154), INK)
 tc("Interactions", 970, 450, fit("Interactions", CMB, 154), INK)
 
 # 观测可靠度调制：按当前实现画 age -> reliability -> ⊙。
@@ -479,7 +479,7 @@ tc("aggregation", 1809, 442, F(CMB, 13), INK)
 # 输入/输出连接贴到框的中线，框内文字不被连线穿过
 arrow((1740, 382), (1758, 382), lw=4, size=8)
 d.line([(1858, 382), (1862, 382)], fill=INK, width=4)
-log.append("GAST encoder: frame-wise geometric interactions; reliability modulation; Mamba; reliability-weighted history aggregation")
+log.append("GAST encoder: frame-wise actor interactions; reliability modulation; Mamba; reliability-weighted history aggregation")
 
 # ---------- E27 顶部观测证据状态支路 ----------
 # 参考图风格：把 e(i,t)=(s,a,r) 统一画在主干最上方，

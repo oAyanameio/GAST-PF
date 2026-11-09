@@ -15,11 +15,13 @@ class GapAwareGoalDecoder(nn.Module):
         num_modes: int,
         num_heads: int = 8,
         dt: float = 0.4,
+        use_goal_guidance: bool = True,
     ) -> None:
         super().__init__()
         self.future_steps = future_steps
         self.num_modes = num_modes
         self.dt = dt
+        self.use_goal_guidance = bool(use_goal_guidance)
         self.mode_embedding = nn.Embedding(num_modes, dim)
         self.anchor_state_encoder = nn.Sequential(
             nn.Linear(7, dim), nn.GELU(), nn.Linear(dim, dim)
@@ -37,11 +39,15 @@ class GapAwareGoalDecoder(nn.Module):
         self.time_embedding = nn.Sequential(
             nn.Linear(1, dim), nn.GELU(), nn.Linear(dim, dim)
         )
-        self.endpoint_head = nn.Sequential(
-            nn.Linear(dim, dim), nn.GELU(), nn.Linear(dim, 2)
+        self.endpoint_head = (
+            nn.Sequential(nn.Linear(dim, dim), nn.GELU(), nn.Linear(dim, 2))
+            if self.use_goal_guidance
+            else None
         )
-        self.endpoint_embedding = nn.Sequential(
-            nn.Linear(2, dim), nn.GELU(), nn.Linear(dim, dim)
+        self.endpoint_embedding = (
+            nn.Sequential(nn.Linear(2, dim), nn.GELU(), nn.Linear(dim, dim))
+            if self.use_goal_guidance
+            else None
         )
         self.trajectory_head = nn.Sequential(
             nn.Linear(dim, dim), nn.GELU(), nn.Linear(dim, 2)
@@ -49,8 +55,9 @@ class GapAwareGoalDecoder(nn.Module):
         self.trajectory_scale_head = nn.Sequential(
             nn.Linear(dim, dim), nn.GELU(), nn.Linear(dim, 2)
         )
+        score_input_dim = dim * (3 if self.use_goal_guidance else 2)
         self.mode_score_head = nn.Sequential(
-            nn.Linear(dim * 3, dim), nn.GELU(), nn.Linear(dim, 1)
+            nn.Linear(score_input_dim, dim), nn.GELU(), nn.Linear(dim, 1)
         )
 
     def _anchor_state(self, data: dict):
@@ -114,32 +121,45 @@ class GapAwareGoalDecoder(nn.Module):
                 key_padding_mask=actor_padding_mask,
             )
 
-        goal_delta = self.endpoint_head(modes)
-        endpoints = anchor[:, None, :] + goal_delta
+        if self.use_goal_guidance:
+            goal_delta = self.endpoint_head(modes)
+            endpoints = anchor[:, None, :] + goal_delta
+            endpoint_features = self.endpoint_embedding(goal_delta)
+        else:
+            goal_delta = None
+            endpoints = None
+            endpoint_features = None
 
         future_index = torch.arange(self.future_steps, device=encoding.device)
         future_steps = gap_steps[:, None] + future_index[None, :]
         future_time_seconds = future_steps.to(encoding.dtype) * self.dt
         time_features = self.time_embedding(future_time_seconds.unsqueeze(-1))
-        endpoint_features = self.endpoint_embedding(goal_delta)
         trajectory_queries = (
-            modes[:, :, None, :]
-            + endpoint_features[:, :, None, :]
-            + time_features[:, None, :, :]
+            modes[:, :, None, :] + time_features[:, None, :, :]
         )
+        if endpoint_features is not None:
+            trajectory_queries = (
+                trajectory_queries + endpoint_features[:, :, None, :]
+            )
 
         relative_time = future_steps.to(encoding.dtype)
-        progress = relative_time / relative_time[:, -1:].clamp(min=1.0)
-        progress = progress[:, None, :, None]
-        linear_path = anchor[:, None, None, :] + progress * goal_delta[:, :, None, :]
         residual = self.trajectory_head(trajectory_queries)
-        trajectories = linear_path + residual * (1.0 - progress)
+        if self.use_goal_guidance:
+            progress = relative_time / relative_time[:, -1:].clamp(min=1.0)
+            progress = progress[:, None, :, None]
+            linear_path = (
+                anchor[:, None, None, :] + progress * goal_delta[:, :, None, :]
+            )
+            trajectories = linear_path + residual * (1.0 - progress)
+        else:
+            trajectories = anchor[:, None, None, :] + residual
 
         scale = F.elu(self.trajectory_scale_head(trajectory_queries)) + 1.0001
         trajectory_summary = trajectory_queries.mean(dim=2)
-        score_features = torch.cat(
-            [modes, endpoint_features, trajectory_summary], dim=-1
-        )
+        score_parts = [modes, trajectory_summary]
+        if endpoint_features is not None:
+            score_parts.insert(1, endpoint_features)
+        score_features = torch.cat(score_parts, dim=-1)
         scores = self.mode_score_head(score_features).squeeze(-1)
 
         return {

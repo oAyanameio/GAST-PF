@@ -127,10 +127,10 @@ minFDE20
 minADE 与 minFDE 分别在各自误差上取最优候选，该候选可以不同。结果汇报规则：
 
 1. 两个指标来自同一 Mixed-test、同一 checkpoint、同一场景协议和同一 `K=20`；
-2. 报告五场景明细、macro average、按样本数加权的 micro average 和 worst-scene；
+2. 报告五场景明细、macro average、全部样本汇总平均和 worst-scene；
 3. 不定义综合分数或单一总排名，避免引入未冻结的归一化边界与指标权重。
 
-`ADE@1`、`FDE@1`、`b-minFDE20`、Energy Score、coverage、calibration 等不进入当前主榜，可按辅助分析另行报告。MR 不属于 TrajGap-Bench 正式指标。
+正式结果只报告普通 `minADE20` 和 `minFDE20`，不按模式分数加权；MR、Brier、top-1、Energy Score、coverage 和 calibration 均不进入当前报告。
 
 ## 5. 当前代码对应关系
 

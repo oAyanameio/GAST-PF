@@ -54,4 +54,3 @@ class brier_minFDE(minFDE):
             min_fde = fde.min(-1)[0]
             self.sum += min_fde.sum()
             self.count += pred.shape[0]
-            

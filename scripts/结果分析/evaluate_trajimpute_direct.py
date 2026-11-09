@@ -35,6 +35,51 @@ VARIANTS = {
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05,
         "mode_diversity_margin": 0.5,
+        "use_relation_bias": True,
+        "use_source_filter": True,
+        "use_reliability_modulation": True,
+        "use_reliability_readout": True,
+        "use_goal_guidance": True,
+    },
+    "GAST-no-relation-bias": {
+        "gast_depth": 4, "gast_gsm_operator": "max",
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05, "mode_diversity_margin": 0.5,
+        "use_relation_bias": False, "use_source_filter": True,
+        "use_reliability_modulation": True, "use_reliability_readout": True,
+        "use_goal_guidance": True,
+    },
+    "GAST-no-source-filter": {
+        "gast_depth": 4, "gast_gsm_operator": "max",
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05, "mode_diversity_margin": 0.5,
+        "use_relation_bias": True, "use_source_filter": False,
+        "use_reliability_modulation": True, "use_reliability_readout": True,
+        "use_goal_guidance": True,
+    },
+    "GAST-no-reliability-modulation": {
+        "gast_depth": 4, "gast_gsm_operator": "max",
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05, "mode_diversity_margin": 0.5,
+        "use_relation_bias": True, "use_source_filter": True,
+        "use_reliability_modulation": False, "use_reliability_readout": True,
+        "use_goal_guidance": True,
+    },
+    "GAST-content-only-readout": {
+        "gast_depth": 4, "gast_gsm_operator": "max",
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05, "mode_diversity_margin": 0.5,
+        "use_relation_bias": True, "use_source_filter": True,
+        "use_reliability_modulation": True, "use_reliability_readout": False,
+        "use_goal_guidance": True,
+    },
+    "GAST-no-goal-guidance": {
+        "gast_depth": 4, "gast_gsm_operator": "max",
+        "goal_endpoint_loss_weight": 1.0,
+        "mode_diversity_loss_weight": 0.05, "mode_diversity_margin": 0.5,
+        "use_relation_bias": True, "use_source_filter": True,
+        "use_reliability_modulation": True, "use_reliability_readout": True,
+        "use_goal_guidance": False,
     },
 }
 
@@ -63,7 +108,7 @@ def build_model(variant: str, num_modes: int):
     return TrajectoryForecaster(**model_config)
 
 
-def load_checkpoint(model, ckpt_path):
+def load_checkpoint(model, ckpt_path, expected_variant=None):
     ckpt = torch.load(ckpt_path, map_location="cpu")
     model_config = ckpt.get("hyper_parameters", {}).get("model", {})
     checkpoint_modes = model_config.get("num_modes") if hasattr(model_config, "get") else None
@@ -72,24 +117,36 @@ def load_checkpoint(model, ckpt_path):
         raise ValueError(
             f"checkpoint num_modes={checkpoint_modes} 与评估 K={expected_modes} 不一致"
         )
-    checkpoint_variant = ckpt.get("meta", {}).get("variant")
-    expected_variant = model_config.get("model_version", checkpoint_variant)
-    if checkpoint_variant and checkpoint_variant != expected_variant:
+    run_contract = ckpt.get("trajgap_run_contract", {})
+    checkpoint_variant = (
+        ckpt.get("meta", {}).get("variant")
+        or run_contract.get("model_version")
+    )
+    configured_variant = model_config.get("model_version")
+    required_variant = expected_variant or configured_variant
+    if (
+        checkpoint_variant
+        and required_variant
+        and checkpoint_variant != required_variant
+    ):
         raise ValueError(
             f"checkpoint variant metadata mismatch: {checkpoint_variant} vs "
-            f"{expected_variant}"
+            f"{required_variant}"
         )
     for key in (
         "goal_endpoint_loss_weight",
         "mode_diversity_loss_weight",
         "mode_diversity_margin",
+        "use_relation_bias",
+        "use_source_filter",
+        "use_reliability_modulation",
+        "use_reliability_readout",
+        "use_goal_guidance",
     ):
         checkpoint_value = (
             model_config.get(key) if hasattr(model_config, "get") else None
         )
-        if checkpoint_value is not None and float(checkpoint_value) != float(
-            getattr(model, key)
-        ):
+        if checkpoint_value is not None and checkpoint_value != getattr(model, key):
             raise ValueError(
                 f"checkpoint {key}={checkpoint_value} does not match "
                 f"variant {key}={getattr(model, key)}"
@@ -189,7 +246,9 @@ def main():
 
     ckpt_info = None
     if args.checkpoint:
-        missing, unexpected = load_checkpoint(model, args.checkpoint)
+        missing, unexpected = load_checkpoint(
+            model, args.checkpoint, expected_variant=args.variant
+        )
         ckpt_info = {
             "path": str(args.checkpoint),
             "missing_keys": list(missing),
@@ -219,10 +278,8 @@ def main():
         "untrained_smoke": bool(args.untrained),
         "checkpoint": ckpt_info,
         "metric_semantics": {
-            "minADE_K": f"min over K={args.K} predicted modes, same set for minFDE_K",
-            "minFDE_K": f"min final displacement over K={args.K} predicted modes",
-            "ADE@1": "top-1 by predicted probability (highest-pi mode)",
-            "FDE@1": "top-1 by predicted probability (highest-pi mode)",
+            f"minADE{args.K}": f"unweighted minimum ADE over all K={args.K} modes",
+            f"minFDE{args.K}": f"unweighted minimum FDE over all K={args.K} modes",
         },
         "external_reference": None,
         "release_subset": inspect_clean_source(args.data_root),
@@ -240,12 +297,16 @@ def main():
     out_path = save_results(results, meta, out_dir / "results.json")
     print(f"\n[results] {out_path}")
     ov = results["overall"]
-    print(f"overall n={ov['n']} minADE{args.K}={ov['minADE_K']:.4f} "
-          f"minFDE{args.K}={ov['minFDE_K']:.4f} "
-          f"ADE@1={ov['ADE@1']:.4f} FDE@1={ov['FDE@1']:.4f}")
+    print(
+        f"overall n={ov['n']} minADE{args.K}={ov[f'minADE{args.K}']:.4f} "
+        f"minFDE{args.K}={ov[f'minFDE{args.K}']:.4f}"
+    )
     print("[groups]")
     for g, entry in sorted(results["by_group"].items()):
-        print(f"  {g}: n={entry['n']} minFDE_K={entry['minFDE_K']:.4f}")
+        print(
+            f"  {g}: n={entry['n']} minADE{args.K}={entry[f'minADE{args.K}']:.4f} "
+            f"minFDE{args.K}={entry[f'minFDE{args.K}']:.4f}"
+        )
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
 
 | 子目录 | 内容 |
 |---|---|
-| `训练与评估/` | TrajGap-Bench 训练评估：`run_trajimpute_experiments.py`（当前仅注册 GAST） |
+| `训练与评估/` | TrajGap-Bench 训练评估：`run_trajimpute_experiments.py`（GAST 与单因素结构消融） |
 | `审计与校验/` | 当前模型与配置的静态检查 |
 | `结果分析/` | TrajGap-Bench direct 评估与汇总：`evaluate_trajimpute_direct.py`（按 Mixed split 分组评估）、`summarize_trajimpute.py`（重训结果汇总） |
 
@@ -14,4 +14,5 @@
 
 - checkpoint 文件名含 `=`（如 `epoch=73.ckpt`）时，Hydra override 必须整体加引号：`"checkpoint='outputs/.../epoch=73.ckpt'"`。
 - eval 输出目录已存在 `model.log` 会 FileExistsError，重跑前先删整个 eval 目录。
-- 当前自有方法唯一入口为 `GAST`，终点引导解码和轨迹级模式排序均为其内置设计；旧基线结果与实验目录仅用于溯源。
+- `--variant` 可选 `GAST`、`GAST-no-relation-bias`、`GAST-no-source-filter`、`GAST-no-reliability-modulation`、`GAST-content-only-readout`、`GAST-no-goal-guidance`；后五项每次只关闭一个结构开关。
+- 正式结果只报告普通 `minADE20` 和 `minFDE20`：对 20 条预测轨迹取最小误差，再对样本做等权算术平均，不使用模式分数或额外指标加权。

@@ -32,13 +32,10 @@ def test_minade_minfde_on_manual_predictions():
     pred[0, 2] = target[0] + 3.0                            # 每帧偏移 (3,3)
     prob = torch.tensor([[0.2, 0.5, 0.3]])                  # 模式 1 概率最高
     res = evaluate_predictions(pred, prob, target)
-    # minADE_K：mode0=0，mode1=sqrt(2)，mode2=3*sqrt(2) -> min=0
-    assert torch.isclose(res["minADE_K"][0], torch.tensor(0.0), atol=1e-6)
-    assert torch.isclose(res["minFDE_K"][0], torch.tensor(0.0), atol=1e-6)
-    # ADE@1 = 最高概率模式（mode1）= sqrt(2)
-    assert torch.isclose(res["ADE@1"][0], torch.tensor(2 ** 0.5), atol=1e-6)
-    assert torch.isclose(res["FDE@1"][0], torch.tensor(2 ** 0.5), atol=1e-6)
-    assert "MR" not in res
+    # 普通 min 指标在全部 K 个模式上取最小值，不按模式分数加权。
+    assert torch.isclose(res["minADE3"][0], torch.tensor(0.0), atol=1e-6)
+    assert torch.isclose(res["minFDE3"][0], torch.tensor(0.0), atol=1e-6)
+    assert set(res) == {"minADE3", "minFDE3"}
 
 
 def test_min_over_same_k_set():
@@ -52,8 +49,18 @@ def test_min_over_same_k_set():
     d = torch.norm(pred - target.unsqueeze(1), dim=-1)
     ade = d.mean(-1)
     fde = d[..., -1]
-    assert torch.allclose(res["minADE_K"], ade.min(-1).values, atol=1e-6)
-    assert torch.allclose(res["minFDE_K"], fde.min(-1).values, atol=1e-6)
+    assert torch.allclose(res["minADE4"], ade.min(-1).values, atol=1e-6)
+    assert torch.allclose(res["minFDE4"], fde.min(-1).values, atol=1e-6)
+
+
+def test_standard_min_metrics_do_not_depend_on_mode_scores():
+    torch.manual_seed(4)
+    pred = torch.randn(2, 5, 4, 2)
+    target = torch.randn(2, 4, 2)
+    first = evaluate_predictions(pred, torch.randn(2, 5), target)
+    second = evaluate_predictions(pred, torch.randn(2, 5), target)
+    assert torch.equal(first["minADE5"], second["minADE5"])
+    assert torch.equal(first["minFDE5"], second["minFDE5"])
 
 
 def test_evaluator_grouping_manual():
@@ -67,9 +74,10 @@ def test_evaluator_grouping_manual():
     ev.update(pred2, prob, target, "ETH-M", "Easy", "test", 4)
     out = ev.compute()
     assert out["by_group"]["ETH-M/Easy/test/missing=0"]["n"] == 1
-    assert out["by_group"]["ETH-M/Easy/test/missing=4"]["minFDE_K"] > 0
+    assert out["by_group"]["ETH-M/Easy/test/missing=4"]["minFDE2"] > 0
     assert out["overall"]["n"] == 2
-    assert out["aggregation"] == "micro-average over all focal samples"
+    assert out["aggregation"] == "unweighted mean over focal samples"
+    assert set(out["overall"]) == {"minADE2", "minFDE2", "n"}
 
 
 def test_evaluator_evidence_dimension_grouping_manual():

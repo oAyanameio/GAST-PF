@@ -38,13 +38,9 @@ METHODS = {
         for s in SCENES],
 }
 
-TOP1_METHODS = {"GAST", "MoFlow", "SocialLSTM"}
-
 METRICS = [
     ("minADE_K", "minADE_K", "minADE$_{20}$"),
     ("minFDE_K", "minFDE_K", "minFDE$_{20}$"),
-    ("ADE_1", "ADE_1", "ADE@1"),
-    ("FDE_1", "FDE_1", "FDE@1"),
 ]
 
 
@@ -57,9 +53,7 @@ def load(path):
     ov = r.get("overall", r)
     out = {}
     for k, alts in [("minADE_K", ["minADE_K", "minADE20"]),
-                    ("minFDE_K", ["minFDE_K", "minFDE20"]),
-                    ("ADE_1", ["ADE_1", "ADE@1"]),
-                    ("FDE_1", ["FDE_1", "FDE@1"])]:
+                    ("minFDE_K", ["minFDE_K", "minFDE20"])]:
         out[k] = None
         for a in alts:
             if ov.get(a) is not None:
@@ -218,22 +212,19 @@ def emit_md(data):
     L = []
     methods = ["GAST", "MoFlow", "SocialLSTM", "AgentFormer", "Re", "MS-TIP", "Social-STGCNN"]
 
-    # ---- 表 1-3：逐场景
-    specs = [
-        ("## 表 1 · 精度（minADE20 / minFDE20，米）", "minADE_K", "minFDE_K"),
-        ("## 表 2 · 排序质量（ADE@1 / FDE@1，米，取最高概率模式）", "ADE_1", "FDE_1"),
-    ]
+    # ---- 表 1：逐场景 minADE20/minFDE20
+    specs = [("## 表 1 · 精度（minADE20 / minFDE20，米）", "minADE_K", "minFDE_K")]
     for title, ka, kb in specs:
         L.append(f"{title}\n")
         L.append("| Method | " + " | ".join(SCENES) + " | Avg |")
         L.append("|---|" + "---|" * (len(SCENES) + 1))
-        comparison_methods = TOP1_METHODS if ka == "ADE_1" else methods
+        comparison_methods = methods
         for m in methods:
             per = data[m]["per"]
             row = [f"| {m} "]
             for s in SCENES:
                 rec = per.get(s)
-                if rec is None or rec[ka] is None or (ka == "ADE_1" and m not in TOP1_METHODS):
+                if rec is None or rec[ka] is None:
                     row.append("| -- ")
                     continue
                 ba = best_in_col(data, ka, s, comparison_methods)
@@ -243,9 +234,7 @@ def emit_md(data):
                 row.append(f"| {a} / {b} ")
             # Avg（宏平均）
             mac, _ = agg(data, m)
-            if ka == "ADE_1" and m not in TOP1_METHODS:
-                row.append("| -- |")
-            elif mac[ka] is not None and mac[kb] is not None:
+            if mac[ka] is not None and mac[kb] is not None:
                 ba = best_in_col_macro(data, ka, comparison_methods)
                 bb = best_in_col_macro(data, kb, comparison_methods)
                 a = f"**{mac[ka]:.4f}**" if abs(mac[ka] - ba) < 1e-12 else f"{mac[ka]:.4f}"
@@ -256,25 +245,19 @@ def emit_md(data):
             L.append("".join(row))
         L.append("")
 
-    # ---- 表 3：micro
-    L.append("## 表 3 · 样本加权（micro）平均\n")
-    L.append("| Method | minADE20 | minFDE20 | ADE@1 | FDE@1 |")
-    L.append("|---|---|---|---|---|")
+    # ---- 表 2：汇总全部样本的平均
+    L.append("## 表 2 · 汇总全部样本的平均\n")
+    L.append("| Method | minADE20 | minFDE20 |")
+    L.append("|---|---|---|")
     for m in methods:
-        _, mic = agg(data, m)
-        cells = []
-        for k, _, _ in METRICS:
-            if k in ("ADE_1", "FDE_1") and m not in TOP1_METHODS:
-                cells.append("--")
-            elif mic[k] is None:
-                cells.append("--")
-            else:
-                cells.append(f"{mic[k]:.4f}")
+        _, micro = agg(data, m)
+        cells = ["--" if micro[key] is None else f"{micro[key]:.4f}"
+                 for key, _, _ in METRICS]
         L.append(f"| {m} | " + " | ".join(cells) + " |")
     L.append("")
 
-    # ---- 表 4：缺失分层
-    L.append("## 表 4 · 缺失程度分层（宏平均 minFDE20）\n")
+    # ---- 表 3：缺失分层
+    L.append("## 表 3 · 缺失程度分层（宏平均 minFDE20）\n")
     strat_methods = methods
     L.append("| missing | " + " | ".join(
         f"{m} minFDE20" for m in strat_methods) + " |")
@@ -295,7 +278,10 @@ def emit_md(data):
             if miss not in sm:
                 cells.append("--")
                 continue
-            fv = [sm[miss][s]["minFDE_K"] for s in SCENES if s in sm[miss]]
+            fv = [
+                sm[miss][s].get("minFDE20", sm[miss][s].get("minFDE_K"))
+                for s in SCENES if s in sm[miss]
+            ]
             tag = "" if len(fv) == 5 else f" (n={len(fv)})"
             cells.append(f"{sum(fv)/len(fv):.4f}{tag}")
         L.append(f"| {miss} | " + " | ".join(cells) + " |")
@@ -319,7 +305,6 @@ def emit_tex(data):
     methods = ["GAST", "MoFlow", "SocialLSTM", "AgentFormer", "Re", "MS-TIP", "Social-STGCNN"]
     for title, ka, kb in [
         ("minADE$_{20}$\\,/\\,minFDE$_{20}$", "minADE_K", "minFDE_K"),
-        ("ADE@1\\,/\\,FDE@1", "ADE_1", "FDE_1"),
     ]:
         L.append("\\begin{table*}[t]")
         L.append("  \\centering")
@@ -336,13 +321,13 @@ def emit_tex(data):
         L.append("    \\toprule")
         L.append("    Method & " + " & ".join(SCENES) + " & Avg \\\\")
         L.append("    \\midrule")
-        comparison_methods = TOP1_METHODS if ka == "ADE_1" else methods
+        comparison_methods = methods
         for m in methods:
             per = data[m]["per"]
             cells = []
             for s in SCENES:
                 rec = per.get(s)
-                if rec is None or rec[ka] is None or (ka == "ADE_1" and m not in TOP1_METHODS):
+                if rec is None or rec[ka] is None:
                     cells.append("--")
                     continue
                 ba, bb = best_in_col(data, ka, s, comparison_methods), best_in_col(data, kb, s, comparison_methods)
@@ -350,9 +335,7 @@ def emit_tex(data):
                 b = f"\\textbf{{{rec[kb]:.4f}}}" if abs(rec[kb] - bb) < 1e-12 else f"{rec[kb]:.4f}"
                 cells.append(f"{a} / {b}")
             mac, _ = agg(data, m)
-            if ka == "ADE_1" and m not in TOP1_METHODS:
-                cells.append("--")
-            elif mac[ka] is not None:
+            if mac[ka] is not None:
                 ba, bb = best_in_col_macro(data, ka, comparison_methods), best_in_col_macro(data, kb, comparison_methods)
                 a = f"\\textbf{{{mac[ka]:.4f}}}" if abs(mac[ka] - ba) < 1e-12 else f"{mac[ka]:.4f}"
                 b = f"\\textbf{{{mac[kb]:.4f}}}" if abs(mac[kb] - bb) < 1e-12 else f"{mac[kb]:.4f}"
@@ -372,7 +355,7 @@ MD_HEADER = """# TrajGap-Bench 对比实验表
 
 > 数据集与基准：TrajGap-Bench；TrajImpute 官方 Easy+Hard 同一 split 合并为 Mixed，任务为无插补直接预测。seed 2024，K=20，100 epochs。GAST 按最终预测头 `val_new_minFDE20` 选点；外部方法沿用各自的训练与选点流程。
 > 测试样本数（所有方法完全一致）：ETH-M 1,629 / HOTEL-M 9,477 / UNIV-M 219,006 / ZARA1-M 20,277 / ZARA2-M 52,497，合计 302,886。
-> `Avg` = 五场景宏平均；`micro` = 按样本数加权。所有指标**越低越好**。加粗 = 该列最优。
+> `Avg` = 五场景宏平均；`micro` = 汇总全部测试样本后的算术平均。所有指标**越低越好**。加粗 = 该列最优。
 > 本文方法统一称为 **GAST**；终点引导解码与轨迹级模式排序属于完整方法设计。
 
 > 本文件由 `docs/tools/gen_leaderboard_tables.py` 从各方法 `results.json` 现算生成，不手工转抄。
@@ -383,12 +366,10 @@ MD_HEADER = """# TrajGap-Bench 对比实验表
 MD_NOTES = """
 ## 表注
 
-- 七个方法均完成 ETH-M、HOTEL-M、UNIV-M、ZARA1-M、ZARA2-M 五场景；`--` 仅表示该方法没有可解释的概率 top-1 指标。
-- **Re、AgentFormer、MS-TIP、Social-STGCNN 不提供可比的概率排序头**，因此 ADE@1/FDE@1 不适用；不使用其首个采样候选替代概率 top-1。
-- 表中指标按各方法 Mixed-test `results.json` 计算；宏平均为五场景等权，micro 为测试样本加权。
-- 主指标为 `minADE20` 与 `minFDE20`；`ADE@1/FDE@1` 仅作为有概率输出方法的排序诊断。
+- 七个方法均完成 ETH-M、HOTEL-M、UNIV-M、ZARA1-M、ZARA2-M 五场景。
+- 只报告普通 `minADE20`、`minFDE20`；不使用模式分数加权，也不报告 top-1、MR、Brier 或综合分数。
+- 表中指标按各方法 Mixed-test `results.json` 计算；宏平均为五场景等权，micro 为汇总全部测试样本后的算术平均。
 - 外部模型保持其方法属性：MS-TIP 为插补感知联合预测方法，其余依各自实现处理缺失历史；榜单比较的是统一测试集上的结果，不代表内部结构均为纯 direct。
-- **b-minFDE20 不纳入对比**：本工作 evaluator 不产出该指标，无法对所有方法公平汇总。
 - SocialLSTM 使用零填充、缺失帧跳过 LSTM 状态更新及 K=20 高斯混合采样头。
 
 ## 数据来源
@@ -435,48 +416,45 @@ TEX_FOOTER = """
 %  * Current values are generated from complete five-scene result artifacts.
 %  * GAST uses val_new_minFDE20 for checkpoint selection; external baselines
 %    retain their native selection procedures.
-%  * The formal primary metrics are minADE20 and minFDE20. ADE@1/FDE@1
-%    are auxiliary diagnostics; no MR or composite score is computed.
-%  * b-minFDE20 cannot be aligned because the direct evaluator does not emit it.
+%  * The report contains only ordinary minADE20 and minFDE20; mode scores
+%    do not reweight either metric. No top-1, MR, Brier, or composite score.
 % ---------------------------------------------------------------------
 """
 
 
-def emit_tex_extra(data):
-    """Emit micro-average and missingness-stratified minFDE tables."""
-    L = []
-    # ---- micro
-    L.append("\\begin{table}[t]")
-    L.append("  \\centering")
-    L.append("  \\caption{TrajGap-Bench (Mixed), sample-weighted (micro)"
-             " average over the 302,886 test samples. Lower is better.}")
-    L.append("  \\label{tab:tgbench-micro}")
-    L.append("  \\small")
-    L.append("  \\setlength{\\tabcolsep}{4pt}")
-    L.append("  \\begin{tabular}{l c c c c}")
-    L.append("    \\toprule")
-    L.append("    Method & minADE$_{20}$ & minFDE$_{20}$ & ADE@1 & FDE@1 \\\\")
-    L.append("    \\midrule")
-    for m in ["GAST", "MoFlow", "SocialLSTM", "AgentFormer", "Re", "MS-TIP", "Social-STGCNN"]:
-        _, mic = agg(data, m)
-        cells = []
-        for k, _, _ in METRICS:
-            if k in ("ADE_1", "FDE_1") and m not in TOP1_METHODS:
-                cells.append("--")
-            elif mic[k] is None:
-                cells.append("--")
-            else:
-                cells.append(f"{mic[k]:.4f}")
-        L.append(f"    {m} & " + " & ".join(cells) + " \\\\")
-    L.append("    \\bottomrule")
-    L.append("  \\end{tabular}")
-    L.append("  \\begin{flushleft}")
-    L.append("    \\footnotesize")
-    L.append("    Macro and micro averages answer different questions; report both.")
-    L.append("  \\end{flushleft}")
-    L.append("\\end{table}")
-    L.append("")
+def emit_tex_micro(data):
+    """Emit only ordinary minADE20/minFDE20 pooled over test samples."""
+    slash = chr(92)
+    L = [
+        f"{slash}begin{{table}}[t]",
+        f"  {slash}centering",
+        f"  {slash}caption{{TrajGap-Bench (Mixed), arithmetic mean over all test samples. Lower is better.}}",
+        f"  {slash}label{{tab:tgbench-micro}}",
+        f"  {slash}small",
+        f"  {slash}setlength{{{slash}tabcolsep}}{{4pt}}",
+        f"  {slash}begin{{tabular}}{{l c c}}",
+        f"    {slash}toprule",
+        "    Method & minADE$_{20}$ & minFDE$_{20}$ " + slash * 2,
+        f"    {slash}midrule",
+    ]
+    methods = ["GAST", "MoFlow", "SocialLSTM", "AgentFormer", "Re", "MS-TIP", "Social-STGCNN"]
+    for method in methods:
+        _, micro = agg(data, method)
+        cells = ["--" if micro[key] is None else f"{micro[key]:.4f}"
+                 for key, _, _ in METRICS]
+        L.append(f"    {method} & " + " & ".join(cells) + " " + slash * 2)
+    L.extend([
+        f"    {slash}bottomrule",
+        f"  {slash}end{{tabular}}",
+        f"{slash}end{{table}}",
+        "",
+    ])
+    return "\n".join(L)
 
+
+def emit_tex_extra(data):
+    """Emit the missingness-stratified minFDE table."""
+    L = []
     # ---- 缺失分层
     strat_methods = list(METHODS)
     strat = {}
@@ -502,7 +480,10 @@ def emit_tex_extra(data):
         vals = []
         for m in strat_methods:
             sm = strat[m]
-            fv = [sm[miss][s]["minFDE_K"] for s in SCENES if miss in sm and s in sm[miss]]
+            fv = [
+                sm[miss][s].get("minFDE20", sm[miss][s].get("minFDE_K"))
+                for s in SCENES if miss in sm and s in sm[miss]
+            ]
             vals.append(sum(fv) / len(fv) if fv else None)
         best = min((v for v in vals if v is not None), default=None)
         cells = ["--" if v is None else (f"\\textbf{{{v:.4f}}}" if v == best else f"{v:.4f}") for v in vals]
@@ -516,7 +497,7 @@ def emit_tex_extra(data):
 
 
 def emit_full_tex(data):
-    return TEX_HEADER + emit_tex(data) + emit_tex_extra(data) + TEX_FOOTER
+    return TEX_HEADER + emit_tex(data) + emit_tex_micro(data) + emit_tex_extra(data) + TEX_FOOTER
 
 
 def main():

@@ -1,4 +1,9 @@
+import sys
+from pathlib import Path
+
 import torch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.model.layers.gast_goal_decoder import GapAwareGoalDecoder
 from src.utils.LaplaceNLLLoss import LaplaceNLLLoss
@@ -38,6 +43,30 @@ def test_gap_aware_goal_decoder_handles_single_observation_and_exact_endpoint():
         output["future_time_seconds"],
         torch.tensor([[3.2, 3.6, 4.0, 4.4], [1.2, 1.6, 2.0, 2.4]]),
     )
+
+
+def test_goal_guidance_can_be_disabled_for_direct_trajectory_decoding():
+    torch.manual_seed(17)
+    decoder = GapAwareGoalDecoder(
+        future_steps=4,
+        dim=16,
+        num_modes=3,
+        num_heads=4,
+        dt=0.4,
+        use_goal_guidance=False,
+    ).eval()
+    output = decoder(
+        torch.randn(2, 3, 16),
+        _goal_batch(),
+        actor_padding_mask=torch.zeros(2, 3, dtype=torch.bool),
+    )
+
+    assert output["trajectories"].shape == (2, 3, 4, 2)
+    assert output["endpoints"] is None
+    assert output["goal_delta"] is None
+    assert torch.isfinite(output["trajectories"]).all()
+    assert torch.isfinite(output["scores"]).all()
+    assert torch.isfinite(output["scales"]).all()
 
 
 def test_goal_decoder_backpropagates_through_endpoint_and_trajectory_heads():

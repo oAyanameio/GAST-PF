@@ -15,6 +15,11 @@ target:
     obs_len: 8
     gast_depth: 4
     gast_gsm_operator: 'max'
+    use_relation_bias: true
+    use_source_filter: true
+    use_reliability_modulation: true
+    use_reliability_readout: true
+    use_goal_guidance: true
     # Endpoint-guided decoding and trajectory-aware mode ranking are
     # intrinsic parts of GAST, not a separate model variant.
     goal_endpoint_loss_weight: 1.0

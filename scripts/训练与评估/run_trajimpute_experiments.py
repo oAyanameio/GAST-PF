@@ -42,15 +42,30 @@ DEFAULT_PROTOCOL = "trajgap-bench"
 DEFAULT_VARIANT = "GAST"
 OPTIMIZER_POLICY = "adamw_complete_module_local_v1"
 
-# Endpoint-guided decoding and trajectory-aware mode ranking are built into GAST.
+# Each ablation changes one structural switch; the full GAST remains the default.
+_GAST_BASE = {
+    "gast_depth": 4,
+    "gast_gsm_operator": "max",
+    "goal_endpoint_loss_weight": 1.0,
+    "mode_diversity_loss_weight": 0.05,
+    "mode_diversity_margin": 0.5,
+    "use_relation_bias": True,
+    "use_source_filter": True,
+    "use_reliability_modulation": True,
+    "use_reliability_readout": True,
+    "use_goal_guidance": True,
+}
 VARIANTS = {
-    "GAST": {
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
-        "goal_endpoint_loss_weight": 1.0,
-        "mode_diversity_loss_weight": 0.05,
-        "mode_diversity_margin": 0.5,
+    "GAST": dict(_GAST_BASE),
+    "GAST-no-relation-bias": {**_GAST_BASE, "use_relation_bias": False},
+    "GAST-no-source-filter": {**_GAST_BASE, "use_source_filter": False},
+    "GAST-no-reliability-modulation": {
+        **_GAST_BASE, "use_reliability_modulation": False
     },
+    "GAST-content-only-readout": {
+        **_GAST_BASE, "use_reliability_readout": False
+    },
+    "GAST-no-goal-guidance": {**_GAST_BASE, "use_goal_guidance": False},
 }
 
 PROTOCOLS = {

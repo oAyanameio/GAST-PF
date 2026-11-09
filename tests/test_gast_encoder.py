@@ -8,10 +8,11 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from src.model.layers.gast_encoder import (  # noqa: E402
+    EvidenceRelationalGSM,
     GASTEncoder,
     construct_observation_evidence_state,
     evidence_weighted_state_aggregation,
-    relative_geometry_features,
+    relative_actor_relation_features,
 )
 
 
@@ -28,13 +29,15 @@ def test_observation_evidence_state_tracks_age_reliability_and_padding():
     assert not reliability[0, 1].any()
 
 
-def test_relative_geometry_ignores_missing_placeholders():
+def test_actor_relation_features_ignore_missing_placeholders():
     valid = torch.tensor([[[1, 0], [1, 1]]], dtype=torch.bool)
-    positions = torch.tensor([[[[1.0, 1.0], [1000.0, 1000.0]], [[2.0, 0.0], [3.0, 0.0]]]])
+    positions = torch.tensor(
+        [[[[1.0, 1.0], [1000.0, 1000.0]], [[2.0, 0.0], [3.0, 0.0]]]]
+    )
     changed = positions.clone()
     changed[0, 0, 1] = torch.tensor([-9000.0, 8000.0])
-    first = relative_geometry_features(positions, valid)
-    second = relative_geometry_features(changed, valid)
+    first = relative_actor_relation_features(positions, valid)
+    second = relative_actor_relation_features(changed, valid)
     assert first.shape == (1, 2, 2, 2, 7)
     assert torch.equal(first, second)
 
@@ -50,12 +53,44 @@ def test_evidence_weighted_state_aggregation_uses_terminal_state_when_history_is
     assert torch.isfinite(weights).all()
 
 
+def test_content_only_readout_uses_scores_without_reliability_weights():
+    hidden = torch.tensor([[[[0.0], [10.0]]]])
+    reliability = torch.tensor([[[1.0, 0.01]]])
+    scores = torch.tensor([[[[0.0], [1.0]]]])
+    output, weights = evidence_weighted_state_aggregation(
+        hidden, reliability, scores, use_reliability_weighting=False
+    )
+    expected_weights = torch.softmax(scores.squeeze(-1), dim=-1)
+    expected = torch.sum(expected_weights.unsqueeze(-1) * hidden, dim=-2)
+
+    assert torch.allclose(weights, expected_weights)
+    assert torch.allclose(output, expected)
+
+
 def test_gast_uses_complete_evidence_stages():
     gast = GASTEncoder(embed_dim=16, num_heads=4, depth=1)
-    assert hasattr(gast.spatial, "geometry_bias")
+    assert isinstance(gast.spatial, EvidenceRelationalGSM)
+    assert hasattr(gast.spatial, "relation_bias")
     assert hasattr(gast.temporal_aggregation.state_aggregation, "score")
     blocks = gast.temporal_aggregation.temporal_mamba.ssm_forw
     assert len(blocks) == 1
+
+
+def test_gast_structural_switches_disable_their_target_components():
+    gast = GASTEncoder(
+        embed_dim=16,
+        num_heads=4,
+        depth=1,
+        use_relation_bias=False,
+        use_source_filter=False,
+        use_reliability_modulation=False,
+        use_reliability_readout=False,
+    )
+
+    assert gast.spatial.use_source_filter is False
+    assert gast.spatial.relation_bias is None
+    assert gast.temporal_aggregation.temporal_mamba.use_reliability_modulation is False
+    assert gast.temporal_aggregation.state_aggregation.use_reliability_readout is False
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="GAST Mamba forward requires CUDA")
@@ -85,7 +120,7 @@ def test_gast_encoder_outputs_are_finite_and_zero_padding_actors():
     assert torch.equal(output[:, 2], torch.zeros_like(output[:, 2]))
 
 
-def test_training_and_evaluation_expose_only_selected_variants():
+def test_training_and_evaluation_expose_matching_structural_ablations():
     from scripts.训练与评估.run_trajimpute_experiments import (
         DEFAULT_VARIANT,
         VARIANTS as train_variants,
@@ -93,10 +128,33 @@ def test_training_and_evaluation_expose_only_selected_variants():
     from scripts.结果分析.evaluate_trajimpute_direct import VARIANTS as eval_variants
 
     assert DEFAULT_VARIANT == "GAST"
-    assert set(train_variants) == {"GAST"}
+    assert set(train_variants) == {
+        "GAST",
+        "GAST-no-relation-bias",
+        "GAST-no-source-filter",
+        "GAST-no-reliability-modulation",
+        "GAST-content-only-readout",
+        "GAST-no-goal-guidance",
+    }
     assert train_variants.keys() == eval_variants.keys()
     assert train_variants["GAST"] == eval_variants["GAST"]
     assert train_variants["GAST"]["gast_depth"] == 4
+    for variant in train_variants.values():
+        assert all(
+            key in variant
+            for key in (
+                "use_source_filter",
+                "use_relation_bias",
+                "use_reliability_modulation",
+                "use_reliability_readout",
+                "use_goal_guidance",
+            )
+        )
+    assert train_variants["GAST-no-relation-bias"]["use_relation_bias"] is False
+    assert train_variants["GAST-no-source-filter"]["use_source_filter"] is False
+    assert train_variants["GAST-no-reliability-modulation"]["use_reliability_modulation"] is False
+    assert train_variants["GAST-content-only-readout"]["use_reliability_readout"] is False
+    assert train_variants["GAST-no-goal-guidance"]["use_goal_guidance"] is False
 
 
 def test_gast_yaml_uses_full_method_by_default():
@@ -108,6 +166,14 @@ def test_gast_yaml_uses_full_method_by_default():
     model = config["target"]["model"]
     assert model["gast_depth"] == 4
     assert model["gast_gsm_operator"] == "max"
+    for switch in (
+        "use_relation_bias",
+        "use_source_filter",
+        "use_reliability_modulation",
+        "use_reliability_readout",
+        "use_goal_guidance",
+    ):
+        assert model[switch] is True
 
 
 def test_forecaster_builds_only_the_gast_encoder():

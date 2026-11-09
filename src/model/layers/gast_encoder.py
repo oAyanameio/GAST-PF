@@ -2,7 +2,7 @@
 
 公开名称与实现类对应关系：
 - 观测证据感知时空编码器：GASTEncoder
-- 逐帧几何交互建模：GeometryEvidenceRelationalGSM
+- 逐帧交互建模：EvidenceRelationalGSM
 - 可靠度加权的时序聚合：EvidenceConditionedCausalTemporalAggregation
 
 以上类名是代码实现标识，公开说明使用左侧名称。
@@ -40,8 +40,10 @@ def construct_observation_evidence_state(
     return observed.to(torch.float32), reliability, age.to(torch.float32)
 
 
-def relative_geometry_features(positions: torch.Tensor, valid_mask: torch.Tensor):
-    """Return pairwise relative geometry [B,T,N,N,7]."""
+def relative_actor_relation_features(
+    positions: torch.Tensor, valid_mask: torch.Tensor
+):
+    """Return pairwise actor relation features [B,T,N,N,7]."""
     batch_size, actors, steps, _ = positions.shape
     observed = valid_mask.bool()
     positions = torch.where(
@@ -50,8 +52,10 @@ def relative_geometry_features(positions: torch.Tensor, valid_mask: torch.Tensor
     time = torch.arange(steps, device=positions.device).view(1, 1, steps)
     candidates = torch.where(observed, time, -1)
     previous = torch.cat(
-        [torch.full_like(candidates[..., :1], -1),
-         candidates[..., :-1].cummax(dim=-1).values],
+        [
+            torch.full_like(candidates[..., :1], -1),
+            candidates[..., :-1].cummax(dim=-1).values,
+        ],
         dim=-1,
     )
     safe_previous = previous.clamp(min=0)
@@ -94,13 +98,18 @@ def evidence_weighted_state_aggregation(
     content_scores: torch.Tensor,
     beta: torch.Tensor | float = 1.0,
     eps: float = 1e-8,
+    use_reliability_weighting: bool = True,
 ):
     """Aggregate temporal states using content scores and observation reliability."""
-    logits = content_scores.squeeze(-1) + torch.as_tensor(
-        beta, dtype=hidden.dtype, device=hidden.device
-    ) * torch.log(reliability.to(hidden.dtype).clamp_min(eps))
+    logits = content_scores.squeeze(-1)
+    if use_reliability_weighting:
+        logits = logits + torch.as_tensor(
+            beta, dtype=hidden.dtype, device=hidden.device
+        ) * torch.log(reliability.to(hidden.dtype).clamp_min(eps))
     weights = torch.softmax(logits, dim=-1)
     evidence = torch.sum(weights.unsqueeze(-1) * hidden, dim=-2)
+    if not use_reliability_weighting:
+        return evidence, weights
     terminal_reliability = reliability[..., -1].unsqueeze(-1).to(hidden.dtype)
     output = (
         terminal_reliability * hidden[..., -1, :]
@@ -109,8 +118,8 @@ def evidence_weighted_state_aggregation(
     return output, weights
 
 
-class GeometryEvidenceRelationalGSM(nn.Module):
-    """实现“逐帧几何交互建模”阶段。"""
+class EvidenceRelationalGSM(nn.Module):
+    """实现“逐帧交互建模”阶段。"""
 
     def __init__(
         self,
@@ -119,11 +128,15 @@ class GeometryEvidenceRelationalGSM(nn.Module):
         num_heads: int,
         operator: str = "max",
         p_dropout: float = 0.2,
+        use_relation_bias: bool = True,
+        use_source_filter: bool = True,
     ):
         super().__init__()
         if operator not in {"mean", "sum", "max"}:
             raise ValueError(f"unsupported GSM operator={operator!r}")
         self.operator = operator
+        self.use_relation_bias = bool(use_relation_bias)
+        self.use_source_filter = bool(use_source_filter)
         self.patch_embed = nn.Sequential(
             nn.Linear(input_dim, model_dim, bias=False),
             nn.LayerNorm(model_dim),
@@ -151,16 +164,22 @@ class GeometryEvidenceRelationalGSM(nn.Module):
             nn.LeakyReLU(),
             nn.Dropout(p_dropout),
         )
-        self.geometry_bias = nn.Sequential(
-            nn.Linear(7, max(model_dim // 4, 16)),
-            nn.GELU(),
-            nn.Linear(max(model_dim // 4, 16), num_heads),
+        self.relation_bias = (
+            nn.Sequential(
+                nn.Linear(7, max(model_dim // 4, 16)),
+                nn.GELU(),
+                nn.Linear(max(model_dim // 4, 16), num_heads),
+            )
+            if self.use_relation_bias
+            else None
         )
-        nn.init.zeros_(self.geometry_bias[-1].weight)
-        nn.init.zeros_(self.geometry_bias[-1].bias)
+        if self.relation_bias is not None:
+            nn.init.zeros_(self.relation_bias[-1].weight)
+            nn.init.zeros_(self.relation_bias[-1].bias)
         self.apply(self._init_weights)
-        nn.init.zeros_(self.geometry_bias[-1].weight)
-        nn.init.zeros_(self.geometry_bias[-1].bias)
+        if self.relation_bias is not None:
+            nn.init.zeros_(self.relation_bias[-1].weight)
+            nn.init.zeros_(self.relation_bias[-1].bias)
 
     @staticmethod
     def _init_weights(m):
@@ -209,19 +228,28 @@ class GeometryEvidenceRelationalGSM(nn.Module):
         )  # [B*T, N+1, C]
 
         qkv = self.norm1(tokens)
-        geometry = relative_geometry_features(
-            positions, source_eligibility.bool()
+        if self.use_relation_bias:
+            relations = relative_actor_relation_features(
+                positions, source_eligibility.bool()
+            )
+            relation_bias = self.relation_bias(relations).permute(0, 1, 4, 2, 3)
+            relation_bias = relation_bias.reshape(
+                B * T * self.attn_layer.num_heads, N, N
+            )
+            relation_bias = relation_bias.to(dtype=qkv.dtype)
+        else:
+            relation_bias = qkv.new_zeros(
+                B * T * self.attn_layer.num_heads, N, N
+            )
+        actor_sources = (
+            source_eligibility.bool().permute(0, 2, 1)
+            if self.use_source_filter
+            else torch.ones(B, T, N, dtype=torch.bool, device=x.device)
         )
-        geometry_bias = self.geometry_bias(geometry).permute(0, 1, 4, 2, 3)
-        geometry_bias = geometry_bias.reshape(
-            B * T * self.attn_layer.num_heads, N, N
-        )
-        geometry_bias = geometry_bias.to(dtype=qkv.dtype)
         source_allowed = torch.cat(
             [
                 torch.ones(B, T, 1, dtype=torch.bool, device=x.device),
-                source_eligibility.bool().permute(0, 2, 1)
-                & ~key_padding.unsqueeze(1),
+                actor_sources & ~key_padding.unsqueeze(1),
             ],
             dim=-1,
         ).reshape(B * T, N + 1)
@@ -230,7 +258,7 @@ class GeometryEvidenceRelationalGSM(nn.Module):
         ).reshape(B * T, 1, N + 1, N + 1).expand(
             B * T, self.attn_layer.num_heads, N + 1, N + 1
         ).clone()
-        attn_mask[..., 1:, 1:] = geometry_bias.reshape(
+        attn_mask[..., 1:, 1:] = relation_bias.reshape(
             B * T, self.attn_layer.num_heads, N, N
         )
         attn_mask = attn_mask.masked_fill(
@@ -255,8 +283,10 @@ class ReliabilityModulatedCausalMamba(nn.Module):
     """可靠度加权时序聚合内部的 Mamba 输入调制环节。"""
 
     def __init__(self, model_dim: int, depth: int = 4, p_dropout: float = 0.2,
-                 drop_path: float = 0.2):
+                 drop_path: float = 0.2,
+                 use_reliability_modulation: bool = True):
         super().__init__()
+        self.use_reliability_modulation = bool(use_reliability_modulation)
         self.mlp = nn.Sequential(
             nn.Linear(model_dim, model_dim),
             nn.LayerNorm(model_dim),
@@ -295,8 +325,9 @@ class ReliabilityModulatedCausalMamba(nn.Module):
         """Return forward-only temporal states with shape ``[B,N,T,C]``."""
         B, T, N, C = x_b_t_n_c.shape
         x_forw = self.mlp(x_b_t_n_c).permute(0, 2, 1, 3).reshape(B * N, T, C)
-        reliability_flat = reliability.reshape(B * N, T, 1).to(x_forw.dtype)
-        x_forw = x_forw * reliability_flat
+        if self.use_reliability_modulation:
+            reliability_flat = reliability.reshape(B * N, T, 1).to(x_forw.dtype)
+            x_forw = x_forw * reliability_flat
         y_forw = self._run(x_forw, self.ssm_forw, self.norm_f_forw)
         return y_forw.reshape(B, N, T, C)
 
@@ -304,8 +335,9 @@ class ReliabilityModulatedCausalMamba(nn.Module):
 class EvidenceWeightedStateAggregation(nn.Module):
     """可靠度加权时序聚合内部的历史状态读出环节。"""
 
-    def __init__(self, embed_dim: int):
+    def __init__(self, embed_dim: int, use_reliability_readout: bool = True):
         super().__init__()
+        self.use_reliability_readout = bool(use_reliability_readout)
         self.score = nn.Linear(embed_dim, 1)
         nn.init.zeros_(self.score.weight)
         nn.init.zeros_(self.score.bias)
@@ -317,6 +349,7 @@ class EvidenceWeightedStateAggregation(nn.Module):
             reliability,
             self.score(hidden),
             beta=self.beta,
+            use_reliability_weighting=self.use_reliability_readout,
         )
 
 
@@ -329,6 +362,8 @@ class EvidenceConditionedCausalTemporalAggregation(nn.Module):
         depth: int,
         p_dropout: float = 0.2,
         drop_path: float = 0.2,
+        use_reliability_modulation: bool = True,
+        use_reliability_readout: bool = True,
     ):
         super().__init__()
         self.temporal_mamba = ReliabilityModulatedCausalMamba(
@@ -336,8 +371,11 @@ class EvidenceConditionedCausalTemporalAggregation(nn.Module):
             depth=depth,
             p_dropout=p_dropout,
             drop_path=drop_path,
+            use_reliability_modulation=use_reliability_modulation,
         )
-        self.state_aggregation = EvidenceWeightedStateAggregation(embed_dim)
+        self.state_aggregation = EvidenceWeightedStateAggregation(
+            embed_dim, use_reliability_readout=use_reliability_readout
+        )
 
     def forward(
         self,
@@ -363,14 +401,20 @@ class GASTEncoder(nn.Module):
         operator: str = "max",
         p_dropout: float = 0.2,
         drop_path: float = 0.2,
+        use_relation_bias: bool = True,
+        use_source_filter: bool = True,
+        use_reliability_modulation: bool = True,
+        use_reliability_readout: bool = True,
     ):
         super().__init__()
-        self.spatial = GeometryEvidenceRelationalGSM(
+        self.spatial = EvidenceRelationalGSM(
             input_dim,
             embed_dim,
             num_heads,
             operator=operator,
             p_dropout=p_dropout,
+            use_relation_bias=use_relation_bias,
+            use_source_filter=use_source_filter,
         )
         self.evidence_tau_logit = nn.Parameter(torch.tensor(-2.2521685))
         self.temporal_aggregation = EvidenceConditionedCausalTemporalAggregation(
@@ -378,6 +422,8 @@ class GASTEncoder(nn.Module):
             depth=depth,
             p_dropout=p_dropout,
             drop_path=drop_path,
+            use_reliability_modulation=use_reliability_modulation,
+            use_reliability_readout=use_reliability_readout,
         )
 
     @property

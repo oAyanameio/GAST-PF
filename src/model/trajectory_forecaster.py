@@ -24,6 +24,11 @@ class TrajectoryForecaster(nn.Module):
         goal_endpoint_loss_weight: float = 1.0,
         mode_diversity_loss_weight: float = 0.05,
         mode_diversity_margin: float = 0.5,
+        use_relation_bias: bool = True,
+        use_source_filter: bool = True,
+        use_reliability_modulation: bool = True,
+        use_reliability_readout: bool = True,
+        use_goal_guidance: bool = True,
     ) -> None:
         super().__init__()
         self.future_steps = future_steps
@@ -33,6 +38,11 @@ class TrajectoryForecaster(nn.Module):
         self.goal_endpoint_loss_weight = float(goal_endpoint_loss_weight)
         self.mode_diversity_loss_weight = float(mode_diversity_loss_weight)
         self.mode_diversity_margin = float(mode_diversity_margin)
+        self.use_relation_bias = bool(use_relation_bias)
+        self.use_source_filter = bool(use_source_filter)
+        self.use_reliability_modulation = bool(use_reliability_modulation)
+        self.use_reliability_readout = bool(use_reliability_readout)
+        self.use_goal_guidance = bool(use_goal_guidance)
         hist_input_dim = 4
 
         self.neighbor_prediction_head = nn.Sequential(
@@ -46,6 +56,7 @@ class TrajectoryForecaster(nn.Module):
             num_modes=num_modes,
             num_heads=num_heads,
             dt=dt,
+            use_goal_guidance=use_goal_guidance,
         )
         self.initialize_weights()
 
@@ -60,6 +71,10 @@ class TrajectoryForecaster(nn.Module):
             operator=gast_gsm_operator,
             p_dropout=0.2,
             drop_path=drop_path,
+            use_relation_bias=use_relation_bias,
+            use_source_filter=use_source_filter,
+            use_reliability_modulation=use_reliability_modulation,
+            use_reliability_readout=use_reliability_readout,
         )
         torch.random.set_rng_state(rng_state)
 

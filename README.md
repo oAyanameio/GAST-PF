@@ -18,7 +18,7 @@ GAST 由观测证据感知时空编码器和终点引导解码器组成。编码
 ```text
 GAST
 ├── 观测证据感知时空编码器
-│   ├── 逐帧几何交互建模
+│   ├── 逐帧交互建模
 │   └── 可靠度加权的时序聚合（可靠度调制的 Mamba 与历史状态汇总）
 └── 终点引导解码器
     ├── 使用末次有效观测状态和实际预测间隔
@@ -87,7 +87,7 @@ python eval.py checkpoint='/path/to/ckpt' test=true
 ```text
 conf/                 Hydra 配置（TrajImpute 主线与对照；模型见 conf/model/）
 src/model/            TrajectoryForecaster、loss 与 LightningModule
-src/model/layers/     gast_encoder.py（逐帧几何交互建模、可靠度加权的时序聚合）、
+src/model/layers/     gast_encoder.py（逐帧交互建模、可靠度加权的时序聚合）、
                       gast_goal_decoder.py（终点引导解码器）、
                       mamba
 src/datamodule/       TrajImpute（TrajGapDataset）数据管线

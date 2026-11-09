@@ -30,20 +30,22 @@ def test_summary_reads_protocol_from_results_when_manifest_is_missing():
 
 
 def test_summary_aggregation_does_not_require_legacy_backbone_metadata():
+    from scripts.结果分析.summarize_trajimpute import METRICS
+
+    assert METRICS == ["minADE20", "minFDE20"]
     row = {
         "protocol": "TrajGap-Bench",
         "variant": "GAST",
         "seed": 2024,
         "K": 20,
         "scene": "ETH-M",
-        "minADE_K": 0.2,
-        "minFDE_K": 0.4,
-        "ADE@1": 0.3,
-        "FDE@1": 0.5,
+        "minADE20": 0.2,
+        "minFDE20": 0.4,
     }
 
     result = agg([row], ["protocol", "variant", "seed", "K"])
 
     assert len(result) == 1
-    assert result[0]["minFDE_K_mean"] == 0.4
+    assert result[0]["minADE20_mean"] == 0.2
+    assert result[0]["minFDE20_mean"] == 0.4
     assert "backbone" not in result[0]
