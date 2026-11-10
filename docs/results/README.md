@@ -16,9 +16,9 @@
 - [TrajGap 数据集分布（PNG）](../figures/results/trajgap_dataset_distribution.png) · [PDF](../figures/results/trajgap_dataset_distribution.pdf)：五个场景中 Mixed 训练、测试与验证 focal 轨迹样本数。
 - [五场景基准对比（PNG）](../figures/results/scene_benchmark.png) · [PDF](../figures/results/scene_benchmark.pdf)：逐场景指标与 Avg，低误差方法排在上方。
 - [缺失程度退化曲线（PNG）](../figures/results/missing_degradation.png) · [PDF](../figures/results/missing_degradation.pdf)：相对 missing=0 的 minFDE20 比值。
-- [GAST 定性轨迹汇总（PNG）](../figures/trajgap_qualitative_moflow/gast_moflow_style_samples.png) · [PDF](../figures/trajgap_qualitative_moflow/gast_moflow_style_samples.pdf)：参照 MoFlow 样式，五场景 × 三类缺失程度（0、1–4、≥5）；从固定种子候选池筛选预测、GT 和历史轨迹都清晰可见的样本，用于形态展示而非随机代表样本或性能证据。黄色为基于 GT 终点选出的 best-of-20 oracle 预测。
+- [GAST 定性轨迹汇总（PNG）](../figures/trajgap_qualitative_gast/gast_trajectory_samples.png) · [PDF](../figures/trajgap_qualitative_gast/gast_trajectory_samples.pdf)：五场景 × 三类缺失程度（0、1–4、≥5）；从固定种子候选池筛选预测、GT 和历史轨迹都清晰可见的样本，用于形态展示而非随机代表样本或性能证据。黄色为基于 GT 终点选出的 best-of-20 oracle 预测。
 - [本次附件图像的轨迹可视化](../figures/trajgap_qualitative/UNIV-M_attached_redcap_m3.png)：UNIV-M 测试样本，锚点与红帽行人位置按像素匹配，缺失 3 帧。
-- 新版单样本高清图共 15 张，位于 `docs/figures/trajgap_qualitative_moflow/`。背景使用原版静态场景图；本地没有逐时刻同步视频帧。
+- GAST 单样本高清图共 15 张，位于 `docs/figures/trajgap_qualitative_gast/`。背景使用原版静态场景图；本地没有逐时刻同步视频帧。
 
 ## 口径约束
 

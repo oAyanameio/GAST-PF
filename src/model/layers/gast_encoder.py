@@ -1,7 +1,7 @@
 """GAST 历史编码器的实现。
 
 公开名称与实现类对应关系：
-- 观测证据感知时空编码器：GASTEncoder
+- 观测状态感知时空编码器：GASTEncoder
 - 逐帧交互建模：EvidenceRelationalGSM
 - 可靠度加权的时序聚合：EvidenceConditionedCausalTemporalAggregation
 
@@ -15,7 +15,7 @@ from mamba_ssm.ops.triton.layernorm import RMSNorm, rms_norm_fn
 from .mamba.mamba_block import create_causal_mamba_block
 
 
-def construct_observation_evidence_state(
+def construct_observation_state(
     valid_mask: torch.Tensor,
     tau: torch.Tensor | float,
     key_padding: torch.Tensor | None = None,
@@ -390,7 +390,7 @@ class EvidenceConditionedCausalTemporalAggregation(nn.Module):
 
 
 class GASTEncoder(nn.Module):
-    """实现“观测证据感知时空编码器”，包含逐帧交互建模和可靠度加权的时序聚合。"""
+    """实现“观测状态感知时空编码器”，包含逐帧交互建模和可靠度加权的时序聚合。"""
 
     def __init__(
         self,
@@ -441,7 +441,7 @@ class GASTEncoder(nn.Module):
         mask = valid_mask.permute(0, 2, 1).float()
         padding = key_padding
 
-        source_eligibility, reliability, _ = construct_observation_evidence_state(
+        source_eligibility, reliability, _ = construct_observation_state(
             valid_mask, self.evidence_tau, padding
         )
         x_spa = self.spatial(

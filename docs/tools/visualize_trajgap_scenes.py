@@ -20,7 +20,7 @@
   连续移动。合格候选中取联合可见度最接近第 75 百分位者；这是轨迹形态展示，
   不作为随机代表样本或性能证据。
 
-输出：每场景/缺失层一张高清图，以及 3 缺失层 × 5 场景的 PNG/PDF 汇总图；
+输出：每场景/缺失层一张高清图，以及 3 缺失层 × 5 场景的 GAST PNG/PDF 汇总图；
 图中绘制观测历史、真实未来和按最小 FDE 选出的 best-of-20 预测。背景为静态场景图，
 不是逐时刻同步的原始视频帧（当前数据目录不含视频帧）。
 """
@@ -34,9 +34,9 @@ import torch
 
 REPO = Path(__file__).resolve().parents[2]
 
-# 必须在 import src 之前：优先使用正式轮次快照代码（revision ad270824，
-# 与 checkpoint 一致）；当前仓库 src 已重构分叉，strict 加载会失败。
-SNAPSHOT_ROOT = REPO / "outputs/trajgap_gast_goal_3gpu_retry/gpu0/GAST-Goal_ETH-M_mixed-direct_seed2024_uni/train"
+# 必须在 import src 之前：使用正式五场景 GAST 轮次的快照代码，保证
+# checkpoint 的参数名、decoder 和 encoder 实现与推理代码一致。
+SNAPSHOT_ROOT = REPO / "outputs/trajgap_gast_5scene_seed2024/GAST_ETH-M_mixed-direct_seed2024_uni/train"
 sys.path.insert(0, str(SNAPSHOT_ROOT))
 
 import matplotlib
@@ -48,12 +48,11 @@ from PIL import Image
 from src.datamodule.trajimpute_dataset import (  # noqa: E402
     TrajGapDataset, trajimpute_collate_fn,
 )
-from src.model.trajectory_forecaster import TrajectoryForecaster  # noqa: E402
 
 # ---------------------------------------------------------------- 场景映射
 
 MAPS_DIR = REPO / "docs/figures/scene_maps"
-MOFLOW_LAYERS = (
+MISSING_LAYERS = (
     ("m0", "0 missing"),
     ("m14", "1-4 missing"),
     ("m5p", "5+ missing"),
@@ -80,13 +79,20 @@ SCENE_CONF = {
     "ZARA1-M": dict(img="zara01.png",     map="world2pix_ucy"),
     "ZARA2-M": dict(img="zara02.png",     map="world2pix_ucy"),
 }
+SCENE_LABELS = {
+    "ETH-M": "ETH",
+    "HOTEL-M": "HOTEL",
+    "UNIV-M": "UNIV",
+    "ZARA1-M": "ZARA1",
+    "ZARA2-M": "ZARA2",
+}
 
 CKPTS = {
-    "ETH-M":   "outputs/trajgap_gast_goal_3gpu_retry/gpu0/GAST-Goal_ETH-M_mixed-direct_seed2024_uni/train/checkpoints/epoch=58.ckpt",
-    "HOTEL-M": "outputs/trajgap_gast_goal_3gpu_retry/gpu0/GAST-Goal_HOTEL-M_mixed-direct_seed2024_uni/train/checkpoints/epoch=41.ckpt",
-    "UNIV-M":  "outputs/trajgap_gast_goal_3gpu_retry/gpu1/GAST-Goal_UNIV-M_mixed-direct_seed2024_uni/train/checkpoints/epoch=42.ckpt",
-    "ZARA1-M": "outputs/trajgap_gast_goal_3gpu_retry/gpu2/GAST-Goal_ZARA1-M_mixed-direct_seed2024_uni/train/checkpoints/epoch=33.ckpt",
-    "ZARA2-M": "outputs/trajgap_gast_goal_3gpu_retry/gpu1_zara2/GAST-Goal_ZARA2-M_mixed-direct_seed2024_uni/train/checkpoints/epoch=49.ckpt",
+    "ETH-M":   "outputs/trajgap_gast_5scene_seed2024/GAST_ETH-M_mixed-direct_seed2024_uni/train/checkpoints/epoch=54.ckpt",
+    "HOTEL-M": "outputs/trajgap_gast_5scene_seed2024/GAST_HOTEL-M_mixed-direct_seed2024_uni/train/checkpoints/epoch=51.ckpt",
+    "UNIV-M":  "outputs/trajgap_gast_5scene_seed2024/GAST_UNIV-M_mixed-direct_seed2024_uni/train/checkpoints/epoch=52.ckpt",
+    "ZARA1-M": "outputs/trajgap_gast_5scene_seed2024/GAST_ZARA1-M_mixed-direct_seed2024_uni/train/checkpoints/epoch=55.ckpt",
+    "ZARA2-M": "outputs/trajgap_gast_5scene_seed2024/GAST_ZARA2-M_mixed-direct_seed2024_uni/train/checkpoints/epoch=36.ckpt",
 }
 
 H_ETH_INV = np.linalg.inv(H_ETH_OFFICIAL)
@@ -122,21 +128,23 @@ def local2world(pred, origin, theta):
 
 # ---------------------------------------------------------------- 模型
 
-# 正式轮次 manifest 记录的完整模型配置（git_revision ad270824）
+# 正式五场景 GAST manifest 记录的完整模型配置（git_revision 9752c169）
 GAST_MODEL_CONFIG = dict(
     embed_dim=128, future_steps=12, num_heads=8, mlp_ratio=4.0,
     qkv_bias=False, drop_path=0.2, num_actor_types=1, num_modes=20,
     dt=0.4, obs_len=8, bimamba=False, encoder_type="gast",
     gast_depth=4, gast_gsm_operator="max",
-    gast_temporal_direction="unidirectional", gast_goal=True,
+    gast_temporal_direction="unidirectional",
     goal_endpoint_loss_weight=1.0, mode_diversity_loss_weight=0.05,
-    mode_diversity_margin=0.5, loss_mode="final_consistent",
-    gast_oer_spatial=True, gast_emc_temporal=True, gast_ewhr_readout=True,
+    mode_diversity_margin=0.5, classification_target_mode="trajectory",
+    gast_gere_spatial=True, gast_ecta=True,
 )
 
 
 def build_model(scene: str):
-    """用快照代码（revision ad270824，与 checkpoint 一致）构建并加载模型。"""
+    """用正式 GAST 快照代码构建并加载对应场景 checkpoint。"""
+    from src.model.trajectory_forecaster import TrajectoryForecaster  # noqa: E402
+
     import src.model.trajectory_forecaster as tf_snap
     model = tf_snap.TrajectoryForecaster(**GAST_MODEL_CONFIG)
     ckpt = torch.load(CKPTS[scene], map_location="cpu")
@@ -275,9 +283,9 @@ def pick_visible_sample(results, indices, scene, min_span_px=28, min_arc_px=40):
 
 def render_one(
     scene, sample, res, out_png, zoom_pad_px=120, ax=None, title=None,
-    show_legend=True,
+    show_legend=True, view_aspect=None,
 ):
-    """Draw one MoFlow-style history / ground-truth / best-of-K panel."""
+    """Draw one GAST history / ground-truth / best-of-K panel."""
     owns_figure = ax is None
     if owns_figure:
         fig, ax = plt.subplots(figsize=(4.6, 4.2), dpi=200)
@@ -300,10 +308,35 @@ def render_one(
     gt_px = world2pix(scene, gt_world)
     best_px = world2pix(scene, pred_world[best])
 
-    # 显示窗口
+    # Display a fixed-aspect crop in summary grids without distorting the map.
     pts = np.concatenate([focal_obs_px[focal_valid], gt_px, best_px])
     u0, u1 = pts[:, 0].min() - zoom_pad_px, pts[:, 0].max() + zoom_pad_px
     v0, v1 = pts[:, 1].min() - zoom_pad_px, pts[:, 1].max() + zoom_pad_px
+    if view_aspect is not None and view_aspect > 0:
+        crop_h = max(v1 - v0, (u1 - u0) / view_aspect)
+        crop_w = crop_h * view_aspect
+        if crop_w > W:
+            crop_w = float(W)
+            crop_h = crop_w / view_aspect
+        if crop_h > H:
+            crop_h = float(H)
+            crop_w = crop_h * view_aspect
+        center_u = (u0 + u1) / 2
+        center_v = (v0 + v1) / 2
+        u0, u1 = center_u - crop_w / 2, center_u + crop_w / 2
+        v0, v1 = center_v - crop_h / 2, center_v + crop_h / 2
+        if u0 < 0:
+            u1 -= u0
+            u0 = 0
+        if u1 > W:
+            u0 -= u1 - W
+            u1 = W
+        if v0 < 0:
+            v1 -= v0
+            v0 = 0
+        if v1 > H:
+            v0 -= v1 - H
+            v1 = H
     u0, v0 = max(u0, 0), max(v0, 0)
     u1, v1 = min(u1, W), min(v1, H)
     if u1 - u0 < 200: u1 = min(u0 + 200, W)
@@ -315,18 +348,18 @@ def render_one(
     ax.axis("off")
 
     ax.plot(
-        gt_px[:, 0], gt_px[:, 1], "-o", color="#20A36A", lw=1.8,
-        ms=2.5, mec="#20A36A", mew=0, zorder=5,
+        gt_px[:, 0], gt_px[:, 1], "-o", color="#20A36A",
+        lw=1.0, ms=1.6, mec="#20A36A", mew=0, zorder=5,
     )
     ax.plot(
-        best_px[:, 0], best_px[:, 1], "-o", color="#F2C230", lw=2.0,
-        ms=2.7, mec="#F2C230", mew=0, zorder=6,
+        best_px[:, 0], best_px[:, 1], "-o", color="#F2C230",
+        lw=1.2, ms=1.8, mec="#F2C230", mew=0, zorder=6,
     )
     # Keep the original time positions and break the line at missing frames.
     obs_line_px = mask_invalid_observations(focal_obs_px, focal_valid)
     ax.plot(
         obs_line_px[:, 0], obs_line_px[:, 1], "-x", color="#F28E2B",
-        lw=1.8, ms=4.0, mew=1.2, zorder=7,
+        lw=1.0, ms=2.8, mew=0.9, zorder=7,
     )
 
     if title:
@@ -334,7 +367,7 @@ def render_one(
     ax.axis("off")
     if show_legend:
         ax.legend(
-            handles=moflow_legend_handles(), loc="upper left", ncol=1,
+            handles=gast_legend_handles(), loc="upper left", ncol=1,
             fontsize=7, framealpha=0.9, handlelength=1.5, borderpad=0.4,
         )
     if owns_figure:
@@ -343,25 +376,25 @@ def render_one(
         plt.close(fig)
 
 
-def moflow_legend_handles():
+def gast_legend_handles():
     return [
-        Line2D([], [], color="#F28E2B", marker="x", lw=1.8, ms=4,
+        Line2D([], [], color="#F28E2B", marker="x", lw=1.0, ms=3,
                label="Past trajectory"),
-        Line2D([], [], color="#20A36A", marker="o", lw=1.8, ms=3,
+        Line2D([], [], color="#20A36A", marker="o", lw=1.0, ms=2,
                label="Ground truth"),
-        Line2D([], [], color="#F2C230", marker="o", lw=2.0, ms=3,
+        Line2D([], [], color="#F2C230", marker="o", lw=1.2, ms=2,
                label="Best-of-20 prediction (oracle minFDE)"),
     ]
 
 
-def render_moflow_grid(panels, scenes, out_dir):
-    """Create a 3-by-5 MoFlow-style qualitative grid."""
+def render_gast_grid(panels, scenes, out_dir):
+    """Create a 3-by-5 GAST qualitative grid."""
     fig, axes = plt.subplots(
-        len(MOFLOW_LAYERS), len(scenes),
-        figsize=(2.55 * len(scenes), 1.9 * len(MOFLOW_LAYERS)),
+        len(MISSING_LAYERS), len(scenes),
+        figsize=(2.55 * len(scenes), 1.9 * len(MISSING_LAYERS)),
         dpi=220, squeeze=False,
     )
-    for row, (layer, layer_label) in enumerate(MOFLOW_LAYERS):
+    for row, (layer, layer_label) in enumerate(MISSING_LAYERS):
         for col, scene in enumerate(scenes):
             ax = axes[row, col]
             entry = panels.get((scene, layer))
@@ -374,23 +407,24 @@ def render_moflow_grid(panels, scenes, out_dir):
             missing = int((~sample["x_valid_mask"][0].numpy()).sum())
             render_one(
                 scene, sample, res, out_png=None, ax=ax, show_legend=False,
-                title=scene if row == 0 else None, zoom_pad_px=90,
+                title=SCENE_LABELS.get(scene, scene) if row == 0 else None,
+                zoom_pad_px=90, view_aspect=2.55 / 1.9,
             )
             ax.set_gid(f"{scene}:{layer_label}:missing={missing}")
     fig.subplots_adjust(top=0.94, bottom=0.12, left=0.055, right=0.995,
                         wspace=0.025, hspace=0.06)
     fig.canvas.draw()
-    for row, (_, label) in enumerate(MOFLOW_LAYERS):
+    for row, (_, label) in enumerate(MISSING_LAYERS):
         bbox = axes[row, 0].get_position()
         fig.text(0.018, (bbox.y0 + bbox.y1) / 2, label, rotation=90,
                  ha="center", va="center", fontsize=8)
     fig.legend(
-        handles=moflow_legend_handles(), loc="lower center", ncol=3,
+        handles=gast_legend_handles(), loc="lower center", ncol=3,
         bbox_to_anchor=(0.53, 0.012), frameon=False, fontsize=8.5,
         handlelength=1.8, columnspacing=2.2,
     )
     for ext in ("png", "pdf"):
-        fig.savefig(out_dir / f"gast_moflow_style_samples.{ext}",
+        fig.savefig(out_dir / f"gast_trajectory_samples.{ext}",
                     dpi=220, bbox_inches="tight", facecolor="white")
     plt.close(fig)
 
@@ -417,7 +451,7 @@ def main():
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--per-layer", type=int, default=32)
     ap.add_argument("--batch-size", type=int, default=1)
-    ap.add_argument("--out-dir", default=str(REPO / "docs/figures/trajgap_qualitative_moflow"))
+    ap.add_argument("--out-dir", default=str(REPO / "docs/figures/trajgap_qualitative_gast"))
     args = ap.parse_args()
     scenes = args.scenes or list(SCENE_CONF)
     out_dir = Path(args.out_dir)
@@ -455,8 +489,14 @@ def main():
                   f"-> {out_png.name}")
         del model
         torch.cuda.empty_cache()
-    render_moflow_grid(panels, scenes, out_dir)
-    print(f"  -> {out_dir / 'gast_moflow_style_samples.{png,pdf}'}")
+    render_gast_grid(panels, scenes, out_dir)
+    print(f"  -> {out_dir / 'gast_trajectory_samples.{png,pdf}'}")
+
+
+# Backward-compatible aliases for existing visualization tests and callers.
+MOFLOW_LAYERS = MISSING_LAYERS
+moflow_legend_handles = gast_legend_handles
+render_moflow_grid = render_gast_grid
 
 
 if __name__ == "__main__":

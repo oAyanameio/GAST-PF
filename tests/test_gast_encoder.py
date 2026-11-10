@@ -10,16 +10,16 @@ sys.path.insert(0, str(REPO))
 from src.model.layers.gast_encoder import (  # noqa: E402
     EvidenceRelationalGSM,
     GASTEncoder,
-    construct_observation_evidence_state,
+    construct_observation_state,
     evidence_weighted_state_aggregation,
     relative_actor_relation_features,
 )
 
 
-def test_observation_evidence_state_tracks_age_reliability_and_padding():
+def test_observation_state_tracks_age_reliability_and_padding():
     valid = torch.tensor([[[1, 0, 0], [1, 1, 1]]], dtype=torch.bool)
     padding = torch.tensor([[False, True]])
-    observed, reliability, age = construct_observation_evidence_state(
+    observed, reliability, age = construct_observation_state(
         valid, tau=0.5, key_padding=padding
     )
     assert observed[0, 0].tolist() == [1.0, 0.0, 0.0]

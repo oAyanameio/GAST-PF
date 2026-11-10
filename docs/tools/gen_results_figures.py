@@ -32,10 +32,9 @@ SCENE_MARKER = {"ETH-M": "o", "HOTEL-M": "s", "UNIV-M": "^",
 LINE_COLOR = {
     "GAST": "#0072B2",
     "MoFlow": "#D55E00",
-    "SocialLSTM": "#CC79A7",
 }
 LINE_STYLE = {
-    "GAST": "-", "MoFlow": ":", "SocialLSTM": (0, (3, 1, 1, 1)),
+    "GAST": "-", "MoFlow": ":",
 }
 DISPLAY = {
     "GAST": "GAST (ours)",
@@ -44,7 +43,7 @@ DISPLAY = {
 }
 # 图中只比较 GAST 与外部基线。
 EXCLUDED_METHODS = {"GAST ablation (standard decoder)"}
-MISSING_METHODS = ["GAST", "MoFlow", "SocialLSTM"]
+MISSING_METHODS = ["GAST", "MoFlow"]
 
 plt.rcParams.update({
     "font.family": "DejaVu Sans",

@@ -20,9 +20,8 @@ METHODS = {
     "GAST": None,
     "MoFlow": [f"/home/lbh/MoFlow/results_trajimpute_mixed/{s.split('-')[0].lower()}/mixed/results.json"
                for s in SCENES],
-    "SocialLSTM": [
-        f"/home/lbh/SocialLSTM/trajgap_bench/artifacts/sociallstm_bench/SocialLSTM_{s}_mixed-direct_seed2024_uni/eval/Mixed/{s}_Mixed_test_SocialLSTM_seed2024_ckpt/results.json"
-        for s in SCENES],
+    # SocialLSTM 已移除：原实现为单模态输出，K=20 头为仓库侧改造，
+    # 与其余多模态方法口径不可比（2026-10 用户裁定）。
     "AgentFormer": [
         f"/home/lbh/AgentFormer/results/trajgap_agentformer/{k}/eval/Mixed/{s}_Mixed_test_AgentFormer_seed2024_ckpt/results.json"
         for s, k in [("ETH-M", "eth"), ("HOTEL-M", "hotel"), ("UNIV-M", "univ"),
@@ -210,7 +209,7 @@ def best_in_col(data, key, scene, methods, pct=False):
 
 def emit_md(data):
     L = []
-    methods = ["GAST", "MoFlow", "SocialLSTM", "AgentFormer", "Re", "MS-TIP", "Social-STGCNN"]
+    methods = ["GAST", "MoFlow", "AgentFormer", "Re", "MS-TIP", "Social-STGCNN"]
 
     # ---- 表 1：逐场景 minADE20/minFDE20
     specs = [("## 表 1 · 精度（minADE20 / minFDE20，米）", "minADE_K", "minFDE_K")]
@@ -302,7 +301,7 @@ def best_in_col_macro(data, key, methods):
 
 def emit_tex(data):
     L = []
-    methods = ["GAST", "MoFlow", "SocialLSTM", "AgentFormer", "Re", "MS-TIP", "Social-STGCNN"]
+    methods = ["GAST", "MoFlow", "AgentFormer", "Re", "MS-TIP", "Social-STGCNN"]
     for title, ka, kb in [
         ("minADE$_{20}$\\,/\\,minFDE$_{20}$", "minADE_K", "minFDE_K"),
     ]:
@@ -366,11 +365,13 @@ MD_HEADER = """# TrajGap-Bench 对比实验表
 MD_NOTES = """
 ## 表注
 
-- 七个方法均完成 ETH-M、HOTEL-M、UNIV-M、ZARA1-M、ZARA2-M 五场景。
+- 六个方法均完成 ETH-M、HOTEL-M、UNIV-M、ZARA1-M、ZARA2-M 五场景。
 - 只报告普通 `minADE20`、`minFDE20`；不使用模式分数加权，也不报告 top-1、MR、Brier 或综合分数。
 - 表中指标按各方法 Mixed-test `results.json` 计算；宏平均为五场景等权，micro 为汇总全部测试样本后的算术平均。
 - 外部模型保持其方法属性：MS-TIP 为插补感知联合预测方法，其余依各自实现处理缺失历史；榜单比较的是统一测试集上的结果，不代表内部结构均为纯 direct。
-- SocialLSTM 使用零填充、缺失帧跳过 LSTM 状态更新及 K=20 高斯混合采样头。
+- 选点口径：GAST / AgentFormer / Re / MS-TIP / Social-STGCNN 均按各自验证集 minFDE20 选最优 checkpoint；MoFlow 沿用其官方实现原生的验证集 minADE（ADE_MIN）选点，未做改动。
+- MS-TIP 五场景最优 checkpoint 均出现在 epoch 5–9（后续验证集 minFDE20 持续变差，为其联合插补目标在 direct 协议下的原生行为，非调参不足）；表中数值取各自验证最优 checkpoint。
+- SocialLSTM 已移除：原实现为单模态输出，不参与本多模态榜单。
 
 ## 数据来源
 
@@ -378,7 +379,6 @@ MD_NOTES = """
 |---|---|
 | GAST | 五场景完整结果（manifest revision 一致） |
 | MoFlow | `/home/lbh/MoFlow/results_trajimpute_mixed/` |
-| SocialLSTM | `/home/lbh/SocialLSTM/trajgap_bench/artifacts/sociallstm_bench/` |
 | AgentFormer | `/home/lbh/AgentFormer/results/trajgap_agentformer/`（5/5） |
 | Re | `/home/lbh/Re/outputs/trajgap_resonance_seed2024_gpu1/`（5/5） |
 | MS-TIP | `/home/lbh/MS-TIP-TrajGap/results/`（5/5，插补感知） |
@@ -437,7 +437,7 @@ def emit_tex_micro(data):
         "    Method & minADE$_{20}$ & minFDE$_{20}$ " + slash * 2,
         f"    {slash}midrule",
     ]
-    methods = ["GAST", "MoFlow", "SocialLSTM", "AgentFormer", "Re", "MS-TIP", "Social-STGCNN"]
+    methods = ["GAST", "MoFlow", "AgentFormer", "Re", "MS-TIP", "Social-STGCNN"]
     for method in methods:
         _, micro = agg(data, method)
         cells = ["--" if micro[key] is None else f"{micro[key]:.4f}"

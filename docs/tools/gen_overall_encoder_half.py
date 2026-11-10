@@ -481,7 +481,7 @@ arrow((1740, 382), (1758, 382), lw=4, size=8)
 d.line([(1858, 382), (1862, 382)], fill=INK, width=4)
 log.append("GAST encoder: frame-wise actor interactions; reliability modulation; Mamba; reliability-weighted history aggregation")
 
-# ---------- E27 顶部观测证据状态支路 ----------
+# ---------- E27 顶部观测状态支路 ----------
 # 参考图风格：把 e(i,t)=(s,a,r) 统一画在主干最上方，
 # s/a/r 分别以橙色虚线注入逐帧交互、可靠度调制和历史状态汇总。
 # 先清掉旧的顶部 age 小条及其旧水平连接，避免两套证据支路重复。

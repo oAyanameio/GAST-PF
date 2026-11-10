@@ -19,7 +19,7 @@ TrajGap-Bench 的底层数据来自 TrajImpute 官方 Easy/Hard release。本文
 
 ```text
 GAST
-├── 观测证据感知时空编码器
+├── 观测状态感知时空编码器
 │   ├── 逐帧交互建模
 │   └── 可靠度加权的时序聚合（可靠度调制的 Mamba 与历史状态汇总）
 └── 终点引导解码器
@@ -179,7 +179,7 @@ TrajGap-Bench 正式主榜只报告两个指标：
 
 | 项目 | `GAST` |
 |---|---|
-| Encoder | 观测证据感知时空编码器（Mamba） |
+| Encoder | 观测状态感知时空编码器（Mamba） |
 | Interaction modeling | 逐帧交互建模（含相对关系偏置） |
 | Temporal aggregation | 可靠度加权的时序聚合 |
 | Decoder | 终点引导解码器 |

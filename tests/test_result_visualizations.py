@@ -51,6 +51,8 @@ def test_observation_projection_uses_dataset_inverse_transform(
     assert len(ax.lines) == 3
     assert all(not line.get_path_effects() for line in ax.lines)
     assert all(line.get_markeredgewidth() == 0 for line in ax.lines[:2])
+    assert ax.lines[0].get_linewidth() == 1.0
+    assert ax.lines[1].get_linewidth() == 1.2
     plt.close(fig)
 
 
