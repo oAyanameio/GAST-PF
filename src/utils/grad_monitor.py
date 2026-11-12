@@ -12,7 +12,7 @@
 
 输出列（CSVLogger 会写到 metrics.csv）：
     grad/total
-    grad/<group>       例如 grad/enc.spatial、grad/decoder
+    grad/<group>       例如 grad/enc.interaction、grad/decoder
 
 注意：drop-path / dropout 会让某些层在单步上梯度恰为 0，因此这里做的是
 **跨 step 的 epoch 平均**，不要拿单步值下结论。
@@ -23,12 +23,12 @@ import pytorch_lightning as pl
 
 # 模块组划分：顺序敏感（先匹配更具体的前缀）
 _GROUP_RULES = (
-    ("gast_encoder.spatial", "enc.spatial"),
-    ("gast_encoder.evidence_tau_logit", "enc.evidence"),
-    ("gast_encoder.temporal_aggregation.state_aggregation", "enc.readout"),
-    ("gast_encoder.temporal_aggregation.temporal_mamba", "enc.temporal"),
-    ("gast_encoder", "enc.other"),
-    ("goal_decoder", "decoder"),
+    ("observation_encoder.framewise_interaction", "enc.interaction"),
+    ("observation_encoder.state_strength_decay_logit", "enc.state_strength"),
+    ("observation_encoder.state_strength_aggregation.history_readout", "enc.readout"),
+    ("observation_encoder.state_strength_aggregation.mamba", "enc.mamba"),
+    ("observation_encoder", "enc.other"),
+    ("goal_guided_decoder", "decoder"),
     ("neighbor_prediction_head", "aux.neighbor_head"),
     ("future_time_embedding", "aux.time_embed"),
 )

@@ -1,6 +1,6 @@
 # TrajGap-Bench 数据集分布
 
-> 统计口径：每个场景和 split 将官方 Easy、Hard 数据合并为 Mixed；样本数按 `TrajGapDataset` 实际产生的 focal 行人轨迹计数。
+> 统计口径：样本数按 `TrajGapDataset` 实际产生的 focal 行人轨迹计数，分别统计 TrajGap 的 train、test 和 validation 划分。
 
 ![TrajGap 各场景数据划分分布](../figures/results/trajgap_dataset_distribution.png)
 
@@ -15,4 +15,4 @@
 | ZARA2-M | 51,014 | 52,497 | 8,346 | 111,857 |
 | **Total** | **243,418** | **302,886** | **44,968** | **591,272** |
 
-Train、validation、test 均使用同一 Mixed 合并规则；每个样本以一个 focal 行人为中心，包含 8 帧历史输入和 12 帧未来目标。
+Train、validation、test 均遵循 TrajGap 固定划分；每个样本以一个 focal 行人为中心，包含 8 帧历史输入和 12 帧未来目标。

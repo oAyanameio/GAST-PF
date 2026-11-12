@@ -68,7 +68,7 @@ def _pred(n=1):
 def test_evaluator_stratifies_by_max_missing_run():
     ev = DirectEvaluator()
     pred, prob, target = _pred()
-    ev.update(pred, prob, target, "ETH-M", "Mixed", "test", missing_count=3,
+    ev.update(pred, prob, target, "ETH-M", "TrajGap", "test", missing_count=3,
               valid_count=5, anchor_lag=0, forecast_gap=1, max_missing_run=3)
     out = ev.compute()
     assert "max_missing_run" in out["by_dimension"]
@@ -79,7 +79,7 @@ def test_evaluator_stratifies_by_max_missing_run():
 def test_evaluator_keeps_all_six_dimensions_together():
     ev = DirectEvaluator()
     pred, prob, target = _pred()
-    ev.update(pred, prob, target, "ETH-M", "Mixed", "test", missing_count=2,
+    ev.update(pred, prob, target, "ETH-M", "TrajGap", "test", missing_count=2,
               valid_count=6, anchor_lag=0, forecast_gap=1, max_missing_run=2)
     dims = set(ev.compute()["by_dimension"])
     assert dims == {"missing_count", "valid_count", "anchor_lag",

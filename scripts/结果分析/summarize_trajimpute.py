@@ -1,10 +1,10 @@
 """TrajGap-Bench 结果汇总。
 
-扫描 TrajGap-Bench 输出根目录下的 Mixed results.json，
+扫描 TrajGap-Bench 输出根目录下的结果文件，
 按 scene/seed/variant 聚合 minFDE20 等指标，输出：
   summary.json / summary.csv / comparison.md
 
-只纳入 TrajGap-Bench 和 K=20；历史 Easy/Hard 子集结果不会进入正式汇总。
+只纳入 TrajGap-Bench 和 K=20；历史实验结果不会进入正式汇总。
 """
 
 import argparse
@@ -18,13 +18,12 @@ SCENES = ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
 FORMAL_K = 20
 CANONICAL_PROTOCOL = "TrajGap-Bench"
 CANONICAL_PROTOCOL_VALUES = {"trajgap-bench", CANONICAL_PROTOCOL}
-LEGACY_PROTOCOL_ALIASES = {"mixed-direct"}
 
 
 def protocol_label(manifest, meta):
     """Return the formal benchmark protocol label."""
     raw = manifest.get("protocol") or meta.get("protocol")
-    if raw in CANONICAL_PROTOCOL_VALUES or raw in LEGACY_PROTOCOL_ALIASES:
+    if raw in CANONICAL_PROTOCOL_VALUES:
         return CANONICAL_PROTOCOL
     return raw or "?"
 
@@ -129,7 +128,7 @@ def main():
     # comparison.md：明细与聚合表
     md = ["# TrajGap-Bench 模型重训结果汇总\n"]
     md.append("数据来源：`" + str(root) + "`；训练与评估均为 direct 重训，K=20；")
-    md.append("训练、验证和测试均为 TrajGap Mixed；所有误差指标越低越好。\n")
+    md.append("训练、验证和测试均使用 TrajGap 固定划分；所有误差指标越低越好。\n")
 
     md.append("## 各版本×场景×seed 明细\n")
     md.append("| variant | scene | protocol | seed | n | minADE20 | minFDE20 |")

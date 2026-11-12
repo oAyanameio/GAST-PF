@@ -1,4 +1,4 @@
-'''Generate the TrajGap-Bench Mixed split-count figure and table.
+'''Generate the TrajGap dataset split-count figure and table.
 
 Run with:
     python docs/tools/gen_trajgap_dataset_distribution.py
@@ -40,7 +40,7 @@ plt.rcParams.update({
 
 
 def collect_counts(data_root):
-    '''Count focal samples through the same Mixed adapter used in training.'''
+    '''Count focal samples through the TrajGap adapter used in training.'''
     return {
         scene: {
             split: len(TrajGapDataset(data_root, scene, split))
@@ -78,7 +78,8 @@ def plot_distribution(counts, outdir):
     ax.set_title('TrajGap Dataset Distribution by Split', pad=9)
     ax.set_xlabel('Scene')
     ax.set_ylabel('Number of Focal Trajectory Samples')
-    ax.set_xticks(x, SCENES)
+    ax.set_xticks(x)
+    ax.set_xticklabels(SCENES)
     ax.yaxis.set_major_locator(MaxNLocator(nbins=6, integer=True))
     ax.yaxis.set_major_formatter(FuncFormatter(
         lambda value, _: '0' if value == 0 else f'{value / 1000:.0f}k'
@@ -111,7 +112,7 @@ def render_markdown(counts, outdir, report_path):
     lines = [
         '# TrajGap-Bench 数据集分布',
         '',
-        '> 统计口径：每个场景和 split 将官方 Easy、Hard 数据合并为 Mixed；样本数按 `TrajGapDataset` 实际产生的 focal 行人轨迹计数。',
+        '> 统计口径：样本数按 `TrajGapDataset` 实际产生的 focal 行人轨迹计数，分别统计 TrajGap 的 train、test 和 validation 划分。',
         '',
         f'![TrajGap 各场景数据划分分布]({image_rel})',
         '',
@@ -138,7 +139,7 @@ def render_markdown(counts, outdir, report_path):
     )
     lines.extend([
         '',
-        'Train、validation、test 均使用同一 Mixed 合并规则；每个样本以一个 focal 行人为中心，包含 8 帧历史输入和 12 帧未来目标。',
+        'Train、validation、test 均遵循 TrajGap 固定划分；每个样本以一个 focal 行人为中心，包含 8 帧历史输入和 12 帧未来目标。',
         '',
     ])
     return '\n'.join(lines)

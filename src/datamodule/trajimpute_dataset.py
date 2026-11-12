@@ -30,7 +30,7 @@ from .missing_features import build_missing_features
 
 SCENES = ("ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M")
 DIFFICULTIES = ("Easy", "Hard")
-MIXED_DIFFICULTY = "Mixed"
+TRAJGAP_DATASET_LABEL = "TrajGap"
 SPLITS = ("train", "val", "test")
 REQUIRED_KEYS = ("obs_traj", "pred_traj", "missing_mask", "seq_start_end")
 
@@ -474,11 +474,11 @@ class TrajImputeDataset(Dataset):
 
 
 class TrajGapDataset(Dataset):
-    """TrajGap：把官方 Easy/Hard 的同一 split 合并为一个数据集。
+    """TrajGap actor-centric dataset adapter for an official data split.
 
-    Easy/Hard 只作为底层 release 文件来源，公开协议层统一暴露为
-    ``Mixed``。训练、验证和测试都使用同一合并规则；不重新切窗、不生成
-    新的未来目标。底层来源标签仅保留在内部，便于审计样本规模。
+    The adapter preserves the upstream scene partition and future targets while
+    exposing missing-history attributes required by the forecasting pipeline.
+    Internal release-selection fields remain for compatibility with saved runs.
     """
 
     def __init__(self, data_root: str, scene: str, split: str,
@@ -487,7 +487,7 @@ class TrajGapDataset(Dataset):
         if split not in SPLITS:
             raise ValueError(f"unknown split {split!r}, expected one of {SPLITS}")
         self.scene = scene
-        self.difficulty = MIXED_DIFFICULTY
+        self.difficulty = TRAJGAP_DATASET_LABEL
         self.split = split
         self.source_difficulties = ("Easy", "Hard")
         self.datasets = [
@@ -534,7 +534,7 @@ class TrajGapDataset(Dataset):
         ]
         print(
             f"TrajGapDataset {scene}/{split}: {len(self)} focal samples "
-            f"from Easy+Hard official release"
+            "loaded"
         )
 
     def __len__(self):
@@ -556,7 +556,7 @@ class TrajGapDataset(Dataset):
         sample = dict(self.datasets[dataset_index][local_index])
         source_scene_id = sample["scene_id"]
         source_seq = source_scene_id.rsplit("-seq_", 1)[-1]
-        sample["scene_id"] = f"{self.scene}-Mixed-{self.split}-seq_{dataset_index}_{source_seq}"
+        sample["scene_id"] = f"{self.scene}-TrajGap-{self.split}-seq_{dataset_index}_{source_seq}"
         return sample
 
 
@@ -654,7 +654,7 @@ class TrajImputeDataModule(LightningDataModule):
         return self._dataset_for_difficulty(split, self.difficulty)
 
     def _dataset_for_difficulty(self, split: str, difficulty: str):
-        if difficulty == MIXED_DIFFICULTY:
+        if difficulty == TRAJGAP_DATASET_LABEL:
             return TrajGapDataset(
                 self.data_root, self.scene, split,
                 self.obs_len, self.pred_len,

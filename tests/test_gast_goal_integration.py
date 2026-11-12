@@ -6,7 +6,7 @@ import torch
     not torch.cuda.is_available(),
     reason="GAST Mamba forward requires CUDA",
 )
-def test_gast_forward_uses_goal_decoder_as_base_design():
+def test_gast_forward_uses_goal_guided_decoder_as_base_design():
     try:
         import selective_scan_cuda
     except (ImportError, OSError) as error:

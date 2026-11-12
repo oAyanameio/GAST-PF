@@ -5,8 +5,8 @@ import torch.nn.functional as F
 from .transformer_blocks import Cross_Block
 
 
-class GapAwareGoalDecoder(nn.Module):
-    """实现 GAST 的“终点引导解码器”；GapAwareGoalDecoder 是代码实现类名。"""
+class GoalGuidedDecoder(nn.Module):
+    """实现 GAST 的终点引导解码器。"""
 
     def __init__(
         self,
@@ -73,9 +73,7 @@ class GapAwareGoalDecoder(nn.Module):
         previous_index = torch.where(
             valid & (indices < last_index[:, None]), indices, -1
         ).amax(dim=-1)
-        anchor = positions[
-            torch.arange(batch_size, device=valid.device), last_index
-        ]
+        anchor = positions[torch.arange(batch_size, device=valid.device), last_index]
         previous = positions[
             torch.arange(batch_size, device=valid.device), previous_index.clamp(min=0)
         ]
@@ -134,13 +132,9 @@ class GapAwareGoalDecoder(nn.Module):
         future_steps = gap_steps[:, None] + future_index[None, :]
         future_time_seconds = future_steps.to(encoding.dtype) * self.dt
         time_features = self.time_embedding(future_time_seconds.unsqueeze(-1))
-        trajectory_queries = (
-            modes[:, :, None, :] + time_features[:, None, :, :]
-        )
+        trajectory_queries = modes[:, :, None, :] + time_features[:, None, :, :]
         if endpoint_features is not None:
-            trajectory_queries = (
-                trajectory_queries + endpoint_features[:, :, None, :]
-            )
+            trajectory_queries = trajectory_queries + endpoint_features[:, :, None, :]
 
         relative_time = future_steps.to(encoding.dtype)
         residual = self.trajectory_head(trajectory_queries)

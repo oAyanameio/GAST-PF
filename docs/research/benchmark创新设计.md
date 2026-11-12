@@ -1,75 +1,45 @@
-# TrajGap-Bench：统一混合缺失历史直接预测 Benchmark 设计
+# TrajGap 数据集与 TrajGap-Bench 评测协议设计
 
-> 文档性质：Benchmark（基准）设计与当前实施协议
+> 文档性质：数据集整理与评测协议说明
 >
-> 当前状态：统一 Mixed 方案，暂不加入其他扩展轨道
+> 当前状态：面向缺失历史直接预测的统一数据与评测设置
 >
-> 数据集与 Benchmark 名称：**TrajGap-Bench**（基于 TrajImpute 官方数据整理的缺失历史直接预测数据集与评估基准）
+> 数据集名称：**TrajGap**
 >
-> 底层数据：TrajImpute 官方 Easy/Hard release
+> 评测协议名称：**TrajGap-Bench**
+>
+> 数据来源：TrajImpute 官方发布
 >
 > 研究任务：缺失历史条件下的直接未来轨迹预测（direct / imputation-free trajectory forecasting）
 
 ## 1. 当前协议定位
 
-TrajGap-Bench 对外不再区分 Easy、Hard 或 Clean。TrajImpute 仍是底层数据来源，但 Easy/Hard 目录只作为文件来源；训练、验证和测试均由 TrajGap 适配器合并为一个 Mixed 数据集。
+TrajGap 是基于 TrajImpute 官方发布整理形成的数据集；TrajGap-Bench 则规定该数据集上的任务定义、训练与选点规则、测试指标及结果报告方式。对外介绍以 TrajGap 作为数据集整体名称，不再使用内部文件标签命名数据子集。
 
-本阶段只落实以下设想：
+评测协议包括：
 
-1. 将官方 Easy/Hard 的同一 split 合并为 Mixed；
-2. 训练、验证和测试均使用 Mixed 口径；
-3. 验证集只使用一个 Mixed 验证集进行 checkpoint 选点；
-4. 主评估只报告一个 Mixed 结果，使用 `minADE20` 和 `minFDE20` 两个主指标，不计算综合总榜分数；
-5. 暂不加入 unseen-pattern、额外数据轨道、Clean 主分支或额外评价指标。
+1. 沿用 TrajGap 的官方场景及 train、validation、test 划分；
+2. 直接以带缺失标记的历史观测预测完整未来，不以前置外部插补为条件；
+3. 使用 TrajGap validation 划分进行 checkpoint 选点；
+4. 在 TrajGap test 划分上报告普通 `minADE20` 和 `minFDE20`；
+5. 按缺失数量、连续缺失长度和末端缺失等属性进行分层分析，不计算综合总榜分数；
+6. 暂不加入额外数据轨道或额外主评估指标。
 
-TrajGap-Bench 不修改官方 pkl，不重新切窗，也不重新生成未来目标；只在适配层进行样本级合并。官方 impute-then-predict 数字不进入 TrajGap-Bench direct 总榜。
+TrajGap 的数据适配不修改官方 pkl、不重新切窗，也不重新生成未来目标。官方 impute-then-predict 数字不进入 TrajGap-Bench 的直接预测结果表。
 
-## 2. 数据集组织：统一 Mixed split
+## 2. TrajGap 数据组织
 
-对每个场景 `scene ∈ {ETH-M, HOTEL-M, UNIV-M, ZARA1-M, ZARA2-M}`，TrajGap-Bench 使用官方 release 的同一 split 合并：
-
-```text
-TrajGap-Bench/<scene>/train = Easy/data_train.pkl + Hard/data_train.pkl
-TrajGap-Bench/<scene>/val   = Easy/data_val.pkl   + Hard/data_val.pkl
-TrajGap-Bench/<scene>/test  = Easy/data_test.pkl  + Hard/data_test.pkl
-```
-
-这里的 `+` 是 actor-centric 样本级拼接，不是重新切窗，也不是去重后重采样。Easy/Hard 的来源标签保留在内部审计信息中，对外协议名称统一为 `Mixed`。
-
-### 2.1 训练集
+TrajGap 包含五个场景。每个场景沿用官方 train、validation 和 test 划分，并由适配器组织成以焦点行人为中心的样本：
 
 ```text
-Mixed-train = Easy/train + Hard/train
+TrajGap/<scene>/train
+TrajGap/<scene>/validation
+TrajGap/<scene>/test
 ```
 
-当前采用自然拼接（natural Mixed），不使用 severity-balanced 或 evidence-balanced 采样。两个底层数据源沿用官方场景训练边界，合并不改变场景划分。
+每个样本包含 8 帧历史和 12 帧完整未来；历史缺失位置由掩码标明。当前已审计的 focal 轨迹样本数量如下：
 
-### 2.2 验证集
-
-```text
-Mixed-val = Easy/val + Hard/val
-```
-
-验证集不再拆成 Easy-val 和 Hard-val，也不对两部分分别选 checkpoint。训练期间只计算一个最终预测头 `val_new_minFDE20`，根据合并后的 Mixed-val 选择最佳 checkpoint。
-
-这样可以保证：
-
-1. checkpoint 选择目标与 Mixed 主测试口径一致；
-2. 不因分别查看 Easy/Hard 验证结果而产生多重选点；
-3. 不使用测试集决定 Easy/Hard 权重或 checkpoint；
-4. 缺失程度差异只作为测试结果的诊断分组，不改变主验证协议。
-
-### 2.3 测试集
-
-```text
-Mixed-test = Easy/test + Hard/test
-```
-
-评估器只输出一套 Mixed 主结果。`missing_count`、`valid_count`、`anchor_lag`、`forecast_gap` 等字段仍保留用于内部诊断，但不再输出 Easy 与 Hard 两个主榜。
-
-当前已审计的 focal 样本规模如下：
-
-| 场景 | Mixed train | Mixed val | Mixed test |
+| 场景 | TrajGap train | TrajGap validation | TrajGap test |
 |---|---:|---:|---:|
 | ETH-M | 59,618 | 10,698 | 1,629 |
 | HOTEL-M | 58,304 | 10,272 | 9,477 |
@@ -77,33 +47,27 @@ Mixed-test = Easy/test + Hard/test
 | ZARA1-M | 56,020 | 10,236 | 20,277 |
 | ZARA2-M | 51,014 | 8,346 | 52,497 |
 
-这些数量是官方 Easy/Hard 文件的样本级相加；测试集中的缺失块重复结构保持不变，不将其误称为独立原始轨迹数量。
+测试划分保留上游发布中的缺失程度扫描结构，因此同一潜在轨迹可能对应多个缺失掩码。样本数不等于独立原始轨迹数；统计推断应按原始轨迹聚类或采用配对 bootstrap。
 
-### 2.4 数据适配规则
+### 2.1 数据适配规则
 
-- 读取官方 Easy/Hard pkl，不修改源文件；
+- 读取 TrajImpute 官方 pkl，不修改源文件；
 - 历史缺失坐标仍由 `missing_mask` 定义；
 - 未来 `pred_traj` 保持完整，只用于监督和评估；
-- 对 Easy/Hard 文件分别修复已知的 `seq_start_end` block offset 问题，再进行样本合并；
+- 对官方文件中的 `seq_start_end` block offset 问题进行确定性修复；
 - focal actor、邻居分组、局部坐标和跨缺口运动特征沿用原适配器；
-- 对外 `scene_id` 使用 `scene-Mixed-split-*`；
-- 不把 Easy 的零缺失副本定义为 Clean；本阶段不建立独立 Clean 主分支。
+- 对外样本标识采用 TrajGap 场景与 split 信息；
+- 不将缺失数量为零的样本另行命名为独立 Clean 数据集。
 
-## 3. 训练、验证、测试流程
+## 3. TrajGap-Bench 训练与评估流程
 
 ```text
-Easy/data_train.pkl ─┐
-                     ├─> TrajGap Mixed-train ─┐
-Hard/data_train.pkl ─┘                       │
-                                             ├─> 模型训练
-Easy/data_val.pkl   ─┐                       │
-                     ├─> TrajGap Mixed-val ──┘
-Hard/data_val.pkl   ─┘                       │
-                                             └─> val_new_minFDE20 选 checkpoint
+TrajGap train ──────────┐
+                        ├─> 模型训练
+TrajGap validation ─────┘
+           └──────────────> val_new_minFDE20 选择 checkpoint
 
-Easy/data_test.pkl  ─┐
-                     ├─> TrajGap Mixed-test ─> 单一主结果 / 单一总榜
-Hard/data_test.pkl  ─┘
+TrajGap test ─────────────> minADE20 / minFDE20 与分层分析
 ```
 
 训练、验证和测试使用相同的 8 帧历史、12 帧未来、direct 输入和 `K=20` 设置。测试集不参与 checkpoint 选择。
@@ -126,7 +90,7 @@ minFDE20
 
 minADE 与 minFDE 分别在各自误差上取最优候选，该候选可以不同。结果汇报规则：
 
-1. 两个指标来自同一 Mixed-test、同一 checkpoint、同一场景协议和同一 `K=20`；
+1. 两个指标来自同一 TrajGap test 划分、同一 checkpoint、同一场景协议和同一 `K=20`；
 2. 报告五场景明细、macro average、全部样本汇总平均和 worst-scene；
 3. 不定义综合分数或单一总排名，避免引入未冻结的归一化边界与指标权重。
 
@@ -136,12 +100,12 @@ minADE 与 minFDE 分别在各自误差上取最优候选，该候选可以不�
 
 | 功能 | 实现 |
 |---|---|
-| TrajGap-Bench 数据适配 | `src/datamodule/trajimpute_dataset.py::TrajGapDataset` |
-| Mixed 训练/验证 | `TrajImputeDataModule` 接收 `train_difficulties=[Mixed]`、`val_difficulties=[Mixed]` |
-| Mixed 测试 | `TrajGapDataset(..., split="test")` |
+| TrajGap 数据适配 | `src/datamodule/trajimpute_dataset.py::TrajGapDataset` |
+| TrajGap 训练/验证 | `TrajImputeDataModule` |
+| TrajGap 测试 | `TrajGapDataset(..., split="test")` |
 | 统一训练入口 | `scripts/训练与评估/run_trajimpute_experiments.py --protocol trajgap-bench` |
-| 统一 direct 评估 | `scripts/结果分析/evaluate_trajimpute_direct.py --difficulty Mixed` |
-| checkpoint 选点 | 合并后的 Mixed-val 上，按最终预测头的 `val_new_minFDE20` 选点 |
+| 统一 direct 评估 | `scripts/结果分析/evaluate_trajimpute_direct.py` |
+| checkpoint 选点 | TrajGap validation 上按最终预测头的 `val_new_minFDE20` 选点 |
 
 推荐入口：
 
@@ -159,9 +123,9 @@ scripts/训练与评估/run_trajimpute_experiments.py \
 
 ## 6. 当前范围边界
 
-本阶段只实现统一 Mixed 数据组织和单一 Mixed 验证/测试口径，暂不实现：
+本阶段使用 TrajGap 统一数据组织与单一验证/测试口径，暂不实现：
 
-- Easy/Hard 独立主榜；
+- 按底层来源标签拆分的独立主榜；
 - Clean 主训练或主测试分支；
 - unseen-pattern 数据扩展；
 - severity-balanced 或 evidence-balanced 主训练；
@@ -170,4 +134,4 @@ scripts/训练与评估/run_trajimpute_experiments.py \
 
 当前最准确的定位是：
 
-> **TrajGap-Bench 将 TrajImpute 官方 Easy/Hard 的同一 train/val/test split 在适配层统一合并为 Mixed，并以 Mixed-val 最终预测头的单一 `val_new_minFDE20` 选点，在 Mixed-test 上并列报告 `minFDE20` 与 `minADE20`，不计算 MR 或综合总分。**
+> **TrajGap 是基于 TrajImpute 官方发布整理形成的数据集；TrajGap-Bench 是其缺失历史直接预测评测协议。协议在 TrajGap validation 上按最终预测头的 `val_new_minFDE20` 选择 checkpoint，并在 TrajGap test 上报告 `minFDE20` 与 `minADE20`，不计算 MR 或综合总分。**

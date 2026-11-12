@@ -1,9 +1,9 @@
-"""GAST 历史编码器的实现。
+"""GAST 观测状态编码器的实现。
 
 公开名称与实现类对应关系：
-- 观测状态感知时空编码器：GASTEncoder
-- 逐帧交互建模：EvidenceRelationalGSM
-- 可靠度加权的时序聚合：EvidenceConditionedCausalTemporalAggregation
+- 观测状态感知时空编码器：ObservationStateEncoder
+- 逐帧交互建模：FramewiseInteractionModel
+- 状态强度加权的时序聚合：StateStrengthTemporalAggregation
 
 以上类名是代码实现标识，公开说明使用左侧名称。
 """
@@ -12,15 +12,15 @@ import torch
 import torch.nn as nn
 from mamba_ssm.ops.triton.layernorm import RMSNorm, rms_norm_fn
 
-from .mamba.mamba_block import create_causal_mamba_block
+from .mamba.mamba_block import create_mamba_block
 
 
-def construct_observation_state(
+def build_observation_state(
     valid_mask: torch.Tensor,
     tau: torch.Tensor | float,
     key_padding: torch.Tensor | None = None,
 ):
-    """Construct observation eligibility, age, and reliability tensors."""
+    """Construct observation eligibility, age, and state-strength tensors."""
     observed = valid_mask.bool()
     if key_padding is not None:
         observed = observed & ~key_padding.bool().unsqueeze(-1)
@@ -30,20 +30,20 @@ def construct_observation_state(
     last_observed = torch.where(observed, steps, -1).cummax(dim=-1).values
     age = torch.where(last_observed >= 0, steps - last_observed, steps + 1)
     tau_tensor = torch.as_tensor(tau, dtype=torch.float32, device=observed.device)
-    reliability = torch.where(
+    state_strength = torch.where(
         observed,
         torch.ones_like(age, dtype=torch.float32),
         torch.exp(-tau_tensor * age.float()),
     )
     if key_padding is not None:
-        reliability = reliability * (~key_padding.bool()).unsqueeze(-1)
-    return observed.to(torch.float32), reliability, age.to(torch.float32)
+        state_strength = state_strength * (~key_padding.bool()).unsqueeze(-1)
+    return observed.to(torch.float32), state_strength, age.to(torch.float32)
 
 
-def relative_actor_relation_features(
+def build_framewise_interaction_features(
     positions: torch.Tensor, valid_mask: torch.Tensor
 ):
-    """Return pairwise actor relation features [B,T,N,N,7]."""
+    """Return pairwise actor interaction features [B,T,N,N,7]."""
     batch_size, actors, steps, _ = positions.shape
     observed = valid_mask.bool()
     positions = torch.where(
@@ -92,33 +92,33 @@ def relative_actor_relation_features(
     return features
 
 
-def evidence_weighted_state_aggregation(
+def aggregate_history_by_state_strength(
     hidden: torch.Tensor,
-    reliability: torch.Tensor,
+    state_strength: torch.Tensor,
     content_scores: torch.Tensor,
     beta: torch.Tensor | float = 1.0,
     eps: float = 1e-8,
-    use_reliability_weighting: bool = True,
+    use_state_strength_weighting: bool = True,
 ):
-    """Aggregate temporal states using content scores and observation reliability."""
+    """Aggregate temporal states using content scores and state strength."""
     logits = content_scores.squeeze(-1)
-    if use_reliability_weighting:
+    if use_state_strength_weighting:
         logits = logits + torch.as_tensor(
             beta, dtype=hidden.dtype, device=hidden.device
-        ) * torch.log(reliability.to(hidden.dtype).clamp_min(eps))
+        ) * torch.log(state_strength.to(hidden.dtype).clamp_min(eps))
     weights = torch.softmax(logits, dim=-1)
-    evidence = torch.sum(weights.unsqueeze(-1) * hidden, dim=-2)
-    if not use_reliability_weighting:
-        return evidence, weights
-    terminal_reliability = reliability[..., -1].unsqueeze(-1).to(hidden.dtype)
+    weighted_history = torch.sum(weights.unsqueeze(-1) * hidden, dim=-2)
+    if not use_state_strength_weighting:
+        return weighted_history, weights
+    terminal_state_strength = state_strength[..., -1].unsqueeze(-1).to(hidden.dtype)
     output = (
-        terminal_reliability * hidden[..., -1, :]
-        + (1.0 - terminal_reliability) * evidence
+        terminal_state_strength * hidden[..., -1, :]
+        + (1.0 - terminal_state_strength) * weighted_history
     )
     return output, weights
 
 
-class EvidenceRelationalGSM(nn.Module):
+class FramewiseInteractionModel(nn.Module):
     """实现“逐帧交互建模”阶段。"""
 
     def __init__(
@@ -128,14 +128,14 @@ class EvidenceRelationalGSM(nn.Module):
         num_heads: int,
         operator: str = "max",
         p_dropout: float = 0.2,
-        use_relation_bias: bool = True,
+        use_interaction_bias: bool = True,
         use_source_filter: bool = True,
     ):
         super().__init__()
         if operator not in {"mean", "sum", "max"}:
-            raise ValueError(f"unsupported GSM operator={operator!r}")
+            raise ValueError(f"unsupported interaction operator={operator!r}")
         self.operator = operator
-        self.use_relation_bias = bool(use_relation_bias)
+        self.use_interaction_bias = bool(use_interaction_bias)
         self.use_source_filter = bool(use_source_filter)
         self.patch_embed = nn.Sequential(
             nn.Linear(input_dim, model_dim, bias=False),
@@ -164,22 +164,22 @@ class EvidenceRelationalGSM(nn.Module):
             nn.LeakyReLU(),
             nn.Dropout(p_dropout),
         )
-        self.relation_bias = (
+        self.interaction_bias = (
             nn.Sequential(
                 nn.Linear(7, max(model_dim // 4, 16)),
                 nn.GELU(),
                 nn.Linear(max(model_dim // 4, 16), num_heads),
             )
-            if self.use_relation_bias
+            if self.use_interaction_bias
             else None
         )
-        if self.relation_bias is not None:
-            nn.init.zeros_(self.relation_bias[-1].weight)
-            nn.init.zeros_(self.relation_bias[-1].bias)
+        if self.interaction_bias is not None:
+            nn.init.zeros_(self.interaction_bias[-1].weight)
+            nn.init.zeros_(self.interaction_bias[-1].bias)
         self.apply(self._init_weights)
-        if self.relation_bias is not None:
-            nn.init.zeros_(self.relation_bias[-1].weight)
-            nn.init.zeros_(self.relation_bias[-1].bias)
+        if self.interaction_bias is not None:
+            nn.init.zeros_(self.interaction_bias[-1].weight)
+            nn.init.zeros_(self.interaction_bias[-1].bias)
 
     @staticmethod
     def _init_weights(m):
@@ -191,7 +191,9 @@ class EvidenceRelationalGSM(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    def _ghost(self, mask_bt_n: torch.Tensor, key_padding_bt: torch.Tensor) -> torch.Tensor:
+    def _ghost(
+        self, mask_bt_n: torch.Tensor, key_padding_bt: torch.Tensor
+    ) -> torch.Tensor:
         """Pool valid-actor observation masks into one ghost token."""
         keep = (~key_padding_bt).float().unsqueeze(-1)  # [B*T,N,1]
         mask_bt_n = mask_bt_n.float() * keep.squeeze(-1)  # padding 行置 0
@@ -208,9 +210,14 @@ class EvidenceRelationalGSM(nn.Module):
         masked = mask_emb.masked_fill(~keep.bool(), torch.finfo(mask_emb.dtype).min)
         return masked.max(dim=1, keepdim=True).values
 
-    def forward(self, x: torch.Tensor, mask: torch.Tensor,
-                key_padding: torch.Tensor, positions: torch.Tensor,
-                source_eligibility: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        mask: torch.Tensor,
+        key_padding: torch.Tensor,
+        positions: torch.Tensor,
+        source_eligibility: torch.Tensor,
+    ) -> torch.Tensor:
         """x [B,T,N,C_in]，mask [B,T,N]（有效=1），key_padding [B,N]（True=padding）。
 
         返回 [B,T,N,C]。
@@ -223,22 +230,22 @@ class EvidenceRelationalGSM(nn.Module):
         kp_bt = key_padding.unsqueeze(1).expand(B, T, N).reshape(B * T, N)
         ghost = self._ghost(mask_bt_n, kp_bt)  # [B*T,1,C]
 
-        tokens = torch.cat(
-            [ghost, h.reshape(B * T, N, -1)], dim=1
-        )  # [B*T, N+1, C]
+        tokens = torch.cat([ghost, h.reshape(B * T, N, -1)], dim=1)  # [B*T, N+1, C]
 
         qkv = self.norm1(tokens)
-        if self.use_relation_bias:
-            relations = relative_actor_relation_features(
+        if self.use_interaction_bias:
+            interactions = build_framewise_interaction_features(
                 positions, source_eligibility.bool()
             )
-            relation_bias = self.relation_bias(relations).permute(0, 1, 4, 2, 3)
-            relation_bias = relation_bias.reshape(
+            interaction_bias = self.interaction_bias(interactions).permute(
+                0, 1, 4, 2, 3
+            )
+            interaction_bias = interaction_bias.reshape(
                 B * T * self.attn_layer.num_heads, N, N
             )
-            relation_bias = relation_bias.to(dtype=qkv.dtype)
+            interaction_bias = interaction_bias.to(dtype=qkv.dtype)
         else:
-            relation_bias = qkv.new_zeros(
+            interaction_bias = qkv.new_zeros(
                 B * T * self.attn_layer.num_heads, N, N
             )
         actor_sources = (
@@ -253,12 +260,13 @@ class EvidenceRelationalGSM(nn.Module):
             ],
             dim=-1,
         ).reshape(B * T, N + 1)
-        attn_mask = qkv.new_zeros(
-            B * T, N + 1, N + 1
-        ).reshape(B * T, 1, N + 1, N + 1).expand(
-            B * T, self.attn_layer.num_heads, N + 1, N + 1
-        ).clone()
-        attn_mask[..., 1:, 1:] = relation_bias.reshape(
+        attn_mask = (
+            qkv.new_zeros(B * T, N + 1, N + 1)
+            .reshape(B * T, 1, N + 1, N + 1)
+            .expand(B * T, self.attn_layer.num_heads, N + 1, N + 1)
+            .clone()
+        )
+        attn_mask[..., 1:, 1:] = interaction_bias.reshape(
             B * T, self.attn_layer.num_heads, N, N
         )
         attn_mask = attn_mask.masked_fill(
@@ -279,82 +287,100 @@ class EvidenceRelationalGSM(nn.Module):
         return y
 
 
-class ReliabilityModulatedCausalMamba(nn.Module):
-    """可靠度加权时序聚合内部的 Mamba 输入调制环节。"""
+class StateStrengthMamba(nn.Module):
+    """状态强度加权时序聚合内部的 Mamba 输入调制环节。"""
 
-    def __init__(self, model_dim: int, depth: int = 4, p_dropout: float = 0.2,
-                 drop_path: float = 0.2,
-                 use_reliability_modulation: bool = True):
+    def __init__(
+        self,
+        model_dim: int,
+        depth: int = 4,
+        p_dropout: float = 0.2,
+        drop_path: float = 0.2,
+        use_state_strength_modulation: bool = True,
+    ):
         super().__init__()
-        self.use_reliability_modulation = bool(use_reliability_modulation)
+        self.use_state_strength_modulation = bool(use_state_strength_modulation)
         self.mlp = nn.Sequential(
             nn.Linear(model_dim, model_dim),
             nn.LayerNorm(model_dim),
             nn.LeakyReLU(),
             nn.Dropout(p_dropout),
         )
-        self.ssm_forw = self._stack(model_dim, depth, drop_path, 0)
-        self.norm_f_forw = RMSNorm(model_dim, eps=1e-5)
+        self.mamba_blocks = self._stack(model_dim, depth, drop_path, 0)
+        self.mamba_norm = RMSNorm(model_dim, eps=1e-5)
 
     @staticmethod
     def _stack(model_dim, depth, drop_path, offset):
-        return nn.ModuleList([
-            create_causal_mamba_block(
-                d_model=model_dim,
-                layer_idx=offset + i,
-                drop_path=drop_path,
-            )
-            for i in range(depth)
-        ])
+        return nn.ModuleList(
+            [
+                create_mamba_block(
+                    d_model=model_dim,
+                    layer_idx=offset + i,
+                    drop_path=drop_path,
+                )
+                for i in range(depth)
+            ]
+        )
 
-    def _run(self, x, stack, norm):
+    def _run(self, x):
         residual = None
-        for blk in stack:
+        for blk in self.mamba_blocks:
             x, residual = blk(x, residual)
         return rms_norm_fn(
             x,
-            norm.weight,
-            norm.bias,
-            eps=norm.eps,
+            self.mamba_norm.weight,
+            self.mamba_norm.bias,
+            eps=self.mamba_norm.eps,
             residual=residual,
             prenorm=False,
             residual_in_fp32=True,
         )
 
-    def forward(self, x_b_t_n_c: torch.Tensor, reliability: torch.Tensor):
+    def forward(
+        self,
+        x_b_t_n_c: torch.Tensor,
+        state_strength: torch.Tensor,
+    ):
         """Return forward-only temporal states with shape ``[B,N,T,C]``."""
         B, T, N, C = x_b_t_n_c.shape
         x_forw = self.mlp(x_b_t_n_c).permute(0, 2, 1, 3).reshape(B * N, T, C)
-        if self.use_reliability_modulation:
-            reliability_flat = reliability.reshape(B * N, T, 1).to(x_forw.dtype)
-            x_forw = x_forw * reliability_flat
-        y_forw = self._run(x_forw, self.ssm_forw, self.norm_f_forw)
-        return y_forw.reshape(B, N, T, C)
+        if self.use_state_strength_modulation:
+            strength_flat = state_strength.reshape(B * N, T, 1).to(x_forw.dtype)
+            x_forw = x_forw * strength_flat
+        hidden = self._run(x_forw)
+        return hidden.reshape(B, N, T, C)
 
+class StateStrengthHistoryReadout(nn.Module):
+    """状态强度加权时序聚合内部的历史状态读出环节。"""
 
-class EvidenceWeightedStateAggregation(nn.Module):
-    """可靠度加权时序聚合内部的历史状态读出环节。"""
-
-    def __init__(self, embed_dim: int, use_reliability_readout: bool = True):
+    def __init__(
+        self,
+        embed_dim: int,
+        use_state_strength_readout: bool = True,
+    ):
         super().__init__()
-        self.use_reliability_readout = bool(use_reliability_readout)
+        self.use_state_strength_readout = bool(use_state_strength_readout)
         self.score = nn.Linear(embed_dim, 1)
         nn.init.zeros_(self.score.weight)
         nn.init.zeros_(self.score.bias)
         self.register_buffer("beta", torch.tensor(1.0))
 
-    def forward(self, hidden: torch.Tensor, reliability: torch.Tensor):
-        return evidence_weighted_state_aggregation(
+    def forward(
+        self,
+        hidden: torch.Tensor,
+        state_strength: torch.Tensor,
+    ):
+        return aggregate_history_by_state_strength(
             hidden,
-            reliability,
+            state_strength,
             self.score(hidden),
             beta=self.beta,
-            use_reliability_weighting=self.use_reliability_readout,
+            use_state_strength_weighting=self.use_state_strength_readout,
         )
 
 
-class EvidenceConditionedCausalTemporalAggregation(nn.Module):
-    """实现“可靠度加权的时序聚合”，组合 Mamba 输入调制与历史状态读出。"""
+class StateStrengthTemporalAggregation(nn.Module):
+    """实现“状态强度加权的时序聚合”，组合 Mamba 输入调制与历史状态读出。"""
 
     def __init__(
         self,
@@ -362,35 +388,36 @@ class EvidenceConditionedCausalTemporalAggregation(nn.Module):
         depth: int,
         p_dropout: float = 0.2,
         drop_path: float = 0.2,
-        use_reliability_modulation: bool = True,
-        use_reliability_readout: bool = True,
+        use_state_strength_modulation: bool = True,
+        use_state_strength_readout: bool = True,
     ):
         super().__init__()
-        self.temporal_mamba = ReliabilityModulatedCausalMamba(
+        self.mamba = StateStrengthMamba(
             embed_dim,
             depth=depth,
             p_dropout=p_dropout,
             drop_path=drop_path,
-            use_reliability_modulation=use_reliability_modulation,
+            use_state_strength_modulation=use_state_strength_modulation,
         )
-        self.state_aggregation = EvidenceWeightedStateAggregation(
-            embed_dim, use_reliability_readout=use_reliability_readout
+        self.history_readout = StateStrengthHistoryReadout(
+            embed_dim,
+            use_state_strength_readout=use_state_strength_readout,
         )
 
     def forward(
         self,
-        spatial_states: torch.Tensor,
-        reliability: torch.Tensor,
+        interaction_states: torch.Tensor,
+        state_strength: torch.Tensor,
     ):
-        hidden = self.temporal_mamba(
-            spatial_states,
-            reliability=reliability,
+        hidden = self.mamba(
+            interaction_states,
+            state_strength=state_strength,
         )
-        return self.state_aggregation(hidden, reliability)
+        return self.history_readout(hidden, state_strength)
 
 
-class GASTEncoder(nn.Module):
-    """实现“观测状态感知时空编码器”，包含逐帧交互建模和可靠度加权的时序聚合。"""
+class ObservationStateEncoder(nn.Module):
+    """实现“观测状态感知时空编码器”，包含逐帧交互建模和状态强度加权的时序聚合。"""
 
     def __init__(
         self,
@@ -401,34 +428,34 @@ class GASTEncoder(nn.Module):
         operator: str = "max",
         p_dropout: float = 0.2,
         drop_path: float = 0.2,
-        use_relation_bias: bool = True,
+        use_interaction_bias: bool = True,
         use_source_filter: bool = True,
-        use_reliability_modulation: bool = True,
-        use_reliability_readout: bool = True,
+        use_state_strength_modulation: bool = True,
+        use_state_strength_readout: bool = True,
     ):
         super().__init__()
-        self.spatial = EvidenceRelationalGSM(
+        self.framewise_interaction = FramewiseInteractionModel(
             input_dim,
             embed_dim,
             num_heads,
             operator=operator,
             p_dropout=p_dropout,
-            use_relation_bias=use_relation_bias,
+            use_interaction_bias=use_interaction_bias,
             use_source_filter=use_source_filter,
         )
-        self.evidence_tau_logit = nn.Parameter(torch.tensor(-2.2521685))
-        self.temporal_aggregation = EvidenceConditionedCausalTemporalAggregation(
+        self.state_strength_decay_logit = nn.Parameter(torch.tensor(-2.2521685))
+        self.state_strength_aggregation = StateStrengthTemporalAggregation(
             embed_dim,
             depth=depth,
             p_dropout=p_dropout,
             drop_path=drop_path,
-            use_reliability_modulation=use_reliability_modulation,
-            use_reliability_readout=use_reliability_readout,
+            use_state_strength_modulation=use_state_strength_modulation,
+            use_state_strength_readout=use_state_strength_readout,
         )
 
     @property
-    def evidence_tau(self):
-        return torch.nn.functional.softplus(self.evidence_tau_logit)
+    def state_strength_decay(self):
+        return torch.nn.functional.softplus(self.state_strength_decay_logit)
 
     def forward(
         self,
@@ -441,16 +468,18 @@ class GASTEncoder(nn.Module):
         mask = valid_mask.permute(0, 2, 1).float()
         padding = key_padding
 
-        source_eligibility, reliability, _ = construct_observation_state(
-            valid_mask, self.evidence_tau, padding
+        source_eligibility, state_strength, _ = build_observation_state(
+            valid_mask, self.state_strength_decay, padding
         )
-        x_spa = self.spatial(
+        interaction_states = self.framewise_interaction(
             x,
             mask,
             padding,
             positions=positions,
             source_eligibility=source_eligibility,
         )
-        output, _ = self.temporal_aggregation(x_spa, reliability)
+        output, _ = self.state_strength_aggregation(
+            interaction_states, state_strength
+        )
 
         return output * (~padding).unsqueeze(-1).to(output.dtype)

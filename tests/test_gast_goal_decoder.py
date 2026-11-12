@@ -5,7 +5,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.model.layers.gast_goal_decoder import GapAwareGoalDecoder
+from src.model.layers.goal_guided_decoder import GoalGuidedDecoder
 from src.utils.LaplaceNLLLoss import LaplaceNLLLoss
 from src.model.trajectory_loss import final_consistent_loss
 
@@ -22,9 +22,9 @@ def _goal_batch():
     return {"x_positions": positions, "x_valid_mask": valid}
 
 
-def test_gap_aware_goal_decoder_handles_single_observation_and_exact_endpoint():
+def test_goal_guided_decoder_handles_single_observation_and_exact_endpoint():
     torch.manual_seed(7)
-    decoder = GapAwareGoalDecoder(
+    decoder = GoalGuidedDecoder(
         future_steps=4, dim=16, num_modes=3, num_heads=4, dt=0.4
     ).eval()
     encoding = torch.randn(2, 3, 16)
@@ -47,7 +47,7 @@ def test_gap_aware_goal_decoder_handles_single_observation_and_exact_endpoint():
 
 def test_goal_guidance_can_be_disabled_for_direct_trajectory_decoding():
     torch.manual_seed(17)
-    decoder = GapAwareGoalDecoder(
+    decoder = GoalGuidedDecoder(
         future_steps=4,
         dim=16,
         num_modes=3,
@@ -69,8 +69,8 @@ def test_goal_guidance_can_be_disabled_for_direct_trajectory_decoding():
     assert torch.isfinite(output["scales"]).all()
 
 
-def test_goal_decoder_backpropagates_through_endpoint_and_trajectory_heads():
-    decoder = GapAwareGoalDecoder(
+def test_goal_guided_decoder_backpropagates_through_endpoint_and_trajectory_heads():
+    decoder = GoalGuidedDecoder(
         future_steps=3, dim=16, num_modes=2, num_heads=4, dt=0.4
     )
     encoding = torch.randn(2, 3, 16)

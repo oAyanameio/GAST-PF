@@ -2,8 +2,7 @@
 
 协议（任务书 2026-09-07 + 方案 §1.4）：
 - 默认使用 `GAST + TrajGap-Bench`；
-- TrajGap-Bench 将官方 Easy/Hard 的同一 split 合并为单一 Mixed 数据集，
-  用于 direct 缺失历史预测；
+- TrajGap 数据集用于 direct 缺失历史预测；
 - 每个场景从头训练，不使用零样本 checkpoint；
 - 训练输出、验证选点和测试评估统一使用 K=20；
 - 每个实验写入独立 manifest，拒绝把不同数据源混为同一协议；
@@ -31,6 +30,12 @@ from datetime import datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+
+from src.datamodule.trajimpute_dataset import (  # noqa: E402
+    TRAJGAP_DATASET_LABEL,
+)
 PY = sys.executable
 CONFIG_NAME = "config_missing_aware_trajimpute"
 EVAl_SCRIPT = REPO / "scripts/结果分析/evaluate_trajimpute_direct.py"
@@ -44,26 +49,26 @@ OPTIMIZER_POLICY = "adamw_complete_module_local_v1"
 
 # Each ablation changes one structural switch; the full GAST remains the default.
 _GAST_BASE = {
-    "gast_depth": 4,
-    "gast_gsm_operator": "max",
+    "encoder_depth": 4,
+    "interaction_operator": "max",
     "goal_endpoint_loss_weight": 1.0,
     "mode_diversity_loss_weight": 0.05,
     "mode_diversity_margin": 0.5,
-    "use_relation_bias": True,
+    "use_interaction_bias": True,
     "use_source_filter": True,
-    "use_reliability_modulation": True,
-    "use_reliability_readout": True,
+    "use_state_strength_modulation": True,
+    "use_state_strength_readout": True,
     "use_goal_guidance": True,
 }
 VARIANTS = {
     "GAST": dict(_GAST_BASE),
-    "GAST-no-relation-bias": {**_GAST_BASE, "use_relation_bias": False},
+    "GAST-no-interaction-bias": {**_GAST_BASE, "use_interaction_bias": False},
     "GAST-no-source-filter": {**_GAST_BASE, "use_source_filter": False},
-    "GAST-no-reliability-modulation": {
-        **_GAST_BASE, "use_reliability_modulation": False
+    "GAST-no-state-strength-modulation": {
+        **_GAST_BASE, "use_state_strength_modulation": False
     },
     "GAST-content-only-readout": {
-        **_GAST_BASE, "use_reliability_readout": False
+        **_GAST_BASE, "use_state_strength_readout": False
     },
     "GAST-no-goal-guidance": {**_GAST_BASE, "use_goal_guidance": False},
 }
@@ -71,10 +76,10 @@ VARIANTS = {
 PROTOCOLS = {
     "trajgap-bench": {
         "dataset": "trajgap",
-        "difficulty": "Mixed",
-        "train_difficulties": ["Mixed"],
-        "val_difficulties": ["Mixed"],
-        "test_difficulties": ["Mixed"],
+        "difficulty": TRAJGAP_DATASET_LABEL,
+        "train_difficulties": [TRAJGAP_DATASET_LABEL],
+        "val_difficulties": [TRAJGAP_DATASET_LABEL],
+        "test_difficulties": [TRAJGAP_DATASET_LABEL],
         "train_sampling_scheme": "natural",
         "suffix": "_trajgap",
     },
@@ -234,8 +239,8 @@ def _model_config(args):
         "mlp_ratio": 4.0, "qkv_bias": False, "drop_path": 0.2,
         "num_modes": args.K, "dt": 0.4,
         "obs_len": 8,
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
+        "encoder_depth": 4,
+        "interaction_operator": "max",
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05,
         "mode_diversity_margin": 0.5,
@@ -462,7 +467,7 @@ def build_manifest(args, protocol_cfg):
     val_difficulties = protocol_cfg.get("val_difficulties", [protocol_cfg["difficulty"]])
     test_difficulties = protocol_cfg.get("test_difficulties", [protocol_cfg["difficulty"]])
     def source_files(scene_name, split, difficulty):
-        if difficulty == "Mixed":
+        if difficulty == TRAJGAP_DATASET_LABEL:
             return [
                 f"{scene_name}/Easy/data_{split}.pkl",
                 f"{scene_name}/Hard/data_{split}.pkl",
@@ -520,7 +525,7 @@ def build_manifest(args, protocol_cfg):
         "train_sampling_seed": args.train_sampling_seed,
         "sampling_definition": {
             "natural": (
-                "TrajGap-Bench Mixed train split with official Easy/Hard "
+                "TrajGap training split "
                 "source samples concatenated and shuffled"
             ),
         },
@@ -679,7 +684,7 @@ def _run_one_scene_locked(args, scene, protocol_cfg, manifest, gpu_env):
             "error": str(error),
         }
 
-    # 评估：同一 checkpoint 只评估统一的 Mixed 测试集。
+    # 评估：同一 checkpoint 只评估 TrajGap test 划分。
     test_difficulties = protocol_cfg.get("test_difficulties", [protocol_cfg["difficulty"]])
     evaluations = []
     for test_difficulty in test_difficulties:
@@ -747,7 +752,11 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--protocol", default=DEFAULT_PROTOCOL, choices=list(PROTOCOLS))
-    ap.add_argument("--variant", default=DEFAULT_VARIANT, choices=list(VARIANTS))
+    ap.add_argument(
+        "--variant",
+        default=DEFAULT_VARIANT,
+        choices=list(VARIANTS),
+    )
     ap.add_argument("--scenes", nargs="+", default=None)
     ap.add_argument("--data-root", default="/home/lbh/TrajImpute/dataset/TrajImpute")
     ap.add_argument("--precision", default="bf16")

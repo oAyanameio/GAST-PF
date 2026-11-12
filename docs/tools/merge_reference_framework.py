@@ -69,17 +69,17 @@ def compress_encoder_gap(image, left=600, right=800):
     compressed.paste(image.crop((right, 0, image.width, image.height)), (left, 0))
 
     # Clear the line fragments at the new seam and reconnect the
-    # spatial-context path to the embedding grid.
+    # interaction-context path to the embedding grid.
     draw = ImageDraw.Draw(compressed)
     draw.rectangle((left, 105, 664, 260), fill=(255, 255, 255))
     ink = (20, 20, 20)
-    spatial_arrow_x = 875 - shift
+    interaction_arrow_x = 875 - shift
     draw.line((543, 125, left, 125), fill=ink, width=4)
     draw.line((left, 125, left, 249), fill=ink, width=4)
-    draw.line((left, 249, spatial_arrow_x, 249), fill=ink, width=4)
+    draw.line((left, 249, interaction_arrow_x, 249), fill=ink, width=4)
     draw.polygon(
-        [(spatial_arrow_x, 249), (spatial_arrow_x - 13, 241),
-         (spatial_arrow_x - 13, 257)],
+        [(interaction_arrow_x, 249), (interaction_arrow_x - 13, 241),
+         (interaction_arrow_x - 13, 257)],
         fill=ink,
     )
     return compressed, shift
@@ -120,19 +120,19 @@ def prepare_encoder(image):
     draw.rectangle((1290, 176, image.width, image.height), fill=white)
     draw.line((1264, 249, 1345, 249), fill=white, width=9)  # unused branch
 
-    # Connect the spatial-context path directly to the embedding grid.
+    # Connect the interaction-context path directly to the embedding grid.
     ink = (20, 20, 20)
     draw.line((543, 125, 650, 125), fill=ink, width=4)
     draw.line((650, 125, 650, 249), fill=ink, width=4)
     draw.line((650, 249, 875, 249), fill=ink, width=4)
     draw.polygon([(875, 249), (862, 241), (862, 257)], fill=ink)
 
-    # Add reliability modulation above the history-state grid.
+    # Add state-strength modulation above the history-state grid.
     draw.line((1042, 98, 1042, 140), fill=ink, width=4)
     draw.polygon([(1042, 140), (1034, 128), (1050, 128)], fill=ink)
     draw.rounded_rectangle((974, 140, 1111, 198), radius=10,
                            fill=teal, outline=teal_stroke, width=3)
-    draw.text((1042, 169), "Reliability modulation",
+    draw.text((1042, 169), "State-strength modulation",
               fill=(255, 255, 255), font=serif_font(14, bold=True), anchor="mm")
     draw.line((1042, 198, 1042, 257), fill=ink, width=4)
     draw.polygon([(1042, 257), (1034, 245), (1050, 245)], fill=ink)

@@ -1,8 +1,8 @@
-# TrajGap-Bench 统一 Mixed 配置。
-# Easy/Hard 只作为底层官方文件来源，训练、验证和测试均由 TrajGap 合并。
-# 用法（单场景 Mixed smoke）：
+# TrajGap-Bench 单场景配置。
+# TrajGap 训练、验证和测试沿用固定数据划分。
+# 用法（单场景 smoke）：
 #   PYTHONPATH=. python train.py --config-name=config_missing_aware_trajimpute \
-#     scene=ETH-M difficulty=Mixed train_difficulties=[Mixed] val_difficulties=[Mixed] \
+#     scene=ETH-M \
 #     hydra.run.dir=outputs/trajgap_smoke/GAST_ETH-M
 defaults:
   - datamodule: trajimpute
@@ -15,9 +15,10 @@ hydra:
 
 seed: 2024
 scene: ETH-M
-difficulty: Mixed
-train_difficulties: [Mixed]
-val_difficulties: [Mixed]
+# Internal compatibility label for existing loaders and checkpoints.
+difficulty: TrajGap
+train_difficulties: [TrajGap]
+val_difficulties: [TrajGap]
 train_sampling_scheme: natural
 train_sampling_seed: ${seed}
 # 选点指标：必须与最终评估输出头一致（new_y_hat/new_pi -> val_new_*）。
@@ -28,7 +29,7 @@ save_top_k: 1
 run_manifest_path:
 
 data_root: /home/lbh/TrajImpute/dataset/TrajImpute
-# TrajGap-Bench 正式主协议：所有训练、验证和测试均使用 Mixed。
+# TrajGap-Bench 正式主协议：训练、验证和测试使用 TrajGap 固定划分。
 # zero_missing_only 仅保留为底层数据诊断开关，不属于正式 benchmark。
 zero_missing_only: false
 checkpoint:
@@ -44,7 +45,7 @@ batch_size: 64
 epochs: 100
 warmup_epochs: 5
 precision: bf16
-# 主链 K=20 配置：时序聚合使用 Mamba，并按观测可靠度汇总历史状态。
+# 主链 K=20 配置：时序聚合使用 Mamba，并按状态强度汇总历史状态。
 # optimizer
 # GAST 基础策略：AdamW 参数分组覆盖所有可训练参数；自定义 mixer/RMSNorm
 # 不在 decay 白名单时进入 no-decay 组，不允许被静默遗漏。

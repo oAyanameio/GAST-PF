@@ -1,7 +1,7 @@
 """TrajGap 多模态定性可视化：将 GAST 的全部未来模式叠加到场景图。
 
 用法（DeMo env，仓库根目录）：
-  PYTHONPATH=outputs/trajgap_gast_goal_3gpu_retry/gpu0/GAST-Goal_ETH-M_mixed-direct_seed2024_uni/train \
+  PYTHONPATH=outputs/trajgap_gast_goal_3gpu_retry/gpu0/GAST-Goal_ETH-M_trajgap-bench_seed2024_uni/train \
   CUDA_VISIBLE_DEVICES=3 ~/.conda/envs/DeMo/bin/python docs/tools/visualize_trajgap_scenes.py \
       --scenes ETH-M --scenes ZARA2-M
 
@@ -36,7 +36,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 # 必须在 import src 之前：使用正式五场景 GAST 轮次的快照代码，保证
 # checkpoint 的参数名、decoder 和 encoder 实现与推理代码一致。
-SNAPSHOT_ROOT = REPO / "outputs/trajgap_gast_5scene_seed2024/GAST_ETH-M_mixed-direct_seed2024_uni/train"
+SNAPSHOT_ROOT = REPO / "outputs/trajgap_gast_5scene_seed2024/GAST_ETH-M_trajgap-bench_seed2024_uni/train"
 sys.path.insert(0, str(SNAPSHOT_ROOT))
 
 import matplotlib
@@ -88,11 +88,11 @@ SCENE_LABELS = {
 }
 
 CKPTS = {
-    "ETH-M":   "outputs/trajgap_gast_5scene_seed2024/GAST_ETH-M_mixed-direct_seed2024_uni/train/checkpoints/epoch=54.ckpt",
-    "HOTEL-M": "outputs/trajgap_gast_5scene_seed2024/GAST_HOTEL-M_mixed-direct_seed2024_uni/train/checkpoints/epoch=51.ckpt",
-    "UNIV-M":  "outputs/trajgap_gast_5scene_seed2024/GAST_UNIV-M_mixed-direct_seed2024_uni/train/checkpoints/epoch=52.ckpt",
-    "ZARA1-M": "outputs/trajgap_gast_5scene_seed2024/GAST_ZARA1-M_mixed-direct_seed2024_uni/train/checkpoints/epoch=55.ckpt",
-    "ZARA2-M": "outputs/trajgap_gast_5scene_seed2024/GAST_ZARA2-M_mixed-direct_seed2024_uni/train/checkpoints/epoch=36.ckpt",
+    "ETH-M":   "outputs/trajgap_gast_5scene_seed2024/GAST_ETH-M_trajgap-bench_seed2024_uni/train/checkpoints/epoch=54.ckpt",
+    "HOTEL-M": "outputs/trajgap_gast_5scene_seed2024/GAST_HOTEL-M_trajgap-bench_seed2024_uni/train/checkpoints/epoch=51.ckpt",
+    "UNIV-M":  "outputs/trajgap_gast_5scene_seed2024/GAST_UNIV-M_trajgap-bench_seed2024_uni/train/checkpoints/epoch=52.ckpt",
+    "ZARA1-M": "outputs/trajgap_gast_5scene_seed2024/GAST_ZARA1-M_trajgap-bench_seed2024_uni/train/checkpoints/epoch=55.ckpt",
+    "ZARA2-M": "outputs/trajgap_gast_5scene_seed2024/GAST_ZARA2-M_trajgap-bench_seed2024_uni/train/checkpoints/epoch=36.ckpt",
 }
 
 H_ETH_INV = np.linalg.inv(H_ETH_OFFICIAL)
@@ -133,7 +133,7 @@ GAST_MODEL_CONFIG = dict(
     embed_dim=128, future_steps=12, num_heads=8, mlp_ratio=4.0,
     qkv_bias=False, drop_path=0.2, num_actor_types=1, num_modes=20,
     dt=0.4, obs_len=8, bimamba=False, encoder_type="gast",
-    gast_depth=4, gast_gsm_operator="max",
+    encoder_depth=4, interaction_operator="max",
     gast_temporal_direction="unidirectional",
     goal_endpoint_loss_weight=1.0, mode_diversity_loss_weight=0.05,
     mode_diversity_margin=0.5, classification_target_mode="trajectory",

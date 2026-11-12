@@ -124,12 +124,17 @@ def fig_degradation(data, outdir):
         curves = []
         for s in SCENES:
             bg = per[s]["_by_group"]
-            c = np.array([
-                bg[f"{s}/Mixed/test/missing={i}"].get(
-                    "minFDE20", bg[f"{s}/Mixed/test/missing={i}"].get("minFDE_K")
+            values = []
+            for i in range(8):
+                entry = (
+                    bg.get(f"{s}/TrajGap/test/missing={i}")
+                    or bg.get(f"{s}/TrajGap/test/missing={i}")
                 )
-                for i in range(8)
-            ])
+                values.append(
+                    entry.get("minFDE20", entry.get("minFDE_K"))
+                    if entry else np.nan
+                )
+            c = np.asarray(values)
             curves.append(c / c[0])
         ratio = np.mean(np.stack(curves), axis=0)
         ms = 3.4 if m == "GAST" else 2.8

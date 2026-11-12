@@ -1,12 +1,12 @@
 import torch
 import torch.nn as nn
-from .layers.gast_goal_decoder import GapAwareGoalDecoder
-from .layers.gast_encoder import GASTEncoder
+from .layers.goal_guided_decoder import GoalGuidedDecoder
+from .layers.observation_state_encoder import ObservationStateEncoder
 
 
 # Actor-centric trajectory forecaster.
 class TrajectoryForecaster(nn.Module):
-    """组装 GAST：GASTEncoder 编码历史，GapAwareGoalDecoder 执行终点引导解码。"""
+    """组装 GAST：观测状态编码器编码历史，终点引导解码器生成未来。"""
 
     def __init__(
         self,
@@ -19,15 +19,15 @@ class TrajectoryForecaster(nn.Module):
         num_modes: int = 20,
         dt: float = 0.4,
         obs_len: int = 8,
-        gast_depth: int = 4,
-        gast_gsm_operator: str = "max",
+        encoder_depth: int = 4,
+        interaction_operator: str = "max",
         goal_endpoint_loss_weight: float = 1.0,
         mode_diversity_loss_weight: float = 0.05,
         mode_diversity_margin: float = 0.5,
-        use_relation_bias: bool = True,
+        use_interaction_bias: bool = True,
         use_source_filter: bool = True,
-        use_reliability_modulation: bool = True,
-        use_reliability_readout: bool = True,
+        use_state_strength_modulation: bool = True,
+        use_state_strength_readout: bool = True,
         use_goal_guidance: bool = True,
     ) -> None:
         super().__init__()
@@ -38,19 +38,19 @@ class TrajectoryForecaster(nn.Module):
         self.goal_endpoint_loss_weight = float(goal_endpoint_loss_weight)
         self.mode_diversity_loss_weight = float(mode_diversity_loss_weight)
         self.mode_diversity_margin = float(mode_diversity_margin)
-        self.use_relation_bias = bool(use_relation_bias)
+        self.use_interaction_bias = bool(use_interaction_bias)
         self.use_source_filter = bool(use_source_filter)
-        self.use_reliability_modulation = bool(use_reliability_modulation)
-        self.use_reliability_readout = bool(use_reliability_readout)
+        self.use_state_strength_modulation = bool(use_state_strength_modulation)
+        self.use_state_strength_readout = bool(use_state_strength_readout)
         self.use_goal_guidance = bool(use_goal_guidance)
         hist_input_dim = 4
 
         self.neighbor_prediction_head = nn.Sequential(
             nn.Linear(embed_dim, 256), nn.GELU(), nn.Linear(256, future_steps * 2)
         )
-        gast_encoder_rng_state = torch.random.get_rng_state()
+        encoder_rng_state = torch.random.get_rng_state()
 
-        self.goal_decoder = GapAwareGoalDecoder(
+        self.goal_guided_decoder = GoalGuidedDecoder(
             future_steps=future_steps,
             dim=embed_dim,
             num_modes=num_modes,
@@ -62,19 +62,19 @@ class TrajectoryForecaster(nn.Module):
 
         # Keep encoder initialization independent from the decoder architecture.
         rng_state = torch.random.get_rng_state()
-        torch.random.set_rng_state(gast_encoder_rng_state)
-        self.gast_encoder = GASTEncoder(
+        torch.random.set_rng_state(encoder_rng_state)
+        self.observation_encoder = ObservationStateEncoder(
             input_dim=hist_input_dim,
             embed_dim=embed_dim,
             num_heads=num_heads,
-            depth=gast_depth,
-            operator=gast_gsm_operator,
+            depth=encoder_depth,
+            operator=interaction_operator,
             p_dropout=0.2,
             drop_path=drop_path,
-            use_relation_bias=use_relation_bias,
+            use_interaction_bias=use_interaction_bias,
             use_source_filter=use_source_filter,
-            use_reliability_modulation=use_reliability_modulation,
-            use_reliability_readout=use_reliability_readout,
+            use_state_strength_modulation=self.use_state_strength_modulation,
+            use_state_strength_readout=self.use_state_strength_readout,
         )
         torch.random.set_rng_state(rng_state)
 
@@ -119,7 +119,7 @@ class TrajectoryForecaster(nn.Module):
 
         B, N = hist_feat.shape[:2]
 
-        x_encoder = self.gast_encoder(
+        x_encoder = self.observation_encoder(
             hist_feat,
             hist_valid_mask,
             ~hist_key_valid_mask,
@@ -139,7 +139,7 @@ class TrajectoryForecaster(nn.Module):
 
         # The endpoint-guided decoder uses the last valid observation and
         # the actual forecast gap.
-        goal_out = self.goal_decoder(
+        goal_out = self.goal_guided_decoder(
             x_encoder,
             data,
             actor_padding_mask=~hist_key_valid_mask,

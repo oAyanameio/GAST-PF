@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from docs.tools import gen_trajgap_dataset_distribution as distribution
 
 
-def test_collect_counts_uses_mixed_adapter_for_each_split(monkeypatch):
+def test_collect_counts_uses_trajgap_adapter_for_each_split(monkeypatch):
     calls = []
 
     class FakeDataset:
@@ -49,4 +49,7 @@ def test_distribution_outputs_include_png_pdf_and_count_table(tmp_path):
     assert {path.suffix for path in outputs} == {'.png', '.pdf'}
     assert all(path.is_file() for path in outputs)
     assert '| **Total** | **15** | **30** | **45** | **90** |' in report
-    assert 'Easy、Hard 数据合并为 Mixed' in report
+    assert 'TrajGap 的 train、test 和 validation 划分' in report
+    assert "TrajGap" in report
+    assert 'Easy' not in report
+    assert 'Hard' not in report

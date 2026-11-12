@@ -1,6 +1,6 @@
 # TrajGap-Bench 对比实验表
 
-> 数据集与基准：TrajGap-Bench；TrajImpute 官方 Easy+Hard 同一 split 合并为 Mixed，任务为无插补直接预测。seed 2024，K=20，100 epochs。GAST 按最终预测头 `val_new_minFDE20` 选点；外部方法沿用各自的训练与选点流程。
+> 数据集与协议：TrajGap 数据集与 TrajGap-Bench；任务为无插补直接预测。seed 2024，K=20，100 epochs。GAST 按最终预测头 `val_new_minFDE20` 选点；外部方法沿用各自的训练与选点流程。
 > 测试样本数（所有方法完全一致）：ETH-M 1,629 / HOTEL-M 9,477 / UNIV-M 219,006 / ZARA1-M 20,277 / ZARA2-M 52,497，合计 302,886。
 > `Avg` = 五场景宏平均；`micro` = 汇总全部测试样本后的算术平均。所有指标**越低越好**。加粗 = 该列最优。
 > 本文方法统一称为 **GAST**；终点引导解码与轨迹级模式排序属于完整方法设计。
@@ -47,7 +47,7 @@
 
 - 六个方法均完成 ETH-M、HOTEL-M、UNIV-M、ZARA1-M、ZARA2-M 五场景。
 - 只报告普通 `minADE20`、`minFDE20`；不使用模式分数加权，也不报告 top-1、MR、Brier 或综合分数。
-- 表中指标按各方法 Mixed-test `results.json` 计算；宏平均为五场景等权，micro 为汇总全部测试样本后的算术平均。
+- 表中指标按各方法 TrajGap test `results.json` 计算；宏平均为五场景等权，micro 为汇总全部测试样本后的算术平均。
 - 外部模型保持其方法属性：MS-TIP 为插补感知联合预测方法，其余依各自实现处理缺失历史；榜单比较的是统一测试集上的结果，不代表内部结构均为纯 direct。
 - 选点口径：GAST / AgentFormer / Re / MS-TIP / Social-STGCNN 均按各自验证集 minFDE20 选最优 checkpoint；MoFlow 沿用其官方实现原生的验证集 minADE（ADE_MIN）选点，未做改动。
 - MS-TIP 五场景最优 checkpoint 均出现在 epoch 5–9（后续验证集 minFDE20 持续变差，为其联合插补目标在 direct 协议下的原生行为，非调参不足）；表中数值取各自验证最优 checkpoint。
@@ -58,7 +58,7 @@
 | 方法 | 产物路径 |
 |---|---|
 | GAST | 五场景完整结果（manifest revision 一致） |
-| MoFlow | `/home/lbh/MoFlow/results_trajimpute_mixed/` |
+| MoFlow | `/home/lbh/MoFlow/results_trajgap/` |
 | AgentFormer | `/home/lbh/AgentFormer/results/trajgap_agentformer/`（5/5） |
 | Re | `/home/lbh/Re/outputs/trajgap_resonance_seed2024_gpu1/`（5/5） |
 | MS-TIP | `/home/lbh/MS-TIP-TrajGap/results/`（5/5，插补感知） |

@@ -276,7 +276,7 @@ log.append("E11 面板内容左移 %d px、面板收窄、画布裁到 3384" % S
 
 # ---------- E12 补 GSM Spatial Attention：历史分支原来在此断头 ----------
 # 原图把 GSM Module 直接连到 Spatial 网格，agent tokens 没有任何输出箭头；
-# 按 gast_encoder.py 的 EvidenceRelationalGSM 补一级：agent tokens + ghost token -> 注意力 -> spatial
+# 按观测状态编码器的逐帧交互建模补一级：agent tokens + ghost token -> 注意力 -> interaction
 # 实测原肘形连线：水平段 y 199..205、竖段 x 984..990、进网格段 y 415..421，线宽 7
 clear((966, 196, 996, 350), WHITE)      # 原肘形竖段与拐角
 clear((980, 200, 996, 412), WHITE)      # 原肘形竖段下半
@@ -287,10 +287,10 @@ tc("Attention", 970, 440, fit("Attention", CMB, 158), INK)
 arrow((826, 418), (876, 418), lw=7, size=18)                    # agent tokens -> 注意力
 d.line([(890, 202), (973, 202)], fill=INK, width=7)          # ghost token -> 注意力（先画水平段补齐拐角）
 arrow((970, 202), (970, 346), lw=7, size=18)
-arrow((1062, 418), (1117, 418), lw=7, size=18)                  # 注意力 -> spatial 网格
+arrow((1062, 418), (1117, 418), lw=7, size=18)                  # 注意力 -> interaction 网格
 log.append("E12 补 GSM Spatial Attention 一级（修历史分支断头 + ghost token 注入）")
 
-# ---------- E13 合并两个 GSM：代码里只有一个 EvidenceRelationalGSM ----------
+# ---------- E13 合并交互建模：代码里只有一个逐帧交互模块 ----------
 # 去掉橙色 "GSM Module" 框（它只是 mask->ghost token 那一步），
 # mask 直接进注意力块，箭头旁标 "ghost token"，保留机制信息但不重复模块名。
 clear((604, 145, 902, 258), WHITE)                 # 清掉橙色 GSM Module 框
@@ -430,15 +430,15 @@ log.append("E25 去掉 ghost token 小字")
 # ---------- E26 按当前 GAST 主线更新编码器尾段 ----------
 # 当前完整 GAST 编码器：
 # 1) 逐帧交互建模：在 GSM attention 中使用 actor tokens、ghost token、相对关系特征和 source eligibility；
-# 2) 可靠度调制：按观测可靠度调节 Mamba 输入；
-# 3) 时序聚合：Mamba 后按内容分数和可靠度汇总历史。
+# 2) 状态强度调制：按状态强度调节 Mamba 输入；
+# 3) 时序聚合：Mamba 后按内容分数和状态强度汇总历史。
 # 图中使用功能描述，不把中间计算步骤包装成独立模块名。
 clear((886, 354, 1054, 482), (191, 191, 191))
 tc("Frame-wise", 970, 382, fit("Frame-wise", CMB, 154), INK)
 tc("Actor", 970, 416, fit("Actor", CMB, 154), INK)
 tc("Interactions", 970, 450, fit("Interactions", CMB, 154), INK)
 
-# 观测可靠度调制：按当前实现画 age -> reliability -> ⊙。
+# 状态强度调制：按当前实现画 age -> state strength -> ⊙。
 clear((1278, 84, 1540, 222), WHITE)
 clear((1272, 216, 1548, 340), WHITE)
 clear((1332, 412, 1622, 480), WHITE)
@@ -450,10 +450,10 @@ d.rounded_rectangle((1312, 107, 1502, 153), radius=7, outline=(46, 154, 168), wi
 for x0, x1 in [(1319, 1353), (1357, 1391), (1395, 1429), (1433, 1467), (1471, 1495)]:
     d.rectangle((x0, 114, x1, 146), fill=(242, 247, 252), outline=INK, width=2)
 tc("age", 1407, 130, fit("age", CMR, 45, start=18), INK)
-# Reliability is exp(-tau * age), with learnable tau; the arrow feeds ⊙.
+# State strength is exp(-tau * age), with learnable tau; the arrow feeds ⊙.
 d.rounded_rectangle((1295, 234, 1524, 323), radius=12, fill=(46, 154, 168),
                     outline=INK, width=3)
-tc("Reliability", 1409, 258, fit("Reliability", CMB, 200), WHITE)
+tc("State strength", 1409, 258, fit("State strength", CMB, 200), WHITE)
 tc("modulation", 1409, 291, fit("modulation", CMB, 200), WHITE)
 arrow((1409, 325), (1409, 435), lw=4, size=13)
 # ⊙ 输出为 evidence-modulated temporal features，进入 Mamba。
@@ -470,20 +470,20 @@ ink_left("×", 1744, 143, F(STIX, 25), MUTED)
 ink_left("4", 1768, 143, F(CMR, 27), MUTED)
 arrow((1507, 448), (1624, 448), lw=7, size=18)
 
-# Mamba 后按内容分数和观测可靠度汇总历史，再接解码器分叉主干。
+# Mamba 后按内容分数和状态强度汇总历史，再接解码器分叉主干。
 d.rounded_rectangle((1760, 294, 1858, 470), radius=10, fill=(242, 242, 242), outline=INK, width=3)
-tc("Reliability", 1809, 328, F(CMB, 14), INK)
+tc("State strength", 1809, 328, F(CMB, 14), INK)
 tc("weighted", 1809, 382, F(CMB, 15), INK)
 tc("history", 1809, 408, F(CMB, 15), INK)
 tc("aggregation", 1809, 442, F(CMB, 13), INK)
 # 输入/输出连接贴到框的中线，框内文字不被连线穿过
 arrow((1740, 382), (1758, 382), lw=4, size=8)
 d.line([(1858, 382), (1862, 382)], fill=INK, width=4)
-log.append("GAST encoder: frame-wise actor interactions; reliability modulation; Mamba; reliability-weighted history aggregation")
+log.append("GAST encoder: frame-wise actor interactions; state-strength modulation; Mamba; state-strength-weighted history aggregation")
 
 # ---------- E27 顶部观测状态支路 ----------
-# 参考图风格：把 e(i,t)=(s,a,r) 统一画在主干最上方，
-# s/a/r 分别以橙色虚线注入逐帧交互、可靠度调制和历史状态汇总。
+# 参考图风格：把 e(i,t)=(s,a,γ) 统一画在主干最上方，
+# s/a/gamma 分别以橙色虚线注入逐帧交互、状态强度调制和历史状态汇总。
 # 先清掉旧的顶部 age 小条及其旧水平连接，避免两套证据支路重复。
 clear((965, 194, 1415, 210), WHITE)
 clear((1278, 84, 1540, 222), WHITE)
@@ -491,9 +491,9 @@ clear((1278, 84, 1540, 222), WHITE)
 clear((480, 6, 1940, 98), WHITE)
 d.rounded_rectangle((500, 8, 1935, 94), radius=12,
                     fill=(255, 245, 235), outline=ORANGE, width=3)
-tc("Observation status and reliability", 675, 29,
-   fit("Observation status and reliability", CMB, 300, start=24), ORANGE)
-tc("e(i,t) = (s, a, r)", 675, 68, F(STIX, 20), INK)
+tc("Observation state and strength", 675, 29,
+   fit("Observation state and strength", CMB, 300, start=24), ORANGE)
+tc("e(i,t) = (s, a, γ)", 675, 68, F(STIX, 20), INK)
 
 # 三个状态分量：只保留定义，不再添加模块下方解释小字。
 def evidence_box(x0, x1, text):
@@ -503,7 +503,7 @@ def evidence_box(x0, x1, text):
 
 evidence_box(900, 1050, "s = m")
 evidence_box(1215, 1603, "a = t − ℓ")
-evidence_box(1680, 1932, "r = exp(−τa)")
+evidence_box(1680, 1932, "γ = exp(−τa)")
 
 # 橙色虚线注入箭头：虚线杆 + 实心小箭头头，目标落在三个当前模块上。
 def evidence_arrow(p0, p1, dash=10, gap=7, lw=3, size=10):
@@ -520,9 +520,9 @@ def evidence_arrow(p0, p1, dash=10, gap=7, lw=3, size=10):
     head(p1, math.atan2(dy, dx), size, ORANGE)
 
 evidence_arrow((975, 96), (970, 348))    # s -> frame-wise interactions
-evidence_arrow((1409, 96), (1409, 228))  # a -> reliability modulation
-evidence_arrow((1809, 96), (1809, 286))  # r -> reliability-weighted aggregation
-log.append("Observation status and reliability feed frame-wise interactions, input modulation, and history aggregation")
+evidence_arrow((1409, 96), (1409, 228))  # age -> state-strength modulation
+evidence_arrow((1809, 96), (1809, 286))  # strength -> weighted aggregation
+log.append("Observation state and strength feed frame-wise interactions, input modulation, and history aggregation")
 
 im.save(OUT)
 print("saved", OUT, im.size)

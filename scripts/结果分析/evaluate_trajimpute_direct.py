@@ -1,11 +1,11 @@
 """TrajGap-Bench 直接缺失预测评估入口。
 
-正式协议固定为 `--difficulty Mixed`：
+正式协议直接评估 TrajGap test 划分：
   PYTHONPATH=. python scripts/结果分析/evaluate_trajimpute_direct.py \
       --checkpoint outputs/.../checkpoints/xxx.ckpt \
-      --scene ETH-M --difficulty Mixed --split test --K 20 --variant GAST
+      --scene ETH-M --split test --K 20 --variant GAST
 
-输出：outputs/trajgap_bench/<scene>_Mixed_<split>_<variant>_seed<seed>/results.json
+输出：outputs/trajgap_bench/<scene>_<split>_<variant>_seed<seed>/results.json
 层级：scene/split/missing_count/variant/seed；K 显式写入 meta；
 外部参考数字（TrajImpute 原论文）只能以 external_reference 单独存放，不混入。
 """
@@ -23,66 +23,66 @@ sys.path.insert(0, str(REPO))
 BENCHMARK_NAME = "TrajGap-Bench"
 
 from src.datamodule.trajimpute_dataset import (  # noqa: E402
-    MIXED_DIFFICULTY, TrajGapDataset, trajimpute_collate_fn,
+    TRAJGAP_DATASET_LABEL,
+    TrajGapDataset, trajimpute_collate_fn,
     inspect_clean_source,
 )
 from src.evaluation.trajimpute_direct import DirectEvaluator, save_results  # noqa: E402
 
 VARIANTS = {
     "GAST": {
-        "gast_depth": 4,
-        "gast_gsm_operator": "max",
+        "encoder_depth": 4,
+        "interaction_operator": "max",
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05,
         "mode_diversity_margin": 0.5,
-        "use_relation_bias": True,
+        "use_interaction_bias": True,
         "use_source_filter": True,
-        "use_reliability_modulation": True,
-        "use_reliability_readout": True,
+        "use_state_strength_modulation": True,
+        "use_state_strength_readout": True,
         "use_goal_guidance": True,
     },
-    "GAST-no-relation-bias": {
-        "gast_depth": 4, "gast_gsm_operator": "max",
+    "GAST-no-interaction-bias": {
+        "encoder_depth": 4, "interaction_operator": "max",
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05, "mode_diversity_margin": 0.5,
-        "use_relation_bias": False, "use_source_filter": True,
-        "use_reliability_modulation": True, "use_reliability_readout": True,
+        "use_interaction_bias": False, "use_source_filter": True,
+        "use_state_strength_modulation": True, "use_state_strength_readout": True,
         "use_goal_guidance": True,
     },
     "GAST-no-source-filter": {
-        "gast_depth": 4, "gast_gsm_operator": "max",
+        "encoder_depth": 4, "interaction_operator": "max",
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05, "mode_diversity_margin": 0.5,
-        "use_relation_bias": True, "use_source_filter": False,
-        "use_reliability_modulation": True, "use_reliability_readout": True,
+        "use_interaction_bias": True, "use_source_filter": False,
+        "use_state_strength_modulation": True, "use_state_strength_readout": True,
         "use_goal_guidance": True,
     },
-    "GAST-no-reliability-modulation": {
-        "gast_depth": 4, "gast_gsm_operator": "max",
+    "GAST-no-state-strength-modulation": {
+        "encoder_depth": 4, "interaction_operator": "max",
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05, "mode_diversity_margin": 0.5,
-        "use_relation_bias": True, "use_source_filter": True,
-        "use_reliability_modulation": False, "use_reliability_readout": True,
+        "use_interaction_bias": True, "use_source_filter": True,
+        "use_state_strength_modulation": False, "use_state_strength_readout": True,
         "use_goal_guidance": True,
     },
     "GAST-content-only-readout": {
-        "gast_depth": 4, "gast_gsm_operator": "max",
+        "encoder_depth": 4, "interaction_operator": "max",
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05, "mode_diversity_margin": 0.5,
-        "use_relation_bias": True, "use_source_filter": True,
-        "use_reliability_modulation": True, "use_reliability_readout": False,
+        "use_interaction_bias": True, "use_source_filter": True,
+        "use_state_strength_modulation": True, "use_state_strength_readout": False,
         "use_goal_guidance": True,
     },
     "GAST-no-goal-guidance": {
-        "gast_depth": 4, "gast_gsm_operator": "max",
+        "encoder_depth": 4, "interaction_operator": "max",
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05, "mode_diversity_margin": 0.5,
-        "use_relation_bias": True, "use_source_filter": True,
-        "use_reliability_modulation": True, "use_reliability_readout": True,
+        "use_interaction_bias": True, "use_source_filter": True,
+        "use_state_strength_modulation": True, "use_state_strength_readout": True,
         "use_goal_guidance": False,
     },
 }
-
 def get_git_revision():
     try:
         return subprocess.check_output(
@@ -137,10 +137,10 @@ def load_checkpoint(model, ckpt_path, expected_variant=None):
         "goal_endpoint_loss_weight",
         "mode_diversity_loss_weight",
         "mode_diversity_margin",
-        "use_relation_bias",
+        "use_interaction_bias",
         "use_source_filter",
-        "use_reliability_modulation",
-        "use_reliability_readout",
+        "use_state_strength_modulation",
+        "use_state_strength_readout",
         "use_goal_guidance",
     ):
         checkpoint_value = (
@@ -215,10 +215,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-root", default="/home/lbh/TrajImpute/dataset/TrajImpute")
     ap.add_argument("--scene", required=True)
-    ap.add_argument("--difficulty", default="Mixed", choices=["Mixed"],
-                    help="TrajGap-Bench 正式主协议固定为 Mixed")
+    ap.add_argument(
+        "--difficulty",
+        default=TRAJGAP_DATASET_LABEL,
+        choices=[TRAJGAP_DATASET_LABEL],
+        help="TrajGap 为公开数据集名称",
+    )
     ap.add_argument("--split", default="test", choices=["train", "val", "test"])
-    ap.add_argument("--variant", default="GAST", choices=list(VARIANTS))
+    ap.add_argument(
+        "--variant",
+        default="GAST",
+        choices=list(VARIANTS),
+    )
     ap.add_argument("--K", type=int, default=20)
     ap.add_argument("--seed", type=int, default=2024)
     ap.add_argument("--batch-size", type=int, default=64)
@@ -230,15 +238,15 @@ def main():
     ap.add_argument("--output-root", default="outputs/trajgap_bench")
     ap.add_argument("--device", default="cuda:0")
     args = ap.parse_args()
-
     if args.K != 20:
         raise SystemExit("TrajGap-Bench 正式评估固定 K=20")
 
     torch.manual_seed(args.seed)
-    if args.difficulty != MIXED_DIFFICULTY:
-        raise SystemExit("TrajGap-Bench 正式评估只允许 Mixed")
+    if args.difficulty != TRAJGAP_DATASET_LABEL:
+        raise SystemExit("TrajGap-Bench 正式评估不按难度子集划分")
+    args.difficulty = TRAJGAP_DATASET_LABEL
     dataset = TrajGapDataset(args.data_root, args.scene, args.split)
-    # Mixed 主协议不做子集过滤；保留总行数用于完整性审计。
+    # TrajGap 主协议不做难度子集过滤；保留总行数用于完整性审计。
     n_total_rows = int(dataset.missing_counts.shape[0])
     n_kept_focal = len(dataset)
     n_filtered_out = 0

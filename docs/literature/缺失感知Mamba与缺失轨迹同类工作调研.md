@@ -1,7 +1,7 @@
 # 文献调研：缺失感知 Mamba 与缺失历史轨迹预测同类工作
 
 日期：2026-10-08 | 前置文档：`docs/literature/不插补轨迹预测调研.md`（2026-09-14，免插补顶会核查）
-本轮两个问题：①与选题（缺失/部分观测历史下的 evidence-aware 多模态轨迹预测，TrajImpute Mixed 口径）类似的研究；②能处理缺失时间序列输入（missing-aware / irregular-sampling-aware）的 Mamba/SSM 模型，作为缝合候选机制来源。
+本轮两个问题：①与选题（缺失或部分观测历史下的多模态轨迹预测，TrajGap 评测设置）相关的研究；②能处理缺失时间序列输入（missing-aware / irregular-sampling-aware）的 Mamba/SSM 模型，作为候选机制参考。
 
 > 参考文献统一收口：`docs/literature/参考文献总表_缺失观测与不确定性.md`（2026-10-21，唯一权威版；本文档 Sources 编号保持原样，交叉引用以总表为准）。
 
@@ -41,7 +41,7 @@
 | C. 时间感知结构改造 | **TIDES** (Barreira et al.) | arXiv 2605.09742 (2026-05) | 把 input-dependence 从 Δ 移到对角状态矩阵 A，Δ 恢复物理时间间隔含义→不规则时间戳原生处理 | 与 B 族本质不同（不是给 Δ 加条件项而是重定位选择性）；轨迹上未见过；有 Fading Flash 诊断基准+代码 |
 | C. 时间感知结构改造 | ReTAMamba (Kim & Park) | arXiv 2605.16380 (2026-05) | 不规则临床时序→time-variable token 序列，观测可靠性（缺失度+耗时）估计+多分辨率区间统计描述符 | token 级可靠性聚合思想可与 evidence 特征共用 |
 | C. 时间感知（非 Mamba） | VISTA-SSM (Brindle et al.) | arXiv 2410.21527 | LGSSM 参数化混合，变采样率聚类 | 统计建模路线，弱相关 |
-| D. mask 缩放扫描 | **Sports-Traj BTS** (Xu et al.) | ICLR 2025 | 按缺失年龄生成逐通道特征缩放系数，再输入 Mamba；属于输入特征调制，不是 selective scan 的 Δ 条件化 | 轨迹生成（补全+预测）相关工作；其机制与 GAST 的可靠度调制相关，但不等同于当前时序聚合实现 |
+| D. mask 缩放扫描 | **Sports-Traj BTS** (Xu et al.) | ICLR 2025 | 按缺失年龄生成逐通道特征缩放系数，再输入 Mamba；属于输入特征调制，不是 selective scan 的 Δ 条件化 | 轨迹生成（补全+预测）相关工作；其机制与 GAST 的状态强度调制相关，但不等同于当前时序聚合实现 |
 | E. 扩散插补骨干 | SSSD (Alcaraz & Strodthoff) | 2022 | S4 层作扩散去噪骨干，只对缺失区加噪 | 插补经典 |
 | F. 轨迹 Mamba（非缺失） | **Social-Mamba** (Luan et al., EPFL) | ECCV 2026 | Cycle Mamba；社会三元分解（时间/自我/目标中心扫描）；已嵌入 MoFlow 框架验证 | 无缺失处理；说明 Mamba 编码器可嵌入流匹配轨迹框架 |
 | F. 轨迹 Mamba（非缺失） | Multi-scale Mamba-LSTM (CVAE) | Neurocomputing 2025 | GAT+Mamba 混合专家 | 无缺失处理 |
@@ -49,7 +49,7 @@
 ## 四、撞车风险与定位
 
 1. **密集竞争区**：插补+预测联合框架（GC-VRNN/MS-TIP/dual-view diffusion/协同插补）；社会交互 Mamba（Social-Mamba）。这些是 Related Work 必须划界但不阻塞机制的邻居。
-2. **较窄的研究定位**：本文的立足点应表述为在明确的 TrajGap Mixed 设置下，直接使用带缺失掩码的历史进行多模态行人预测，并检验不同缺失程度下的表现。若进一步主张缺失感知机制进入 **selective scan 内部**或满足 all-valid 恒等性，应分别说明实现边界、与近邻工作的差别及实验依据；本次检索未识别到完全相同的设计，不宜概括为行人轨迹领域普遍无先例。
+2. **较窄的研究定位**：本文的立足点应表述为在 TrajGap 数据集上，直接使用带缺失掩码的历史进行多模态行人预测，并检验不同缺失程度下的表现。若进一步主张缺失感知机制进入 **selective scan 内部**或满足 all-valid 恒等性，应分别说明实现边界、与近邻工作的差别及实验依据；本次检索未识别到完全相同的设计，不宜概括为行人轨迹领域普遍无先例。
 3. **风险点**（按紧迫度）：
    - **BiFlow（EgoTraj-Bench）**：流匹配+不完整历史已出现。划界三件套：direct（不做历史去噪流）、BEV 缺失坐标口径（非 ego-view 感知噪声）、ETH/UCY+TrajImpute 基准。其 v2 是 2026-03，若其后续版本转向 BEV 缺失口径需立即重评。
    - **ProFITi/MOSES 团队**（前置文档已记）：流+缺失时序的持续产出者。

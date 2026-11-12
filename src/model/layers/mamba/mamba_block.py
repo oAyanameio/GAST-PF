@@ -10,7 +10,7 @@ from mamba_ssm.modules.mamba_simple import Mamba
 from mamba_ssm.ops.triton.layernorm import RMSNorm, rms_norm_fn
 
 
-class CausalMambaBlock(nn.Module):
+class MambaBlock(nn.Module):
     def __init__(self, dim, mixer_cls, drop_path=0.0):
         super().__init__()
         self.residual_in_fp32 = True
@@ -44,8 +44,8 @@ class CausalMambaBlock(nn.Module):
         )
 
 
-def create_causal_mamba_block(d_model=128, layer_idx=None, drop_path=0.0):
+def create_mamba_block(d_model=128, layer_idx=None, drop_path=0.0):
     mixer_cls = partial(Mamba, layer_idx=layer_idx)
-    block = CausalMambaBlock(d_model, mixer_cls, drop_path=drop_path)
+    block = MambaBlock(d_model, mixer_cls, drop_path=drop_path)
     block.layer_idx = layer_idx
     return block

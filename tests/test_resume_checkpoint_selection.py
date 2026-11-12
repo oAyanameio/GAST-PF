@@ -251,10 +251,10 @@ def _write_eval_result(root, scene, difficulty, variant, seed, n, split="test"):
 def test_eval_output_reuses_valid_existing_result(tmp_path):
     from run_trajimpute_experiments import prepare_eval_output
 
-    root = tmp_path / "eval" / "Mixed"
-    result_dir = _write_eval_result(root, "ETH-M", "Mixed", "GAST", 2024, 1629)
+    root = tmp_path / "eval" / "TrajGap"
+    result_dir = _write_eval_result(root, "ETH-M", "TrajGap", "GAST", 2024, 1629)
 
-    payload = prepare_eval_output(root, "ETH-M", "Mixed", "GAST", 2024)
+    payload = prepare_eval_output(root, "ETH-M", "TrajGap", "GAST", 2024)
     assert payload is not None
     assert payload["results"]["overall"]["n"] == 1629
     assert (result_dir / "results.json").is_file()
@@ -263,23 +263,23 @@ def test_eval_output_reuses_valid_existing_result(tmp_path):
 def test_eval_output_clears_zero_sample_partial_result(tmp_path):
     from run_trajimpute_experiments import prepare_eval_output
 
-    root = tmp_path / "eval" / "Mixed"
-    result_dir = _write_eval_result(root, "ETH-M", "Mixed", "GAST", 2024, 0)
+    root = tmp_path / "eval" / "TrajGap"
+    result_dir = _write_eval_result(root, "ETH-M", "TrajGap", "GAST", 2024, 0)
 
-    assert prepare_eval_output(root, "ETH-M", "Mixed", "GAST", 2024) is None
+    assert prepare_eval_output(root, "ETH-M", "TrajGap", "GAST", 2024) is None
     assert not result_dir.exists()
 
 
 def test_eval_output_leaves_other_scene_results_untouched(tmp_path):
     from run_trajimpute_experiments import prepare_eval_output
 
-    root = tmp_path / "eval" / "Mixed"
-    other = _write_eval_result(root, "HOTEL-M", "Mixed", "GAST", 2024, 9477)
-    stale = root / "ETH-M_Mixed_test_GAST_seed2024_ckpt"
+    root = tmp_path / "eval" / "TrajGap"
+    other = _write_eval_result(root, "HOTEL-M", "TrajGap", "GAST", 2024, 9477)
+    stale = root / "ETH-M_TrajGap_test_GAST_seed2024_ckpt"
     stale.mkdir(parents=True)
     (stale / "partial.tmp").write_text("half-written")
 
-    assert prepare_eval_output(root, "ETH-M", "Mixed", "GAST", 2024) is None
+    assert prepare_eval_output(root, "ETH-M", "TrajGap", "GAST", 2024) is None
     assert not stale.exists()
     assert (other / "results.json").is_file()
 

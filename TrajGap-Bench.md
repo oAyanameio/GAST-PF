@@ -9,9 +9,9 @@
 
 ## 1. 基准简介
 
-**TrajGap-Bench** 是一个面向「缺失历史条件下直接未来预测」的行人轨迹预测基准。它不重新生成轨迹，也不把缺失历史先交给外部插补器，而是要求模型直接读取带缺失掩码的历史观测，并预测未来 12 帧轨迹。
+本文整理形成 **TrajGap 数据集**，并在此基础上建立 **TrajGap-Bench 评测协议**，用于评估缺失历史条件下的行人轨迹直接预测。模型直接读取带缺失掩码的历史观测并预测未来 12 帧，不以前置外部插补为条件。
 
-TrajGap-Bench 的底层数据来自 TrajImpute 官方 Easy/Hard release。本文将数据集与评估基准统一命名为 **TrajGap-Bench**：每个 split 内的 Easy/Hard 样本合并为 `Mixed`；`direct` 表示模型从不完整历史直接预测未来、不以前置外部插补为条件。TrajGap-Bench 的贡献不是重新发明上游数据，而是建立可复现、无测试泄漏的数据组织、任务约束与评估规则。
+TrajGap 数据集基于 TrajImpute 官方数据发布，沿用其场景和 train/validation/test 划分。TrajGap-Bench 明确任务约束、checkpoint 选择规则和评估指标，提供可复现且不使用测试集调参的比较口径；本文不重新主张上游数据资源贡献。
 
 ### 1.1 当前本文模型
 
@@ -21,7 +21,7 @@ TrajGap-Bench 的底层数据来自 TrajImpute 官方 Easy/Hard release。本文
 GAST
 ├── 观测状态感知时空编码器
 │   ├── 逐帧交互建模
-│   └── 可靠度加权的时序聚合（可靠度调制的 Mamba 与历史状态汇总）
+│   └── 状态强度加权的时序聚合（状态强度调制的 Mamba 与历史状态汇总）
 └── 终点引导解码器
     ├── 使用末次有效观测状态和实际预测间隔
     ├── 多模态终点预测与未来轨迹生成
@@ -42,14 +42,13 @@ GAST
 
 ## 2. 数据集与任务
 
-**TrajGap-Bench** 同时指本文整理后的数据集和围绕该数据集定义的评估基准。`Mixed` 是 split 的样本组织方式，`direct prediction` 是任务约束；二者都是定义要素，不是数据集或基准的替代名称。
+**TrajGap** 指本文整理形成的数据集，**TrajGap-Bench** 指围绕该数据集定义的评测协议。`direct prediction` 表示模型直接依据不完整历史观测预测未来，不使用外部历史插补器。
 
 ### 2.1 数据来源
 
 TrajGap 使用 TrajImpute 官方 release：
 
 - 场景：`ETH-M`、`HOTEL-M`、`UNIV-M`、`ZARA1-M`、`ZARA2-M`；
-- 底层文件：每个场景的 `Easy` 与 `Hard`；
 - 划分：`train`、`val`、`test`；
 - 历史：8 帧，时间间隔 0.4 s，共 3.2 s；
 - 未来：12 帧，共 4.8 s；
@@ -66,31 +65,11 @@ TrajGap 使用 TrajImpute 官方 release：
 
 每个样本至少保留 1 个有效历史帧。缺失坐标由 `missing_mask` 显式定义，不允许使用未来真值填补历史输入。
 
-### 2.2 Mixed 合并协议
+### 2.2 数据划分与样本规模
 
-对每个场景和每个 split，TrajGap 只进行样本级拼接：
+TrajGap 沿用上游数据的场景划分，并对各 split 中的 focal 行人轨迹统一组织。适配过程不重新切窗、不重采样、不去重，也不生成新的未来目标。
 
-```text
-Mixed/train = Easy/train + Hard/train
-Mixed/val   = Easy/val   + Hard/val
-Mixed/test  = Easy/test  + Hard/test
-```
-
-这里的 `+` 表示 actor-centric 样本拼接，不表示重新切窗、重采样或去重。Easy/Hard 标签仅用于内部审计，对外统一称为 `Mixed`。
-
-采用 Mixed 的理由是：
-
-- 训练、验证和测试使用同一个公开协议；
-- checkpoint 只由一个 Mixed-val 决定；
-- 模型不能依赖 Easy/Hard 标签获得额外信息；
-- 主榜不需要人为定义 Easy/Hard 权重；
-- 缺失程度仍可作为测试后的诊断分组，而不改变主协议。
-
-Mixed 的使用不等于声称数据完全服从真实跟踪器的缺失分布。它是一个**受控的缺失历史压力测试协议**；真实分布外推需要额外数据或外部验证。
-
-### 2.3 样本规模
-
-| 场景 | Mixed train | Mixed val | Mixed test |
+| 场景 | TrajGap train | TrajGap val | TrajGap test |
 |---|---:|---:|---:|
 | `ETH-M` | 59,618 | 10,698 | 1,629 |
 | `HOTEL-M` | 58,304 | 10,272 | 9,477 |
@@ -107,14 +86,14 @@ Mixed 的使用不等于声称数据完全服从真实跟踪器的缺失分布�
 
 | 阶段 | 数据 | 用途 |
 |---|---|---|
-| Train | `Mixed-train` | 模型训练 |
-| Validation | `Mixed-val` | 只用于 checkpoint 选择 |
-| Test | `Mixed-test` | 最终报告，不参与调参 |
+| Train | TrajGap train | 模型训练 |
+| Validation | TrajGap validation | 只用于 checkpoint 选择 |
+| Test | TrajGap test | 最终报告，不参与调参 |
 
 所有方法必须遵守相同的：
 
 - 8 帧历史 → 12 帧未来任务；
-- `Mixed` train/val/test；
+- TrajGap train/validation/test；
 - direct 输入约束；
 - `K=20` 候选轨迹；
 - 五场景评估；
@@ -128,14 +107,13 @@ Checkpoint 规则固定为：
 
 ```text
 monitor = val_new_minFDE20
-source  = Mixed-val
+source  = TrajGap validation
 head    = final prediction head
 mode    = K=20
 ```
 
 不允许：
 
-- 分别在 Easy-val 和 Hard-val 上选点；
 - 使用测试结果选择 epoch；
 - 根据单个场景结果挑选 checkpoint；
 - 使用旧预测头或不同指标替代 `val_new_minFDE20`。
@@ -149,7 +127,7 @@ TrajGap-Bench 正式主榜只报告两个指标：
 | `minADE20` | 20 条候选轨迹中最小的平均位移误差 | 越低越好 |
 | `minFDE20` | 20 条候选轨迹中最小的终点位移误差 | 越低越好 |
 
-两个指标必须来自同一批 `K=20` 候选轨迹、同一个 checkpoint 和同一个 Mixed-test。不计算综合分数。
+两个指标必须来自同一批 `K=20` 候选轨迹、同一个 checkpoint 和同一个 TrajGap test 划分。不计算综合分数。
 
 可以将缺失帧数量、末端缺失、`anchor_lag` 和 `forecast_gap` 作为辅助诊断，但它们不能替代主指标或定义新的总榜。
 
@@ -180,13 +158,13 @@ TrajGap-Bench 正式主榜只报告两个指标：
 | 项目 | `GAST` |
 |---|---|
 | Encoder | 观测状态感知时空编码器（Mamba） |
-| Interaction modeling | 逐帧交互建模（含相对关系偏置） |
-| Temporal aggregation | 可靠度加权的时序聚合 |
+| Interaction modeling | 逐帧交互建模（含交互偏置） |
+| Temporal aggregation | 状态强度加权的时序聚合 |
 | Decoder | 终点引导解码器 |
 | Mode ranking | GAST 内置 trajectory-aware classification |
 | Prediction modes | `K=20` |
 | Loss | `final_consistent`（正文称双指派多模态训练目标，dual-assignment multimodal objective） |
-| Checkpoint | Mixed-val `val_new_minFDE20` |
+| Checkpoint | TrajGap validation `val_new_minFDE20` |
 | Seed | 2024 |
 | Epochs | 100 |
 | Batch size | 64 |
@@ -216,7 +194,6 @@ scripts/训练与评估/run_trajimpute_experiments.py \
 scripts/结果分析/evaluate_trajimpute_direct.py \
   --data-root /home/lbh/TrajImpute/dataset/TrajImpute \
   --scene ETH-M \
-  --difficulty Mixed \
   --split test \
   --variant GAST \
   --K 20 \
@@ -229,8 +206,8 @@ scripts/结果分析/evaluate_trajimpute_direct.py \
 
 | 功能 | 实现 |
 |---|---|
-| Mixed 数据集 | `src/datamodule/trajimpute_dataset.py::TrajGapDataset` |
-| Mixed 训练/验证 | `TrajImputeDataModule` |
+| TrajGap 数据集 | `src/datamodule/trajimpute_dataset.py::TrajGapDataset` |
+| TrajGap 训练/验证 | `TrajImputeDataModule` |
 | 统一训练入口 | `scripts/训练与评估/run_trajimpute_experiments.py` |
 | 统一 direct 评估 | `scripts/结果分析/evaluate_trajimpute_direct.py` |
 | 最新模型配置 | `conf/model/gast_model_forecast.yaml` |
@@ -247,7 +224,7 @@ scripts/结果分析/evaluate_trajimpute_direct.py \
 
 ## 7. 一句话定位
 
-> **TrajGap-Bench 将 TrajImpute 官方 Easy/Hard 的同一 train/val/test split 统一组织为 Mixed 数据，并以最终预测头的 `val_new_minFDE20` 选择 checkpoint，在五个场景上使用 `minADE20` 与 `minFDE20` 评估模型直接利用不完整历史进行未来轨迹预测的能力；本文完整方法统一命名为 GAST。**
+> **本文整理形成 TrajGap 数据集，并建立 TrajGap-Bench 评测协议；在五个场景的 TrajGap validation 划分上按最终预测头 `val_new_minFDE20` 选择 checkpoint，并使用 `minADE20` 与 `minFDE20` 评估 GAST 直接利用不完整历史进行未来轨迹预测的能力。**
 
 </details>
 
@@ -258,17 +235,17 @@ scripts/结果分析/evaluate_trajimpute_direct.py \
 
 ## 1. Overview
 
-**TrajGap-Bench** is a benchmark for direct future trajectory forecasting from incomplete history. A method must consume the masked history directly and predict 12 future frames. External imputation followed by forecasting is reported separately and is not part of the direct leaderboard.
+This work organizes the **TrajGap dataset** from the official TrajImpute release and defines **TrajGap-Bench**, an evaluation protocol for direct future trajectory forecasting from incomplete history. A method must consume the masked history directly and predict 12 future frames; external imputation followed by forecasting is reported separately.
 
-The benchmark reuses the official TrajImpute Easy/Hard release. Its contribution is a fixed Mixed protocol with unified train/validation/test construction, a single checkpoint rule, and two transparent primary metrics. It does not regenerate trajectories or claim that the synthetic missingness exactly matches real tracker failures.
+TrajGap follows the upstream scene and train/validation/test partitions. TrajGap-Bench specifies the task, checkpoint rule, and primary metrics. It does not regenerate trajectories or claim that the missingness exactly matches real tracker failures.
 
 ### 1.1 Latest model
 
 The complete method in this document is **GAST**:
 
-- observation reliability derived from validity masks and missing duration;
+- state strength derived from validity masks and missing duration;
 - frame-wise actor interaction modeling;
-- reliability-weighted temporal aggregation with Mamba;
+- state-strength-weighted temporal aggregation with Mamba;
 - endpoint-guided trajectory decoding based on the last valid observation;
 - final-consistent loss and mode-diversity regularization.
 
@@ -278,17 +255,9 @@ Endpoint-guided decoding and trajectory-aware mode ranking are internal componen
 
 TrajGap uses five scenes: `ETH-M`, `HOTEL-M`, `UNIV-M`, `ZARA1-M`, and `ZARA2-M`. Each sample contains 8 history frames at 0.4 s resolution (3.2 s total) and 12 complete future frames (4.8 s total). The model outputs `K=20` candidate futures. At least one history frame remains observed per sample, and `missing_mask=True` marks missing coordinates.
 
-For every scene and split:
+The dataset retains the upstream scene and train/validation/test partitions. Samples are organized around a focal actor; no re-windowing, re-sampling, de-duplication, or future-target generation is performed.
 
-```text
-Mixed/train = Easy/train + Hard/train
-Mixed/val   = Easy/val   + Hard/val
-Mixed/test  = Easy/test  + Hard/test
-```
-
-The merge is actor-centric sample concatenation. There is no re-windowing, re-sampling, or de-duplication. Easy/Hard labels are retained for audit only; the public protocol is `Mixed`.
-
-| Scene | Mixed train | Mixed val | Mixed test |
+| Scene | TrajGap train | TrajGap validation | TrajGap test |
 |---|---:|---:|---:|
 | `ETH-M` | 59,618 | 10,698 | 1,629 |
 | `HOTEL-M` | 58,304 | 10,272 | 9,477 |
@@ -303,10 +272,10 @@ This is a controlled missing-history stress test. It should not be described as 
 
 ## 3. Evaluation protocol
 
-- **Training:** use `Mixed-train`.
-- **Validation:** use one `Mixed-val` set for checkpoint selection.
-- **Testing:** report once on `Mixed-test`; test data must not affect tuning or model selection.
-- **Checkpoint:** use the final prediction head and `val_new_minFDE20` on `Mixed-val`.
+- **Training:** use the TrajGap training partition.
+- **Validation:** use the TrajGap validation partition for checkpoint selection.
+- **Testing:** report once on the TrajGap test partition; test data must not affect tuning or model selection.
+- **Checkpoint:** use the final prediction head and `val_new_minFDE20` on TrajGap validation.
 - **Task:** keep the 8→12 setting, direct input, `K=20`, and five scenes consistent.
 - **Primary metrics:** report `minADE20` and `minFDE20`, both lower-is-better; do not combine them into a composite score.
 - **Aggregates:** report per-scene values, five-scene macro average, sample-weighted micro average, and worst-scene when all five scenes are complete.
@@ -321,11 +290,11 @@ The protocol document does not duplicate static result tables. It retains model 
 
 ## 5. Reproducibility and limitations
 
-The official release files are read-only. The Mixed adapter, training runner, evaluator, and model configuration are:
+The official release files are read-only. The TrajGap data adapter, training runner, evaluator, and model configuration are:
 
 | Function | Implementation |
 |---|---|
-| Mixed dataset | `src/datamodule/trajimpute_dataset.py::TrajGapDataset` |
+| TrajGap dataset | `src/datamodule/trajimpute_dataset.py::TrajGapDataset` |
 | Training and validation | `TrajImputeDataModule` |
 | Training runner | `scripts/训练与评估/run_trajimpute_experiments.py` |
 | Direct evaluator | `scripts/结果分析/evaluate_trajimpute_direct.py` |

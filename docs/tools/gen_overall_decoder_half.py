@@ -300,7 +300,7 @@ fig.paste(crop, (px, py))   # px/py 已在上面按主内容居中算好，勿�
 trunk_x = px + int((TRUNK - bx0) * GS)   # 用真实主干坐标（此前写死 1920 导致线越过主干 47px）
 # 输入箭头：与编码器同一条线，统一 7px
 # 编码器输出 -> 主干：这里是"分支"而不是终止箭头，所以不画箭头头，线直接接上主干
-d3.line([(1858, 382), (trunk_x + 3, 382)], fill=INK, width=7)  # 从 Evidence-weighted readout 右缘接入 decoder 主干
+d3.line([(1858, 382), (trunk_x + 3, 382)], fill=INK, width=7)  # 从状态强度历史读出右缘接入 decoder 主干
 fig.save(OUT)
 print("saved", OUT, fig.size, "scale=%.2f  content=%dx%d  at (%d,%d)" % (GS, nw, nh, px, py))
 

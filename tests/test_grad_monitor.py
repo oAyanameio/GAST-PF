@@ -21,12 +21,12 @@ from src.utils.grad_monitor import GradientNormMonitor, group_of  # noqa: E402
 class _FakeNet(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.gast_encoder = torch.nn.Module()
-        self.gast_encoder.spatial = torch.nn.Linear(4, 4)
-        self.gast_encoder.temporal_aggregation = torch.nn.Module()
-        self.gast_encoder.temporal_aggregation.temporal_mamba = torch.nn.Linear(4, 4)
-        self.gast_encoder.temporal_aggregation.state_aggregation = torch.nn.Linear(4, 4)
-        self.goal_decoder = torch.nn.Linear(4, 4)
+        self.observation_encoder = torch.nn.Module()
+        self.observation_encoder.framewise_interaction = torch.nn.Linear(4, 4)
+        self.observation_encoder.state_strength_aggregation = torch.nn.Module()
+        self.observation_encoder.state_strength_aggregation.mamba = torch.nn.Linear(4, 4)
+        self.observation_encoder.state_strength_aggregation.history_readout = torch.nn.Linear(4, 4)
+        self.goal_guided_decoder = torch.nn.Linear(4, 4)
         self.other_head = torch.nn.Linear(4, 4)
 
 
@@ -45,15 +45,15 @@ def _seed_grads(module, scale=1.0):
 
 
 def test_group_of_maps_modules():
-    assert group_of("gast_encoder.spatial.patch_embed.0.weight") == "enc.spatial"
+    assert group_of("observation_encoder.framewise_interaction.patch_embed.0.weight") == "enc.interaction"
     assert group_of(
-        "gast_encoder.temporal_aggregation.temporal_mamba.ssm_forw.0.mixer.A_log"
-    ) == "enc.temporal"
-    assert group_of("gast_encoder.evidence_tau_logit") == "enc.evidence"
+        "observation_encoder.state_strength_aggregation.mamba.mamba_blocks.0.mixer.A_log"
+    ) == "enc.mamba"
+    assert group_of("observation_encoder.state_strength_decay_logit") == "enc.state_strength"
     assert group_of(
-        "gast_encoder.temporal_aggregation.state_aggregation.score.weight"
+        "observation_encoder.state_strength_aggregation.history_readout.score.weight"
     ) == "enc.readout"
-    assert group_of("goal_decoder.x.weight") == "decoder"
+    assert group_of("goal_guided_decoder.x.weight") == "decoder"
     assert group_of("neighbor_prediction_head.0.weight") == "aux.neighbor_head"
     assert group_of("future_time_embedding.0.weight") == "aux.time_embed"
     assert group_of("something_else") == "other"

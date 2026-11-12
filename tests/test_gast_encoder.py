@@ -7,26 +7,26 @@ import torch
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from src.model.layers.gast_encoder import (  # noqa: E402
-    EvidenceRelationalGSM,
-    GASTEncoder,
-    construct_observation_state,
-    evidence_weighted_state_aggregation,
-    relative_actor_relation_features,
+from src.model.layers.observation_state_encoder import (  # noqa: E402
+    FramewiseInteractionModel,
+    ObservationStateEncoder,
+    aggregate_history_by_state_strength,
+    build_framewise_interaction_features,
+    build_observation_state,
 )
 
 
-def test_observation_state_tracks_age_reliability_and_padding():
+def test_observation_state_tracks_age_state_strength_and_padding():
     valid = torch.tensor([[[1, 0, 0], [1, 1, 1]]], dtype=torch.bool)
     padding = torch.tensor([[False, True]])
-    observed, reliability, age = construct_observation_state(
+    observed, state_strength, age = build_observation_state(
         valid, tau=0.5, key_padding=padding
     )
     assert observed[0, 0].tolist() == [1.0, 0.0, 0.0]
     assert age[0, 0].tolist() == [0.0, 1.0, 2.0]
-    assert torch.allclose(reliability[0, 0], torch.tensor([1.0, torch.exp(torch.tensor(-0.5)), torch.exp(torch.tensor(-1.0))]))
+    assert torch.allclose(state_strength[0, 0], torch.tensor([1.0, torch.exp(torch.tensor(-0.5)), torch.exp(torch.tensor(-1.0))]))
     assert not observed[0, 1].any()
-    assert not reliability[0, 1].any()
+    assert not state_strength[0, 1].any()
 
 
 def test_actor_relation_features_ignore_missing_placeholders():
@@ -36,29 +36,29 @@ def test_actor_relation_features_ignore_missing_placeholders():
     )
     changed = positions.clone()
     changed[0, 0, 1] = torch.tensor([-9000.0, 8000.0])
-    first = relative_actor_relation_features(positions, valid)
-    second = relative_actor_relation_features(changed, valid)
+    first = build_framewise_interaction_features(positions, valid)
+    second = build_framewise_interaction_features(changed, valid)
     assert first.shape == (1, 2, 2, 2, 7)
     assert torch.equal(first, second)
 
 
-def test_evidence_weighted_state_aggregation_uses_terminal_state_when_history_is_complete():
+def test_history_readout_uses_terminal_state_when_history_is_complete():
     hidden = torch.randn(2, 3, 4, 8)
-    reliability = torch.ones(2, 3, 4)
+    state_strength = torch.ones(2, 3, 4)
     scores = torch.randn(2, 3, 4, 1)
-    output, weights = evidence_weighted_state_aggregation(
-        hidden, reliability, scores
+    output, weights = aggregate_history_by_state_strength(
+        hidden, state_strength, scores
     )
     assert torch.equal(output, hidden[..., -1, :])
     assert torch.isfinite(weights).all()
 
 
-def test_content_only_readout_uses_scores_without_reliability_weights():
+def test_content_only_readout_uses_scores_without_state_strength_weights():
     hidden = torch.tensor([[[[0.0], [10.0]]]])
-    reliability = torch.tensor([[[1.0, 0.01]]])
+    state_strength = torch.tensor([[[1.0, 0.01]]])
     scores = torch.tensor([[[[0.0], [1.0]]]])
-    output, weights = evidence_weighted_state_aggregation(
-        hidden, reliability, scores, use_reliability_weighting=False
+    output, weights = aggregate_history_by_state_strength(
+        hidden, state_strength, scores, use_state_strength_weighting=False
     )
     expected_weights = torch.softmax(scores.squeeze(-1), dim=-1)
     expected = torch.sum(expected_weights.unsqueeze(-1) * hidden, dim=-2)
@@ -68,36 +68,36 @@ def test_content_only_readout_uses_scores_without_reliability_weights():
 
 
 def test_gast_uses_complete_evidence_stages():
-    gast = GASTEncoder(embed_dim=16, num_heads=4, depth=1)
-    assert isinstance(gast.spatial, EvidenceRelationalGSM)
-    assert hasattr(gast.spatial, "relation_bias")
-    assert hasattr(gast.temporal_aggregation.state_aggregation, "score")
-    blocks = gast.temporal_aggregation.temporal_mamba.ssm_forw
+    gast = ObservationStateEncoder(embed_dim=16, num_heads=4, depth=1)
+    assert isinstance(gast.framewise_interaction, FramewiseInteractionModel)
+    assert hasattr(gast.framewise_interaction, "interaction_bias")
+    assert hasattr(gast.state_strength_aggregation.history_readout, "score")
+    blocks = gast.state_strength_aggregation.mamba.mamba_blocks
     assert len(blocks) == 1
 
 
 def test_gast_structural_switches_disable_their_target_components():
-    gast = GASTEncoder(
+    gast = ObservationStateEncoder(
         embed_dim=16,
         num_heads=4,
         depth=1,
-        use_relation_bias=False,
+        use_interaction_bias=False,
         use_source_filter=False,
-        use_reliability_modulation=False,
-        use_reliability_readout=False,
+        use_state_strength_modulation=False,
+        use_state_strength_readout=False,
     )
 
-    assert gast.spatial.use_source_filter is False
-    assert gast.spatial.relation_bias is None
-    assert gast.temporal_aggregation.temporal_mamba.use_reliability_modulation is False
-    assert gast.temporal_aggregation.state_aggregation.use_reliability_readout is False
+    assert gast.framewise_interaction.use_source_filter is False
+    assert gast.framewise_interaction.interaction_bias is None
+    assert gast.state_strength_aggregation.mamba.use_state_strength_modulation is False
+    assert gast.state_strength_aggregation.history_readout.use_state_strength_readout is False
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="GAST Mamba forward requires CUDA")
-def test_gast_encoder_outputs_are_finite_and_zero_padding_actors():
+def test_observation_encoder_outputs_are_finite_and_zero_padding_actors():
     device = torch.device("cuda")
     torch.manual_seed(4)
-    encoder = GASTEncoder(
+    encoder = ObservationStateEncoder(
         input_dim=4,
         embed_dim=16,
         num_heads=4,
@@ -130,30 +130,31 @@ def test_training_and_evaluation_expose_matching_structural_ablations():
     assert DEFAULT_VARIANT == "GAST"
     assert set(train_variants) == {
         "GAST",
-        "GAST-no-relation-bias",
+        "GAST-no-interaction-bias",
         "GAST-no-source-filter",
-        "GAST-no-reliability-modulation",
+        "GAST-no-state-strength-modulation",
         "GAST-content-only-readout",
         "GAST-no-goal-guidance",
     }
     assert train_variants.keys() == eval_variants.keys()
     assert train_variants["GAST"] == eval_variants["GAST"]
-    assert train_variants["GAST"]["gast_depth"] == 4
+    assert train_variants["GAST"]["encoder_depth"] == 4
     for variant in train_variants.values():
         assert all(
             key in variant
             for key in (
                 "use_source_filter",
-                "use_relation_bias",
-                "use_reliability_modulation",
-                "use_reliability_readout",
+                "use_interaction_bias",
+                "use_state_strength_modulation",
+                "use_state_strength_readout",
                 "use_goal_guidance",
             )
         )
-    assert train_variants["GAST-no-relation-bias"]["use_relation_bias"] is False
+    assert train_variants["GAST-no-interaction-bias"]["use_interaction_bias"] is False
     assert train_variants["GAST-no-source-filter"]["use_source_filter"] is False
-    assert train_variants["GAST-no-reliability-modulation"]["use_reliability_modulation"] is False
-    assert train_variants["GAST-content-only-readout"]["use_reliability_readout"] is False
+    assert train_variants["GAST-no-state-strength-modulation"]["use_state_strength_modulation"] is False
+    assert train_variants["GAST-content-only-readout"]["use_state_strength_readout"] is False
+
     assert train_variants["GAST-no-goal-guidance"]["use_goal_guidance"] is False
 
 
@@ -164,23 +165,24 @@ def test_gast_yaml_uses_full_method_by_default():
         (REPO / "conf/model/gast_model_forecast.yaml").read_text()
     )
     model = config["target"]["model"]
-    assert model["gast_depth"] == 4
-    assert model["gast_gsm_operator"] == "max"
+    assert model["encoder_depth"] == 4
+    assert model["interaction_operator"] == "max"
     for switch in (
-        "use_relation_bias",
+        "use_interaction_bias",
         "use_source_filter",
-        "use_reliability_modulation",
-        "use_reliability_readout",
+        "use_state_strength_modulation",
+        "use_state_strength_readout",
         "use_goal_guidance",
     ):
         assert model[switch] is True
 
 
-def test_forecaster_builds_only_the_gast_encoder():
+def test_forecaster_builds_only_the_gast_components():
     from src.model.trajectory_forecaster import TrajectoryForecaster
 
     model = TrajectoryForecaster(num_modes=4)
-    assert hasattr(model, "gast_encoder")
+    assert hasattr(model, "observation_encoder")
+    assert hasattr(model, "goal_guided_decoder")
     assert not hasattr(model, "gast_scene_tail")
 
 

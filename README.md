@@ -5,7 +5,8 @@ GAST-PF 是面向**缺失历史直接未来预测**的研究代码库，包含�
 | 项目 | 说明 |
 |---|---|
 | 方法 | `GAST`（Gap-Aware Spatio-Temporal Pedestrian Forecaster） |
-| 数据集与基准 | `TrajGap-Bench`：基于 TrajImpute 官方 Easy/Hard，按 Mixed split 组织并直接预测 |
+| 数据集 | `TrajGap`：基于 TrajImpute 官方数据整理的缺失历史行人轨迹数据集 |
+| 评测协议 | `TrajGap-Bench`：面向不插补直接预测的统一任务与评测规则 |
 | 任务 | 8 帧历史（显式缺失掩码）→ 12 帧未来，`K=20` |
 | 指标 | `minADE20` / `minFDE20` |
 
@@ -13,13 +14,13 @@ GAST-PF 是面向**缺失历史直接未来预测**的研究代码库，包含�
 
 ## 方法概览
 
-GAST 由观测状态感知时空编码器和终点引导解码器组成。编码器根据有效性掩码和缺失时长估计观测可靠度，并将其用于逐帧交互建模与历史信息汇总：
+GAST 由观测状态感知时空编码器和终点引导解码器组成。编码器根据有效性掩码和缺失时长估计状态强度，并将其用于逐帧交互建模与历史信息汇总：
 
 ```text
 GAST
 ├── 观测状态感知时空编码器
 │   ├── 逐帧交互建模
-│   └── 可靠度加权的时序聚合（可靠度调制的 Mamba 与历史状态汇总）
+│   └── 状态强度加权的时序聚合（状态强度调制的 Mamba 与历史状态汇总）
 └── 终点引导解码器
     ├── 使用末次有效观测状态和实际预测间隔
     ├── 多模态终点预测与未来轨迹生成
@@ -47,19 +48,19 @@ pip install -e mamba
 
 ### TrajImpute（缺失历史）
 
-正式缺失历史数据位于 `/home/lbh/TrajImpute/dataset/TrajImpute`，包含 ETH-M、HOTEL-M、UNIV-M、ZARA1-M、ZARA2-M 的 Easy/Hard train/val/test pkl。
+正式缺失历史数据位于 `/home/lbh/TrajImpute/dataset/TrajImpute`。TrajGap 覆盖 ETH-M、HOTEL-M、UNIV-M、ZARA1-M、ZARA2-M 五个场景及其 train/val/test 划分。
 
-**TrajGap-Bench** 是数据集与评估基准的统一名称。每个 split 将 `Easy + Hard` 做 actor-centric 样本拼接，形成 `Mixed` 数据；`direct` 描述任务约束，即模型直接使用带缺失掩码的历史进行预测，不使用外部插补或未来真值填补历史。Easy/Hard 标签仅用于内部审计与诊断。
+**TrajGap** 是本文使用的数据集名称，**TrajGap-Bench** 是围绕该数据集建立的评测协议。数据基于 TrajImpute 官方发布整理，沿用其场景和 train/validation/test 划分；`direct` 表示模型直接使用带缺失掩码的历史进行预测，不使用外部插补或未来真值填补历史。
 
 ## 训练与评估
 
 ```bash
-# 默认入口：TrajImpute 单场景（ETH-M / Easy）
+# 基础训练入口示例
 python train.py
 
-# 正式 TrajGap-Bench Mixed 单场景 smoke
+# TrajGap-Bench 单场景 smoke
 PYTHONPATH=. python train.py --config-name=config_missing_aware_trajimpute \
-    scene=ETH-M difficulty=Mixed train_difficulties=[Mixed] val_difficulties=[Mixed] \
+    scene=ETH-M \
     hydra.run.dir=outputs/trajgap_smoke/GAST_ETH-M
 
 # 五场景 TrajGap-Bench 统一训练入口（仅注册 GAST）
@@ -72,7 +73,7 @@ PYTHONNOUSERSITE=1 PYTHONPATH=. python scripts/训练与评估/run_trajimpute_ex
 # 逐场景 direct 评估
 python scripts/结果分析/evaluate_trajimpute_direct.py \
     --data-root /home/lbh/TrajImpute/dataset/TrajImpute \
-    --scene ETH-M --difficulty Mixed --split test \
+    --scene ETH-M --split test \
     --variant GAST --K 20 --seed 2024 \
     --checkpoint <path/to/checkpoint.ckpt> --output-root <output_dir>
 
@@ -87,8 +88,8 @@ python eval.py checkpoint='/path/to/ckpt' test=true
 ```text
 conf/                 Hydra 配置（TrajImpute 主线与对照；模型见 conf/model/）
 src/model/            TrajectoryForecaster、loss 与 LightningModule
-src/model/layers/     gast_encoder.py（逐帧交互建模、可靠度加权的时序聚合）、
-                      gast_goal_decoder.py（终点引导解码器）、
+src/model/layers/     observation_state_encoder.py（观测状态编码、逐帧交互建模、状态强度聚合）、
+                      goal_guided_decoder.py（终点引导解码器）、
                       mamba
 src/datamodule/       TrajImpute（TrajGapDataset）数据管线
 src/metrics/          minADE/minFDE/MR/brierFDE
@@ -109,7 +110,7 @@ outputs/              训练与评估产物（逐折 results.json）
 
 ## 当前结果
 
-TrajGap-Bench（seed=2024；GAST 按最终预测头 `val_new_minFDE20` 选点；其他外部方法沿用各自选点流程）：
+TrajGap 数据集上的 TrajGap-Bench 结果（seed=2024；GAST 按最终预测头 `val_new_minFDE20` 选点；其他外部方法沿用各自选点流程）：
 
 | 方法 | Macro `minADE20` | Macro `minFDE20` | 完成度 |
 |---|---:|---:|---:|
