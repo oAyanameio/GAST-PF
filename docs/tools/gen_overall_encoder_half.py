@@ -228,17 +228,17 @@ tc("K = 20 futures", 3399, 248, fit("K = 20 futures", CMB, 215), INK)
 tc("no map input", 3399, 284, fit("no map input", CMR, 215), MUTED)
 log.append("E6 道路缩略图 -> K=20 轨迹扇面（无地图）")
 
-# ---------- E7 补 Last-step readout 并接通解码器主干 ----------
+# ---------- E7 补历史状态聚合并接通解码器主干 ----------
 clear((1748, 436, 1790, 455), (242, 242, 242))  # 仅清掉原箭头（1794 处即断，与面板不相连），保留背卡底色
 clear((1796, 270, 1898, 494), WHITE)
 d.rounded_rectangle((1798, 275, 1896, 490), radius=10, fill=WHITE, outline=INK, width=3)
-vtext("Last-step readout", 1847, 382, CMB, 24)
+vtext("Historical state aggregation", 1847, 382, CMB, 24)
 arrow((1747, 382), (1796, 382))
 d.line([(1898, 382), (1930, 382)], fill=INK, width=4)
 d.line([(1930, 255), (1930, 498)], fill=INK, width=4)          # 解码器输入主干
 d.line([(1930, 255), (1939, 255)], fill=INK, width=4)          # 接 (a) 支
 d.line([(1930, 498), (1939, 498)], fill=INK, width=4)          # 接 (b) 支
-log.append("E7 补 Last-step readout，并补上原图缺失的编码器→解码器连线与分叉主干")
+log.append("E7 补历史状态聚合，并补上原图缺失的编码器→解码器连线与分叉主干")
 
 # ---------- E8 (c) 具体层数 ----------
 for cy, cnt in [(264, "3"), (332, "3"), (401, "3"), (471, "2")]:
@@ -252,10 +252,10 @@ log.append("E8 (c) 四级层数：× 3 / × 3 / × 3 / × 2")
 im.paste(Image.open(SRC).crop((3340, 440, 3460, 458)), (3340, 440))
 d = ImageDraw.Draw(im)
 
-# ---------- E10 去掉 Last-step readout ----------
-clear((1795, 262, 1904, 500), WHITE)             # readout 方块（白底区）
+# ---------- E10 去掉历史状态聚合 ----------
+clear((1795, 262, 1904, 500), WHITE)             # 历史状态聚合方块（白底区）
 clear((1748, 372, 1789, 394), (242, 242, 242))   # 只清卡内，保留背卡右缘（1790..1794）不被打断
-log.append("E10 去掉 Last-step readout")
+log.append("E10 去掉历史状态聚合")
 
 # ---------- E11 解码面板内容整体左移 200，面板收窄 ----------
 SHIFT = 200
@@ -276,7 +276,7 @@ log.append("E11 面板内容左移 %d px、面板收窄、画布裁到 3384" % S
 
 # ---------- E12 补 GSM Spatial Attention：历史分支原来在此断头 ----------
 # 原图把 GSM Module 直接连到 Spatial 网格，agent tokens 没有任何输出箭头；
-# 按观测状态编码器的逐帧交互建模补一级：agent tokens + ghost token -> 注意力 -> interaction
+# 按观测先验编码器的逐帧交互建模补一级：agent tokens + ghost token -> 注意力 -> interaction
 # 实测原肘形连线：水平段 y 199..205、竖段 x 984..990、进网格段 y 415..421，线宽 7
 clear((966, 196, 996, 350), WHITE)      # 原肘形竖段与拐角
 clear((980, 200, 996, 412), WHITE)      # 原肘形竖段下半
@@ -430,15 +430,15 @@ log.append("E25 去掉 ghost token 小字")
 # ---------- E26 按当前 GAST 主线更新编码器尾段 ----------
 # 当前完整 GAST 编码器：
 # 1) 逐帧交互建模：在 GSM attention 中使用 actor tokens、ghost token、相对关系特征和 source eligibility；
-# 2) 状态强度调制：按状态强度调节 Mamba 输入；
-# 3) 时序聚合：Mamba 后按内容分数和状态强度汇总历史。
+# 2) 观测先验强度调制：按观测先验强度调节 Mamba 输入；
+# 3) 时序聚合：Mamba 后按内容分数和观测先验强度汇总历史。
 # 图中使用功能描述，不把中间计算步骤包装成独立模块名。
 clear((886, 354, 1054, 482), (191, 191, 191))
 tc("Frame-wise", 970, 382, fit("Frame-wise", CMB, 154), INK)
 tc("Actor", 970, 416, fit("Actor", CMB, 154), INK)
 tc("Interactions", 970, 450, fit("Interactions", CMB, 154), INK)
 
-# 状态强度调制：按当前实现画 age -> state strength -> ⊙。
+# 观测先验强度调制：按当前实现画 age -> observation-prior strength -> ⊙。
 clear((1278, 84, 1540, 222), WHITE)
 clear((1272, 216, 1548, 340), WHITE)
 clear((1332, 412, 1622, 480), WHITE)
@@ -450,10 +450,10 @@ d.rounded_rectangle((1312, 107, 1502, 153), radius=7, outline=(46, 154, 168), wi
 for x0, x1 in [(1319, 1353), (1357, 1391), (1395, 1429), (1433, 1467), (1471, 1495)]:
     d.rectangle((x0, 114, x1, 146), fill=(242, 247, 252), outline=INK, width=2)
 tc("age", 1407, 130, fit("age", CMR, 45, start=18), INK)
-# State strength is exp(-tau * age), with learnable tau; the arrow feeds ⊙.
+# Observation-prior strength is exp(-tau * age), with learnable tau; the arrow feeds ⊙.
 d.rounded_rectangle((1295, 234, 1524, 323), radius=12, fill=(46, 154, 168),
                     outline=INK, width=3)
-tc("State strength", 1409, 258, fit("State strength", CMB, 200), WHITE)
+tc("Prior strength", 1409, 258, fit("Prior strength", CMB, 200), WHITE)
 tc("modulation", 1409, 291, fit("modulation", CMB, 200), WHITE)
 arrow((1409, 325), (1409, 435), lw=4, size=13)
 # ⊙ 输出为 evidence-modulated temporal features，进入 Mamba。
@@ -470,20 +470,20 @@ ink_left("×", 1744, 143, F(STIX, 25), MUTED)
 ink_left("4", 1768, 143, F(CMR, 27), MUTED)
 arrow((1507, 448), (1624, 448), lw=7, size=18)
 
-# Mamba 后按内容分数和状态强度汇总历史，再接解码器分叉主干。
+# Mamba 后按内容分数和观测先验强度汇总历史，再接解码器分叉主干。
 d.rounded_rectangle((1760, 294, 1858, 470), radius=10, fill=(242, 242, 242), outline=INK, width=3)
-tc("State strength", 1809, 328, F(CMB, 14), INK)
+tc("Prior strength", 1809, 328, F(CMB, 14), INK)
 tc("weighted", 1809, 382, F(CMB, 15), INK)
 tc("history", 1809, 408, F(CMB, 15), INK)
 tc("aggregation", 1809, 442, F(CMB, 13), INK)
 # 输入/输出连接贴到框的中线，框内文字不被连线穿过
 arrow((1740, 382), (1758, 382), lw=4, size=8)
 d.line([(1858, 382), (1862, 382)], fill=INK, width=4)
-log.append("GAST encoder: frame-wise actor interactions; state-strength modulation; Mamba; state-strength-weighted history aggregation")
+log.append("GAST encoder: frame-wise actor interactions; observation-prior-strength modulation; Mamba; observation-prior-strength-weighted history aggregation")
 
-# ---------- E27 顶部观测状态支路 ----------
+# ---------- E27 顶部观测先验支路 ----------
 # 参考图风格：把 e(i,t)=(s,a,γ) 统一画在主干最上方，
-# s/a/gamma 分别以橙色虚线注入逐帧交互、状态强度调制和历史状态汇总。
+# s/a/gamma 分别以橙色虚线注入逐帧交互、观测先验强度调制和历史状态聚合。
 # 先清掉旧的顶部 age 小条及其旧水平连接，避免两套证据支路重复。
 clear((965, 194, 1415, 210), WHITE)
 clear((1278, 84, 1540, 222), WHITE)
@@ -491,8 +491,8 @@ clear((1278, 84, 1540, 222), WHITE)
 clear((480, 6, 1940, 98), WHITE)
 d.rounded_rectangle((500, 8, 1935, 94), radius=12,
                     fill=(255, 245, 235), outline=ORANGE, width=3)
-tc("Observation state and strength", 675, 29,
-   fit("Observation state and strength", CMB, 300, start=24), ORANGE)
+tc("Observation prior and strength", 675, 29,
+   fit("Observation prior and strength", CMB, 300, start=24), ORANGE)
 tc("e(i,t) = (s, a, γ)", 675, 68, F(STIX, 20), INK)
 
 # 三个状态分量：只保留定义，不再添加模块下方解释小字。
@@ -520,9 +520,9 @@ def evidence_arrow(p0, p1, dash=10, gap=7, lw=3, size=10):
     head(p1, math.atan2(dy, dx), size, ORANGE)
 
 evidence_arrow((975, 96), (970, 348))    # s -> frame-wise interactions
-evidence_arrow((1409, 96), (1409, 228))  # age -> state-strength modulation
+evidence_arrow((1409, 96), (1409, 228))  # age -> observation-prior-strength modulation
 evidence_arrow((1809, 96), (1809, 286))  # strength -> weighted aggregation
-log.append("Observation state and strength feed frame-wise interactions, input modulation, and history aggregation")
+log.append("Observation prior and its strength feed frame-wise interactions, input modulation, and history aggregation")
 
 im.save(OUT)
 print("saved", OUT, im.size)

@@ -45,7 +45,7 @@ batch_size: 64
 epochs: 100
 warmup_epochs: 5
 precision: bf16
-# 主链 K=20 配置：时序聚合使用 Mamba，并按状态强度汇总历史状态。
+# 主链 K=20 配置：时序聚合使用 Mamba，并按观测先验强度汇总历史状态。
 # optimizer
 # GAST 基础策略：AdamW 参数分组覆盖所有可训练参数；自定义 mixer/RMSNorm
 # 不在 decay 白名单时进入 no-decay 组，不允许被静默遗漏。

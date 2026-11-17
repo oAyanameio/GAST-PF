@@ -16,8 +16,8 @@ from docs.tools import gen_leaderboard_tables
 SWITCHES = {
     "use_interaction_bias",
     "use_source_filter",
-    "use_state_strength_modulation",
-    "use_state_strength_readout",
+    "use_observation_prior_strength_modulation",
+    "use_observation_prior_strength_history_aggregation",
     "use_goal_guidance",
 }
 EXPECTED_VARIANTS = {
@@ -25,7 +25,7 @@ EXPECTED_VARIANTS = {
     "GAST-no-interaction-bias",
     "GAST-no-source-filter",
     "GAST-no-state-strength-modulation",
-    "GAST-content-only-readout",
+    "GAST-content-only-history-aggregation",
     "GAST-no-goal-guidance",
 }
 
@@ -39,8 +39,10 @@ def test_training_and_evaluation_share_single_switch_ablation_configs():
     expected_disabled = {
         "GAST-no-interaction-bias": "use_interaction_bias",
         "GAST-no-source-filter": "use_source_filter",
-        "GAST-no-state-strength-modulation": "use_state_strength_modulation",
-        "GAST-content-only-readout": "use_state_strength_readout",
+        "GAST-no-state-strength-modulation": "use_observation_prior_strength_modulation",
+        "GAST-content-only-history-aggregation": (
+            "use_observation_prior_strength_history_aggregation"
+        ),
         "GAST-no-goal-guidance": "use_goal_guidance",
     }
     for name, config in TRAIN_VARIANTS.items():

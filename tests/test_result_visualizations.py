@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 
 from docs.tools import gen_results_figures as result_figures
+from docs.tools import gen_leaderboard_tables as leaderboard
 from docs.tools import visualize_trajgap_scenes as scene_figures
 
 
@@ -76,6 +77,51 @@ def test_benchmark_rows_rank_lower_macro_error_first():
     rows = result_figures.benchmark_rows(data, "minFDE_K")
 
     assert [method for _, method in rows] == ["GAST", "MoFlow"]
+
+
+def test_missing_severity_averages_exact_levels_equally_before_scene_macro():
+    per_scene = {}
+    for scene in leaderboard.SCENES:
+        per_scene[scene] = {
+            "_by_group": {
+                f"{scene}/TrajGap/test/missing=0": {
+                    "n": 10, "minADE_K": 1.0, "minFDE_K": 1.0,
+                },
+                f"{scene}/TrajGap/test/missing=1": {
+                    "n": 1, "minADE_K": 3.0, "minFDE_K": 3.0,
+                },
+                f"{scene}/TrajGap/test/missing=2": {
+                    "n": 1, "minADE_K": 5.0, "minFDE_K": 5.0,
+                },
+            }
+        }
+    data = {"GAST": {"per": per_scene}}
+
+    assert leaderboard.severity_macro(
+        data, "GAST", "near_complete", "minFDE_K"
+    ) == 3.0
+    assert leaderboard.severity_macro(
+        data,
+        "GAST",
+        "near_complete",
+        "minFDE_K_relative_vs_missing0_pct",
+    ) == 200.0
+
+
+def test_new_leaderboard_wording_uses_trajgap_not_legacy_protocol():
+    data = {
+        method: {"per": {}}
+        for method in leaderboard.METHODS
+    }
+    rendered = leaderboard.emit_full_md(data)
+    assert "TrajGap" in rendered
+    assert "Mixed" not in rendered
+    assert "近完整观测" in rendered
+    assert "| 分层 | 缺失比例 | focal 样本数 |" in rendered
+    assert "| 近完整观测 | ≤25% |" in rendered
+    assert "| 中度缺失 | >25–50% |" in rendered
+    assert "| 重度缺失 | >50–87.5% |" in rendered
+    assert "缺失等级（帧数索引）" in rendered
 
 
 def test_best_of_k_index_selects_lowest_final_displacement():

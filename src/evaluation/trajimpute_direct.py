@@ -12,6 +12,44 @@ from pathlib import Path
 import torch
 
 
+MISSING_HISTORY_FRAME_COUNT = 8
+MISSING_SEVERITY_BINS = (
+    ("near_complete", "Near-complete", (0, 1, 2)),
+    ("moderate", "Moderate", (3, 4)),
+    ("severe", "Severe", (5, 6, 7)),
+)
+MISSING_SEVERITY_PERCENT_RANGES = {
+    "near_complete": "≤25%",
+    "moderate": ">25–50%",
+    "severe": ">50–87.5%",
+}
+MISSING_SEVERITY_LABELS = {
+    "near_complete": "Near-complete (≤25%)",
+    "moderate": "Moderate (>25–50%)",
+    "severe": "Severe (>50–87.5%)",
+}
+
+
+def missing_percentage(missing_count: int) -> float:
+    """Return the missing share of the fixed eight-frame history, in percent."""
+    missing_count = int(missing_count)
+    if not 0 <= missing_count < MISSING_HISTORY_FRAME_COUNT:
+        raise ValueError(
+            f"missing_count={missing_count} must be in the supported 0..7 range"
+        )
+    return 100.0 * missing_count / MISSING_HISTORY_FRAME_COUNT
+
+
+def classify_missing_severity(missing_count: int) -> str:
+    """Classify severity by the percentage of the eight history frames missing."""
+    missing_pct = missing_percentage(missing_count)
+    if missing_pct <= 25.0:
+        return "near_complete"
+    if missing_pct <= 50.0:
+        return "moderate"
+    return "severe"
+
+
 def _ade_fde(pred: torch.Tensor, target: torch.Tensor):
     """pred [B, K, T, 2], target [B, T, 2] -> ade [B, K], fde [B, K]"""
     d = torch.norm(pred - target.unsqueeze(1), p=2, dim=-1)  # [B, K, T]
@@ -37,7 +75,7 @@ def evaluate_predictions(pred: torch.Tensor, prob: torch.Tensor, target: torch.T
 
 
 class DirectEvaluator:
-    """按 missing_count 分组累积指标；compute() 输出层级化结果。"""
+    """Accumulate exact and three-level missingness-stratified metrics."""
 
     def __init__(self):
         # (scene, difficulty, split, missing_count) -> {metric: [values]}
@@ -74,13 +112,82 @@ class DirectEvaluator:
                 self.dimension_groups[dimension][value_key][name].extend(vals.tolist())
 
     def compute(self):
-        """-> dict[layered results]；每级均含 n 与分 missing_count 明细。"""
+        """Return exact groups, diagnostic dimensions, and severity summaries."""
         out: dict = {"by_group": {}, "by_dimension": {}, "overall": {}}
+        exact_means = {}
         for (scene, diff, split, mc), metrics in sorted(self.groups.items()):
             entry: dict = {"n": len(next(iter(metrics.values())))}
             for name, vals in metrics.items():
                 entry[name] = sum(vals) / len(vals)
-            out["by_group"][f"{scene}/{diff}/{split}/missing={mc}"] = entry
+            group_key = f"{scene}/{diff}/{split}/missing={mc}"
+            out["by_group"][group_key] = entry
+            exact_means[(scene, diff, split, mc)] = entry
+
+        out["by_severity"] = {}
+        severity_keys = sorted(
+            {
+                (scene, diff, split, classify_missing_severity(mc))
+                for scene, diff, split, mc in exact_means
+            }
+        )
+        for scene, diff, split, severity in severity_keys:
+            levels = next(
+                levels
+                for key, _, levels in MISSING_SEVERITY_BINS
+                if key == severity
+            )
+            level_entries = [
+                exact_means[(scene, diff, split, mc)]
+                for mc in levels
+                if (scene, diff, split, mc) in exact_means
+            ]
+            if not level_entries:
+                continue
+            entry = {
+                "n": sum(item["n"] for item in level_entries),
+                "label": MISSING_SEVERITY_LABELS[severity],
+                "missing_percentage_range":
+                    MISSING_SEVERITY_PERCENT_RANGES[severity],
+                "missing_levels": [
+                    mc for mc in levels
+                    if (scene, diff, split, mc) in exact_means
+                ],
+                "expected_missing_levels": list(levels),
+                "aggregation": "equal mean over missing_count means",
+            }
+            metric_names = set().union(*(item.keys() for item in level_entries))
+            metric_names.discard("n")
+            metric_names.discard("label")
+            metric_names.discard("missing_percentage_range")
+            metric_names.discard("missing_levels")
+            metric_names.discard("expected_missing_levels")
+            metric_names.discard("aggregation")
+            for name in sorted(metric_names):
+                values = [
+                    item[name] for item in level_entries
+                    if item.get(name) is not None
+                ]
+                if values:
+                    entry[name] = sum(values) / len(values)
+
+            baseline = exact_means.get((scene, diff, split, 0))
+            if baseline is not None:
+                for name in tuple(entry):
+                    if not name.startswith(("minADE", "minFDE")):
+                        continue
+                    if baseline.get(name) is not None:
+                        entry[f"{name}_delta_vs_missing0"] = (
+                            entry[name] - baseline[name]
+                        )
+                        if baseline[name] != 0:
+                            entry[f"{name}_relative_vs_missing0_pct"] = (
+                                100.0 * (entry[name] - baseline[name])
+                                / baseline[name]
+                            )
+            out["by_severity"][
+                f"{scene}/{diff}/{split}/severity={severity}"
+            ] = entry
+
         for dimension, values in sorted(self.dimension_groups.items()):
             out["by_dimension"][dimension] = {}
             for value, metrics in sorted(values.items(), key=lambda item: item[0]):

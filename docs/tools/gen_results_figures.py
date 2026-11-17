@@ -3,7 +3,8 @@
 用法：python docs/tools/gen_results_figures.py [--outdir docs/figures/results]
 
 - Fig 1  scene_benchmark：七方法五场景 minFDE20 / minADE20 dot plot（按宏平均排序）
-- Fig 2  missing_degradation：minFDE20 相对 missing=0 的退化比值（宏平均，log 轴）
+- Fig 2  missing_severity_degradation：三级分层的 minFDE20 相对退化百分比
+- Fig S1 missing_degradation：精确缺失帧数的 minFDE20 相对退化比值
 
 数据源复用 gen_leaderboard_tables.collect()，路径变更只需改该文件。
 """
@@ -20,7 +21,15 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "docs" / "tools"))
 sys.path.insert(0, str(REPO))
 
-from gen_leaderboard_tables import SCENES, collect  # noqa: E402
+from gen_leaderboard_tables import (  # noqa: E402
+    MISSING_SEVERITY_BINS,
+    MISSING_SEVERITY_LABELS_EN,
+    MISSING_SEVERITY_PERCENT_LABELS_EN,
+    SCENES,
+    collect,
+    exact_missing_records,
+    severity_macro,
+)
 
 # Okabe-Ito 色盲安全配色
 SCENE_COLOR = {
@@ -123,13 +132,10 @@ def fig_degradation(data, outdir):
             continue
         curves = []
         for s in SCENES:
-            bg = per[s]["_by_group"]
+            exact = exact_missing_records(per[s])
             values = []
             for i in range(8):
-                entry = (
-                    bg.get(f"{s}/TrajGap/test/missing={i}")
-                    or bg.get(f"{s}/TrajGap/test/missing={i}")
-                )
+                entry = exact.get(i)
                 values.append(
                     entry.get("minFDE20", entry.get("minFDE_K"))
                     if entry else np.nan
@@ -138,23 +144,82 @@ def fig_degradation(data, outdir):
             curves.append(c / c[0])
         ratio = np.mean(np.stack(curves), axis=0)
         ms = 3.4 if m == "GAST" else 2.8
-        ax.plot(range(8), ratio, linestyle=LINE_STYLE[m], color=LINE_COLOR[m],
+        missing_percent = np.arange(8) * 12.5
+        ax.plot(missing_percent, ratio, linestyle=LINE_STYLE[m],
+                color=LINE_COLOR[m],
                 marker="o", ms=ms, lw=1.6 if m == "GAST" else 1.1,
                 label=DISPLAY.get(m, m), zorder=5 if m == "GAST" else 3,
                 alpha=1.0 if m == "GAST" else 0.85)
-    ax.axvline(6.5, color="gray", lw=0.6, ls="--", alpha=0.6)
-    ax.text(6.42, 2.9, "single frame\nremains", fontsize=6.5, color="gray",
-            va="top", ha="right")
+    severity_bands = (
+        (-6.25, 31.25, "Near-complete\n(≤25%)"),
+        (31.25, 56.25, "Moderate\n(>25–50%)"),
+        (56.25, 93.75, "Severe\n(>50–87.5%)"),
+    )
+    colors = ("#EAF2F8", "#E8F6F3", "#FEF5E7")
+    for (left, right, label), color in zip(severity_bands, colors):
+        ax.axvspan(left, right, color=color, alpha=0.55, zorder=0)
+        ax.text(
+            (left + right) / 2,
+            0.98,
+            label,
+            transform=ax.get_xaxis_transform(),
+            ha="center",
+            va="top",
+            fontsize=5.8,
+            color="#555555",
+        )
     ax.set_yscale("log")
     ax.set_ylim(0.95, 5.0)
-    ax.set_xticks(range(8))
-    ax.set_xlabel("Number of missing history frames")
+    ax.set_xticks(np.arange(8) * 12.5)
+    ax.set_xticklabels([f"{value:g}%" for value in np.arange(8) * 12.5])
+    ax.set_xlabel("Missing history (% of 8 frames)")
     ax.set_ylabel(r"$\mathrm{minFDE}_{20}$ ratio vs.\ missing$=$0")
     ax.grid(lw=0.4, alpha=0.35, which="both")
     ax.legend(frameon=False, loc="lower right", handlelength=1.8,
               bbox_to_anchor=(1.0, 0.02))
     for ext in ("pdf", "png"):
-        fig.savefig(outdir / f"missing_degradation.{ext}")
+        fig.savefig(outdir / f"missing_degradation_exact.{ext}")
+    plt.close(fig)
+
+
+def fig_severity_degradation(data, outdir):
+    fig, ax = plt.subplots(figsize=(3.8, 2.7), dpi=300,
+                           constrained_layout=True)
+    positions = np.arange(len(MISSING_SEVERITY_BINS))
+    for method in MISSING_METHODS:
+        values = [
+            severity_macro(
+                data, method, severity_key,
+                "minFDE_K_relative_vs_missing0_pct",
+            )
+            for severity_key, _, _ in MISSING_SEVERITY_BINS
+        ]
+        if any(value is None for value in values):
+            continue
+        ax.plot(
+            positions,
+            values,
+            linestyle=LINE_STYLE[method],
+            color=LINE_COLOR[method],
+            marker="o",
+            ms=3.8 if method == "GAST" else 3.2,
+            lw=1.6 if method == "GAST" else 1.1,
+            label=DISPLAY.get(method, method),
+            zorder=5 if method == "GAST" else 3,
+        )
+    ax.axhline(0.0, color="gray", lw=0.7, ls="--", alpha=0.7)
+    ax.set_xticks(positions)
+    ax.set_xticklabels([
+        f"{MISSING_SEVERITY_LABELS_EN[key]}\n"
+        f"({MISSING_SEVERITY_PERCENT_LABELS_EN[key]})"
+        for key, _, levels in MISSING_SEVERITY_BINS
+    ])
+    ax.set_xlabel("Missing-history severity (% of 8 frames)")
+    ax.set_ylabel(r"$\mathrm{minFDE}_{20}$ change vs. missing$=0$ (%)")
+    ax.grid(axis="y", lw=0.4, alpha=0.35)
+    ax.legend(frameon=False, loc="upper left", handlelength=1.8)
+    for ext in ("pdf", "png"):
+        fig.savefig(outdir / f"missing_severity_degradation.{ext}")
     plt.close(fig)
 
 
@@ -166,9 +231,11 @@ def main():
     outdir.mkdir(parents=True, exist_ok=True)
     data = collect()
     fig_benchmark(data, outdir)
+    fig_severity_degradation(data, outdir)
     fig_degradation(data, outdir)
     print(f"written to {outdir}/scene_benchmark.{{pdf,png}} "
-          f"missing_degradation.{{pdf,png}}")
+          f"missing_severity_degradation.{{pdf,png}} "
+          f"missing_degradation_exact.{{pdf,png}}")
 
 
 if __name__ == "__main__":

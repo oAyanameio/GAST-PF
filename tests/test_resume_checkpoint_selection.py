@@ -217,6 +217,63 @@ def test_resume_preflight_accepts_matching_contract(tmp_path):
     ) == checkpoint
 
 
+def test_resume_accepts_checkpoint_created_before_observation_prior_rename(tmp_path):
+    from run_trajimpute_experiments import (
+        latest_valid_resume_checkpoint,
+        validate_resume_manifest,
+    )
+
+    old_parameter_name = "net.observation_encoder.state_strength_decay_logit"
+    new_parameter_name = (
+        "net.observation_encoder.observation_prior_strength_decay_logit"
+    )
+    old_signature = [{
+        "weight_decay": 0.01,
+        "parameters": [{"name": old_parameter_name, "shape": [1]}],
+    }]
+    new_signature = [{
+        "weight_decay": 0.01,
+        "parameters": [{"name": new_parameter_name, "shape": [1]}],
+    }]
+    old_contract = {
+        "contract_version": 2,
+        "model_version": "GAST-content-only-readout",
+        "model_config": {
+            "use_state_strength_modulation": True,
+            "use_state_strength_readout": False,
+        },
+        "optimizer_signature": old_signature,
+    }
+    new_contract = {
+        "contract_version": 2,
+        "model_version": "GAST-content-only-history-aggregation",
+        "model_config": {
+            "use_observation_prior_strength_modulation": True,
+            "use_observation_prior_strength_history_aggregation": False,
+        },
+        "optimizer_signature": new_signature,
+    }
+    old_manifest = {"resume_contract": old_contract}
+    new_manifest = {"resume_contract": new_contract}
+    validate_resume_manifest(old_manifest, new_manifest)
+
+    checkpoint_dir = tmp_path / "checkpoints"
+    checkpoint_dir.mkdir()
+    checkpoint = checkpoint_dir / "last.ckpt"
+    _write_checkpoint(
+        checkpoint,
+        epoch=10,
+        global_step=100,
+        state_dict={old_parameter_name: torch.ones(1)},
+        contract=old_contract,
+        signature=old_signature,
+    )
+
+    assert latest_valid_resume_checkpoint(
+        checkpoint_dir, new_manifest, new_signature
+    ) == checkpoint
+
+
 def test_resume_preflight_rejects_missing_optimizer_signature(tmp_path):
     from run_trajimpute_experiments import latest_valid_resume_checkpoint
 

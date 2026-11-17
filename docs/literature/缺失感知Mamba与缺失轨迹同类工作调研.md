@@ -41,7 +41,7 @@
 | C. 时间感知结构改造 | **TIDES** (Barreira et al.) | arXiv 2605.09742 (2026-05) | 把 input-dependence 从 Δ 移到对角状态矩阵 A，Δ 恢复物理时间间隔含义→不规则时间戳原生处理 | 与 B 族本质不同（不是给 Δ 加条件项而是重定位选择性）；轨迹上未见过；有 Fading Flash 诊断基准+代码 |
 | C. 时间感知结构改造 | ReTAMamba (Kim & Park) | arXiv 2605.16380 (2026-05) | 不规则临床时序→time-variable token 序列，观测可靠性（缺失度+耗时）估计+多分辨率区间统计描述符 | token 级可靠性聚合思想可与 evidence 特征共用 |
 | C. 时间感知（非 Mamba） | VISTA-SSM (Brindle et al.) | arXiv 2410.21527 | LGSSM 参数化混合，变采样率聚类 | 统计建模路线，弱相关 |
-| D. mask 缩放扫描 | **Sports-Traj BTS** (Xu et al.) | ICLR 2025 | 按缺失年龄生成逐通道特征缩放系数，再输入 Mamba；属于输入特征调制，不是 selective scan 的 Δ 条件化 | 轨迹生成（补全+预测）相关工作；其机制与 GAST 的状态强度调制相关，但不等同于当前时序聚合实现 |
+| D. mask 缩放扫描 | **Sports-Traj BTS** (Xu et al.) | ICLR 2025 | 按缺失年龄生成逐通道特征缩放系数，再输入 Mamba；属于输入特征调制，不是 selective scan 的 Δ 条件化 | 轨迹生成（补全+预测）相关工作；其机制与 GAST 的观测先验强度调制相关，但不等同于当前时序聚合实现 |
 | E. 扩散插补骨干 | SSSD (Alcaraz & Strodthoff) | 2022 | S4 层作扩散去噪骨干，只对缺失区加噪 | 插补经典 |
 | F. 轨迹 Mamba（非缺失） | **Social-Mamba** (Luan et al., EPFL) | ECCV 2026 | Cycle Mamba；社会三元分解（时间/自我/目标中心扫描）；已嵌入 MoFlow 框架验证 | 无缺失处理；说明 Mamba 编码器可嵌入流匹配轨迹框架 |
 | F. 轨迹 Mamba（非缺失） | Multi-scale Mamba-LSTM (CVAE) | Neurocomputing 2025 | GAT+Mamba 混合专家 | 无缺失处理 |

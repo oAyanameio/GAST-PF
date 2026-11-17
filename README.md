@@ -14,15 +14,15 @@ GAST-PF 是面向**缺失历史直接未来预测**的研究代码库，包含�
 
 ## 方法概览
 
-GAST 由观测状态感知时空编码器和终点引导解码器组成。编码器根据有效性掩码和缺失时长估计状态强度，并将其用于逐帧交互建模与历史信息汇总：
+GAST 由观测先验感知时空编码器和终点引导解码器组成。编码器根据有效性掩码和缺失时长构造观测先验及其强度，并将观测先验用于逐帧交互建模、将观测先验强度用于时序调制与历史状态聚合：
 
 ```text
 GAST
-├── 观测状态感知时空编码器
+├── 观测先验感知时空编码器
 │   ├── 逐帧交互建模
-│   └── 状态强度加权的时序聚合（状态强度调制的 Mamba 与历史状态汇总）
+│   └── 观测先验强度加权的时序聚合（Mamba 输入调制与历史状态聚合）
 └── 终点引导解码器
-    ├── 使用末次有效观测状态和实际预测间隔
+    ├── 使用末次有效观测信息和实际预测间隔
     ├── 多模态终点预测与未来轨迹生成
     └── 双指派多模态训练目标（dual-assignment multimodal objective，`loss_mode=final_consistent`）+ mode diversity regularization
 ```
@@ -88,7 +88,7 @@ python eval.py checkpoint='/path/to/ckpt' test=true
 ```text
 conf/                 Hydra 配置（TrajImpute 主线与对照；模型见 conf/model/）
 src/model/            TrajectoryForecaster、loss 与 LightningModule
-src/model/layers/     observation_state_encoder.py（观测状态编码、逐帧交互建模、状态强度聚合）、
+src/model/layers/     observation_state_encoder.py（观测先验编码、逐帧交互建模、观测先验强度聚合）、
                       goal_guided_decoder.py（终点引导解码器）、
                       mamba
 src/datamodule/       TrajImpute（TrajGapDataset）数据管线

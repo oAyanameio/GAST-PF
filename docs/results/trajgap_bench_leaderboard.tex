@@ -53,10 +53,48 @@
     \bottomrule
   \end{tabular}
 \end{table}
+\begin{table*}[t]
+  \centering
+  \caption{Three-level missing-history stratification by missing percentage
+  of the eight-frame history. Each bin is averaged equally over its exact
+  discrete levels, then over scenes.}
+  \label{tab:tgbench-severity}
+  \small
+  \setlength{\tabcolsep}{2pt}
+  \resizebox{\textwidth}{!}{%
+  \begin{tabular}{l c c c c c c }
+    \toprule
+    Severity (missing percentage) & GAST (minADE$_{20}$/minFDE$_{20}$) & MoFlow (minADE$_{20}$/minFDE$_{20}$) & AgentFormer (minADE$_{20}$/minFDE$_{20}$) & Re (minADE$_{20}$/minFDE$_{20}$) & MS-TIP (minADE$_{20}$/minFDE$_{20}$) & Social-STGCNN (minADE$_{20}$/minFDE$_{20}$) \\
+    \midrule
+    Near-complete (≤25%) & \textbf{0.2211} / \textbf{0.3659} & 0.2393 / 0.3884 & 0.2746 / 0.4704 & 0.3946 / 0.6896 & 0.9821 / 1.1723 & 0.8812 / 1.5251 \\
+    Moderate (>25–50%) & \textbf{0.2388} / \textbf{0.3815} & 0.2777 / 0.4297 & 0.3010 / 0.4934 & 0.5760 / 0.8899 & 1.0565 / 1.2437 & 1.2101 / 2.1223 \\
+    Severe (>50–87.5%) & \textbf{0.4889} / \textbf{0.7005} & 0.5294 / 0.7484 & 0.5948 / 0.8767 & 0.9271 / 1.3319 & 1.5001 / 1.7486 & 1.9169 / 3.1518 \\
+    \bottomrule
+  \end{tabular}%
+  }
+\end{table*}
+
 \begin{table}[t]
   \centering
-  \caption{Five-scene macro-average minFDE$_{20}$ by missing history frames.}
-  \label{tab:tgbench-missing}
+  \caption{Relative minFDE$_{20}$ degradation versus exact missing=0.}
+  \label{tab:tgbench-severity-relative}
+  \small
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{l c c c c c c }
+    \toprule
+    Severity & GAST & MoFlow & AgentFormer & Re & MS-TIP & Social-STGCNN \\
+    \midrule
+    Near-complete & 1.35\% & 2.47\% & 2.50\% & 3.23\% & 4.12\% & 11.04\% \\
+    Moderate & 5.90\% & 14.57\% & 8.11\% & 41.58\% & 10.88\% & 60.33\% \\
+    Severe & 119.74\% & 116.89\% & 97.82\% & 116.75\% & 56.78\% & 142.09\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[t]
+  \centering
+  \caption{Appendix: exact discrete missing-level macro-average minFDE$_{20}$.}
+  \label{tab:tgbench-missing-exact}
   \small
   \setlength{\tabcolsep}{2pt}
   \resizebox{\textwidth}{!}{%
@@ -64,14 +102,14 @@
     \toprule
     \#missing & GAST & MoFlow & AgentFormer & Re & MS-TIP & Social-STGCNN \\
     \midrule
-    0 & \textbf{0.3590} & 0.3793 & 0.4575 & 0.7113 & 1.1231 & 1.3903 \\
-    1 & \textbf{0.3632} & 0.3889 & 0.4811 & 0.6771 & 1.1810 & 1.4912 \\
-    2 & \textbf{0.3756} & 0.3968 & 0.4726 & 0.6804 & 1.2128 & 1.6938 \\
-    3 & \textbf{0.3777} & 0.4254 & 0.4856 & 0.8266 & 1.2016 & 1.9453 \\
-    4 & \textbf{0.3854} & 0.4341 & 0.5012 & 0.9533 & 1.2859 & 2.2993 \\
-    5 & \textbf{0.4002} & 0.4695 & 0.5395 & 1.0994 & 1.4487 & 2.6822 \\
-    6 & \textbf{0.4281} & 0.5534 & 0.6118 & 1.3166 & 1.7603 & 3.1150 \\
-    7 & 1.2731 & \textbf{1.2224} & 1.4787 & 1.5797 & 2.0369 & 3.6583 \\
+    0 & 0.3590 & 0.3793 & 0.4575 & 0.7113 & 1.1231 & 1.3903 \\
+    1 & 0.3632 & 0.3889 & 0.4811 & 0.6771 & 1.1810 & 1.4912 \\
+    2 & 0.3756 & 0.3968 & 0.4726 & 0.6804 & 1.2128 & 1.6938 \\
+    3 & 0.3777 & 0.4254 & 0.4856 & 0.8266 & 1.2016 & 1.9453 \\
+    4 & 0.3854 & 0.4341 & 0.5012 & 0.9533 & 1.2859 & 2.2993 \\
+    5 & 0.4002 & 0.4695 & 0.5395 & 1.0994 & 1.4487 & 2.6822 \\
+    6 & 0.4281 & 0.5534 & 0.6118 & 1.3166 & 1.7603 & 3.1150 \\
+    7 & 1.2731 & 1.2224 & 1.4787 & 1.5797 & 2.0369 & 3.6583 \\
     \bottomrule
   \end{tabular}%
   }

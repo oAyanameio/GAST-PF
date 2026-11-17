@@ -1,12 +1,12 @@
 import torch
 import torch.nn as nn
 from .layers.goal_guided_decoder import GoalGuidedDecoder
-from .layers.observation_state_encoder import ObservationStateEncoder
+from .layers.observation_state_encoder import ObservationPriorEncoder
 
 
 # Actor-centric trajectory forecaster.
 class TrajectoryForecaster(nn.Module):
-    """组装 GAST：观测状态编码器编码历史，终点引导解码器生成未来。"""
+    """组装 GAST：观测先验编码器编码历史，终点引导解码器生成未来。"""
 
     def __init__(
         self,
@@ -26,8 +26,8 @@ class TrajectoryForecaster(nn.Module):
         mode_diversity_margin: float = 0.5,
         use_interaction_bias: bool = True,
         use_source_filter: bool = True,
-        use_state_strength_modulation: bool = True,
-        use_state_strength_readout: bool = True,
+        use_observation_prior_strength_modulation: bool = True,
+        use_observation_prior_strength_history_aggregation: bool = True,
         use_goal_guidance: bool = True,
     ) -> None:
         super().__init__()
@@ -40,8 +40,12 @@ class TrajectoryForecaster(nn.Module):
         self.mode_diversity_margin = float(mode_diversity_margin)
         self.use_interaction_bias = bool(use_interaction_bias)
         self.use_source_filter = bool(use_source_filter)
-        self.use_state_strength_modulation = bool(use_state_strength_modulation)
-        self.use_state_strength_readout = bool(use_state_strength_readout)
+        self.use_observation_prior_strength_modulation = bool(
+            use_observation_prior_strength_modulation
+        )
+        self.use_observation_prior_strength_history_aggregation = bool(
+            use_observation_prior_strength_history_aggregation
+        )
         self.use_goal_guidance = bool(use_goal_guidance)
         hist_input_dim = 4
 
@@ -63,7 +67,7 @@ class TrajectoryForecaster(nn.Module):
         # Keep encoder initialization independent from the decoder architecture.
         rng_state = torch.random.get_rng_state()
         torch.random.set_rng_state(encoder_rng_state)
-        self.observation_encoder = ObservationStateEncoder(
+        self.observation_encoder = ObservationPriorEncoder(
             input_dim=hist_input_dim,
             embed_dim=embed_dim,
             num_heads=num_heads,
@@ -73,8 +77,12 @@ class TrajectoryForecaster(nn.Module):
             drop_path=drop_path,
             use_interaction_bias=use_interaction_bias,
             use_source_filter=use_source_filter,
-            use_state_strength_modulation=self.use_state_strength_modulation,
-            use_state_strength_readout=self.use_state_strength_readout,
+            use_observation_prior_strength_modulation=(
+                self.use_observation_prior_strength_modulation
+            ),
+            use_observation_prior_strength_history_aggregation=(
+                self.use_observation_prior_strength_history_aggregation
+            ),
         )
         torch.random.set_rng_state(rng_state)
 

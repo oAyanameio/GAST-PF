@@ -1,9 +1,9 @@
-"""GAST 观测状态编码器的实现。
+"""GAST 观测先验编码器的实现。
 
 公开名称与实现类对应关系：
-- 观测状态感知时空编码器：ObservationStateEncoder
+- 观测先验感知时空编码器：ObservationPriorEncoder
 - 逐帧交互建模：FramewiseInteractionModel
-- 状态强度加权的时序聚合：StateStrengthTemporalAggregation
+- 观测先验强度加权的时序聚合：ObservationPriorStrengthTemporalAggregation
 
 以上类名是代码实现标识，公开说明使用左侧名称。
 """
@@ -15,12 +15,12 @@ from mamba_ssm.ops.triton.layernorm import RMSNorm, rms_norm_fn
 from .mamba.mamba_block import create_mamba_block
 
 
-def build_observation_state(
+def build_observation_prior(
     valid_mask: torch.Tensor,
     tau: torch.Tensor | float,
     key_padding: torch.Tensor | None = None,
 ):
-    """Construct observation eligibility, age, and state-strength tensors."""
+    """Construct observation eligibility, age, and prior-strength tensors."""
     observed = valid_mask.bool()
     if key_padding is not None:
         observed = observed & ~key_padding.bool().unsqueeze(-1)
@@ -30,14 +30,16 @@ def build_observation_state(
     last_observed = torch.where(observed, steps, -1).cummax(dim=-1).values
     age = torch.where(last_observed >= 0, steps - last_observed, steps + 1)
     tau_tensor = torch.as_tensor(tau, dtype=torch.float32, device=observed.device)
-    state_strength = torch.where(
+    observation_prior_strength = torch.where(
         observed,
         torch.ones_like(age, dtype=torch.float32),
         torch.exp(-tau_tensor * age.float()),
     )
     if key_padding is not None:
-        state_strength = state_strength * (~key_padding.bool()).unsqueeze(-1)
-    return observed.to(torch.float32), state_strength, age.to(torch.float32)
+        observation_prior_strength = (
+            observation_prior_strength * (~key_padding.bool()).unsqueeze(-1)
+        )
+    return observed.to(torch.float32), observation_prior_strength, age.to(torch.float32)
 
 
 def build_framewise_interaction_features(
@@ -92,28 +94,30 @@ def build_framewise_interaction_features(
     return features
 
 
-def aggregate_history_by_state_strength(
+def aggregate_history_by_observation_prior_strength(
     hidden: torch.Tensor,
-    state_strength: torch.Tensor,
+    observation_prior_strength: torch.Tensor,
     content_scores: torch.Tensor,
     beta: torch.Tensor | float = 1.0,
     eps: float = 1e-8,
-    use_state_strength_weighting: bool = True,
+    use_observation_prior_strength_weighting: bool = True,
 ):
-    """Aggregate temporal states using content scores and state strength."""
+    """Aggregate temporal states using content scores and observation-prior strength."""
     logits = content_scores.squeeze(-1)
-    if use_state_strength_weighting:
+    if use_observation_prior_strength_weighting:
         logits = logits + torch.as_tensor(
             beta, dtype=hidden.dtype, device=hidden.device
-        ) * torch.log(state_strength.to(hidden.dtype).clamp_min(eps))
+        ) * torch.log(observation_prior_strength.to(hidden.dtype).clamp_min(eps))
     weights = torch.softmax(logits, dim=-1)
     weighted_history = torch.sum(weights.unsqueeze(-1) * hidden, dim=-2)
-    if not use_state_strength_weighting:
+    if not use_observation_prior_strength_weighting:
         return weighted_history, weights
-    terminal_state_strength = state_strength[..., -1].unsqueeze(-1).to(hidden.dtype)
+    terminal_observation_prior_strength = (
+        observation_prior_strength[..., -1].unsqueeze(-1).to(hidden.dtype)
+    )
     output = (
-        terminal_state_strength * hidden[..., -1, :]
-        + (1.0 - terminal_state_strength) * weighted_history
+        terminal_observation_prior_strength * hidden[..., -1, :]
+        + (1.0 - terminal_observation_prior_strength) * weighted_history
     )
     return output, weights
 
@@ -287,8 +291,8 @@ class FramewiseInteractionModel(nn.Module):
         return y
 
 
-class StateStrengthMamba(nn.Module):
-    """状态强度加权时序聚合内部的 Mamba 输入调制环节。"""
+class ObservationPriorStrengthMamba(nn.Module):
+    """观测先验强度加权时序聚合内部的 Mamba 输入调制环节。"""
 
     def __init__(
         self,
@@ -296,10 +300,12 @@ class StateStrengthMamba(nn.Module):
         depth: int = 4,
         p_dropout: float = 0.2,
         drop_path: float = 0.2,
-        use_state_strength_modulation: bool = True,
+        use_observation_prior_strength_modulation: bool = True,
     ):
         super().__init__()
-        self.use_state_strength_modulation = bool(use_state_strength_modulation)
+        self.use_observation_prior_strength_modulation = bool(
+            use_observation_prior_strength_modulation
+        )
         self.mlp = nn.Sequential(
             nn.Linear(model_dim, model_dim),
             nn.LayerNorm(model_dim),
@@ -339,27 +345,31 @@ class StateStrengthMamba(nn.Module):
     def forward(
         self,
         x_b_t_n_c: torch.Tensor,
-        state_strength: torch.Tensor,
+        observation_prior_strength: torch.Tensor,
     ):
         """Return forward-only temporal states with shape ``[B,N,T,C]``."""
         B, T, N, C = x_b_t_n_c.shape
         x_forw = self.mlp(x_b_t_n_c).permute(0, 2, 1, 3).reshape(B * N, T, C)
-        if self.use_state_strength_modulation:
-            strength_flat = state_strength.reshape(B * N, T, 1).to(x_forw.dtype)
+        if self.use_observation_prior_strength_modulation:
+            strength_flat = observation_prior_strength.reshape(B * N, T, 1).to(
+                x_forw.dtype
+            )
             x_forw = x_forw * strength_flat
         hidden = self._run(x_forw)
         return hidden.reshape(B, N, T, C)
 
-class StateStrengthHistoryReadout(nn.Module):
-    """状态强度加权时序聚合内部的历史状态读出环节。"""
+class ObservationPriorStrengthHistoryAggregation(nn.Module):
+    """观测先验强度加权时序聚合内部的历史状态聚合环节。"""
 
     def __init__(
         self,
         embed_dim: int,
-        use_state_strength_readout: bool = True,
+        use_observation_prior_strength_history_aggregation: bool = True,
     ):
         super().__init__()
-        self.use_state_strength_readout = bool(use_state_strength_readout)
+        self.use_observation_prior_strength_history_aggregation = bool(
+            use_observation_prior_strength_history_aggregation
+        )
         self.score = nn.Linear(embed_dim, 1)
         nn.init.zeros_(self.score.weight)
         nn.init.zeros_(self.score.bias)
@@ -368,19 +378,21 @@ class StateStrengthHistoryReadout(nn.Module):
     def forward(
         self,
         hidden: torch.Tensor,
-        state_strength: torch.Tensor,
+        observation_prior_strength: torch.Tensor,
     ):
-        return aggregate_history_by_state_strength(
+        return aggregate_history_by_observation_prior_strength(
             hidden,
-            state_strength,
+            observation_prior_strength,
             self.score(hidden),
             beta=self.beta,
-            use_state_strength_weighting=self.use_state_strength_readout,
+            use_observation_prior_strength_weighting=(
+                self.use_observation_prior_strength_history_aggregation
+            ),
         )
 
 
-class StateStrengthTemporalAggregation(nn.Module):
-    """实现“状态强度加权的时序聚合”，组合 Mamba 输入调制与历史状态读出。"""
+class ObservationPriorStrengthTemporalAggregation(nn.Module):
+    """实现“观测先验强度加权的时序聚合”，组合输入调制与历史状态聚合。"""
 
     def __init__(
         self,
@@ -388,36 +400,49 @@ class StateStrengthTemporalAggregation(nn.Module):
         depth: int,
         p_dropout: float = 0.2,
         drop_path: float = 0.2,
-        use_state_strength_modulation: bool = True,
-        use_state_strength_readout: bool = True,
+        use_observation_prior_strength_modulation: bool = True,
+        use_observation_prior_strength_history_aggregation: bool = True,
     ):
         super().__init__()
-        self.mamba = StateStrengthMamba(
+        self.mamba = ObservationPriorStrengthMamba(
             embed_dim,
             depth=depth,
             p_dropout=p_dropout,
             drop_path=drop_path,
-            use_state_strength_modulation=use_state_strength_modulation,
+            use_observation_prior_strength_modulation=(
+                use_observation_prior_strength_modulation
+            ),
         )
-        self.history_readout = StateStrengthHistoryReadout(
+        self.history_aggregation = ObservationPriorStrengthHistoryAggregation(
             embed_dim,
-            use_state_strength_readout=use_state_strength_readout,
+            use_observation_prior_strength_history_aggregation=(
+                use_observation_prior_strength_history_aggregation
+            ),
         )
 
     def forward(
         self,
         interaction_states: torch.Tensor,
-        state_strength: torch.Tensor,
+        observation_prior_strength: torch.Tensor,
     ):
         hidden = self.mamba(
             interaction_states,
-            state_strength=state_strength,
+            observation_prior_strength=observation_prior_strength,
         )
-        return self.history_readout(hidden, state_strength)
+        return self.history_aggregation(hidden, observation_prior_strength)
 
 
-class ObservationStateEncoder(nn.Module):
-    """实现“观测状态感知时空编码器”，包含逐帧交互建模和状态强度加权的时序聚合。"""
+class ObservationPriorEncoder(nn.Module):
+    """实现观测先验感知时空编码器及观测先验强度加权时序聚合。"""
+
+    _LEGACY_STATE_DICT_PREFIXES = (
+        ("state_strength_decay_logit", "observation_prior_strength_decay_logit"),
+        ("state_strength_aggregation.", "observation_prior_strength_aggregation."),
+        (
+            "observation_prior_strength_aggregation.history_readout.",
+            "observation_prior_strength_aggregation.history_aggregation.",
+        ),
+    )
 
     def __init__(
         self,
@@ -430,8 +455,8 @@ class ObservationStateEncoder(nn.Module):
         drop_path: float = 0.2,
         use_interaction_bias: bool = True,
         use_source_filter: bool = True,
-        use_state_strength_modulation: bool = True,
-        use_state_strength_readout: bool = True,
+        use_observation_prior_strength_modulation: bool = True,
+        use_observation_prior_strength_history_aggregation: bool = True,
     ):
         super().__init__()
         self.framewise_interaction = FramewiseInteractionModel(
@@ -443,19 +468,58 @@ class ObservationStateEncoder(nn.Module):
             use_interaction_bias=use_interaction_bias,
             use_source_filter=use_source_filter,
         )
-        self.state_strength_decay_logit = nn.Parameter(torch.tensor(-2.2521685))
-        self.state_strength_aggregation = StateStrengthTemporalAggregation(
-            embed_dim,
-            depth=depth,
-            p_dropout=p_dropout,
-            drop_path=drop_path,
-            use_state_strength_modulation=use_state_strength_modulation,
-            use_state_strength_readout=use_state_strength_readout,
+        self.observation_prior_strength_decay_logit = nn.Parameter(
+            torch.tensor(-2.2521685)
+        )
+        self.observation_prior_strength_aggregation = (
+            ObservationPriorStrengthTemporalAggregation(
+                embed_dim,
+                depth=depth,
+                p_dropout=p_dropout,
+                drop_path=drop_path,
+                use_observation_prior_strength_modulation=(
+                    use_observation_prior_strength_modulation
+                ),
+                use_observation_prior_strength_history_aggregation=(
+                    use_observation_prior_strength_history_aggregation
+                ),
+            )
         )
 
     @property
-    def state_strength_decay(self):
-        return torch.nn.functional.softplus(self.state_strength_decay_logit)
+    def observation_prior_strength_decay(self):
+        return torch.nn.functional.softplus(self.observation_prior_strength_decay_logit)
+
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
+        # Preserve loading of checkpoints created before the terminology rename.
+        for old_name, new_name in self._LEGACY_STATE_DICT_PREFIXES:
+            old_prefix = f"{prefix}{old_name}"
+            new_prefix = f"{prefix}{new_name}"
+            for old_key in tuple(state_dict):
+                if not old_key.startswith(old_prefix):
+                    continue
+                new_key = f"{new_prefix}{old_key[len(old_prefix):]}"
+                if new_key not in state_dict:
+                    state_dict[new_key] = state_dict[old_key]
+                state_dict.pop(old_key)
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
 
     def forward(
         self,
@@ -468,8 +532,8 @@ class ObservationStateEncoder(nn.Module):
         mask = valid_mask.permute(0, 2, 1).float()
         padding = key_padding
 
-        source_eligibility, state_strength, _ = build_observation_state(
-            valid_mask, self.state_strength_decay, padding
+        source_eligibility, observation_prior_strength, _ = build_observation_prior(
+            valid_mask, self.observation_prior_strength_decay, padding
         )
         interaction_states = self.framewise_interaction(
             x,
@@ -478,8 +542,8 @@ class ObservationStateEncoder(nn.Module):
             positions=positions,
             source_eligibility=source_eligibility,
         )
-        output, _ = self.state_strength_aggregation(
-            interaction_states, state_strength
+        output, _ = self.observation_prior_strength_aggregation(
+            interaction_states, observation_prior_strength
         )
 
         return output * (~padding).unsqueeze(-1).to(output.dtype)

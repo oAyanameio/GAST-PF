@@ -21,6 +21,9 @@ import torch
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 BENCHMARK_NAME = "TrajGap-Bench"
+LEGACY_VARIANT_ALIASES = {
+    "GAST-content-only-readout": "GAST-content-only-history-aggregation",
+}
 
 from src.datamodule.trajimpute_dataset import (  # noqa: E402
     TRAJGAP_DATASET_LABEL,
@@ -38,8 +41,8 @@ VARIANTS = {
         "mode_diversity_margin": 0.5,
         "use_interaction_bias": True,
         "use_source_filter": True,
-        "use_state_strength_modulation": True,
-        "use_state_strength_readout": True,
+        "use_observation_prior_strength_modulation": True,
+        "use_observation_prior_strength_history_aggregation": True,
         "use_goal_guidance": True,
     },
     "GAST-no-interaction-bias": {
@@ -47,7 +50,7 @@ VARIANTS = {
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05, "mode_diversity_margin": 0.5,
         "use_interaction_bias": False, "use_source_filter": True,
-        "use_state_strength_modulation": True, "use_state_strength_readout": True,
+        "use_observation_prior_strength_modulation": True, "use_observation_prior_strength_history_aggregation": True,
         "use_goal_guidance": True,
     },
     "GAST-no-source-filter": {
@@ -55,7 +58,7 @@ VARIANTS = {
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05, "mode_diversity_margin": 0.5,
         "use_interaction_bias": True, "use_source_filter": False,
-        "use_state_strength_modulation": True, "use_state_strength_readout": True,
+        "use_observation_prior_strength_modulation": True, "use_observation_prior_strength_history_aggregation": True,
         "use_goal_guidance": True,
     },
     "GAST-no-state-strength-modulation": {
@@ -63,15 +66,15 @@ VARIANTS = {
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05, "mode_diversity_margin": 0.5,
         "use_interaction_bias": True, "use_source_filter": True,
-        "use_state_strength_modulation": False, "use_state_strength_readout": True,
+        "use_observation_prior_strength_modulation": False, "use_observation_prior_strength_history_aggregation": True,
         "use_goal_guidance": True,
     },
-    "GAST-content-only-readout": {
+    "GAST-content-only-history-aggregation": {
         "encoder_depth": 4, "interaction_operator": "max",
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05, "mode_diversity_margin": 0.5,
         "use_interaction_bias": True, "use_source_filter": True,
-        "use_state_strength_modulation": True, "use_state_strength_readout": False,
+        "use_observation_prior_strength_modulation": True, "use_observation_prior_strength_history_aggregation": False,
         "use_goal_guidance": True,
     },
     "GAST-no-goal-guidance": {
@@ -79,7 +82,7 @@ VARIANTS = {
         "goal_endpoint_loss_weight": 1.0,
         "mode_diversity_loss_weight": 0.05, "mode_diversity_margin": 0.5,
         "use_interaction_bias": True, "use_source_filter": True,
-        "use_state_strength_modulation": True, "use_state_strength_readout": True,
+        "use_observation_prior_strength_modulation": True, "use_observation_prior_strength_history_aggregation": True,
         "use_goal_guidance": False,
     },
 }
@@ -108,6 +111,10 @@ def build_model(variant: str, num_modes: int):
     return TrajectoryForecaster(**model_config)
 
 
+def canonical_variant_name(name: str) -> str:
+    return LEGACY_VARIANT_ALIASES.get(name, name)
+
+
 def load_checkpoint(model, ckpt_path, expected_variant=None):
     ckpt = torch.load(ckpt_path, map_location="cpu")
     model_config = ckpt.get("hyper_parameters", {}).get("model", {})
@@ -124,6 +131,8 @@ def load_checkpoint(model, ckpt_path, expected_variant=None):
     )
     configured_variant = model_config.get("model_version")
     required_variant = expected_variant or configured_variant
+    checkpoint_variant = canonical_variant_name(checkpoint_variant) if checkpoint_variant else None
+    required_variant = canonical_variant_name(required_variant) if required_variant else None
     if (
         checkpoint_variant
         and required_variant
@@ -139,13 +148,25 @@ def load_checkpoint(model, ckpt_path, expected_variant=None):
         "mode_diversity_margin",
         "use_interaction_bias",
         "use_source_filter",
-        "use_state_strength_modulation",
-        "use_state_strength_readout",
+        "use_observation_prior_strength_modulation",
+        "use_observation_prior_strength_history_aggregation",
         "use_goal_guidance",
     ):
-        checkpoint_value = (
-            model_config.get(key) if hasattr(model_config, "get") else None
-        )
+        legacy_keys = {
+            "use_observation_prior_strength_modulation": (
+                "use_state_strength_modulation",
+            ),
+            "use_observation_prior_strength_history_aggregation": (
+                "use_state_strength_readout",
+                "use_observation_prior_strength_readout",
+            ),
+        }.get(key, ())
+        checkpoint_value = model_config.get(key) if hasattr(model_config, "get") else None
+        if checkpoint_value is None and hasattr(model_config, "get"):
+            for legacy_key in legacy_keys:
+                checkpoint_value = model_config.get(legacy_key)
+                if checkpoint_value is not None:
+                    break
         if checkpoint_value is not None and checkpoint_value != getattr(model, key):
             raise ValueError(
                 f"checkpoint {key}={checkpoint_value} does not match "
@@ -313,6 +334,13 @@ def main():
     for g, entry in sorted(results["by_group"].items()):
         print(
             f"  {g}: n={entry['n']} minADE{args.K}={entry[f'minADE{args.K}']:.4f} "
+            f"minFDE{args.K}={entry[f'minFDE{args.K}']:.4f}"
+        )
+    print("[severity bins]")
+    for g, entry in sorted(results.get("by_severity", {}).items()):
+        print(
+            f"  {g}: levels={entry['missing_levels']} n={entry['n']} "
+            f"minADE{args.K}={entry[f'minADE{args.K}']:.4f} "
             f"minFDE{args.K}={entry[f'minFDE{args.K}']:.4f}"
         )
 

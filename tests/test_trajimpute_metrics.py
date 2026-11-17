@@ -10,7 +10,8 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from src.evaluation.trajimpute_direct import (  # noqa: E402
-    evaluate_predictions, DirectEvaluator,
+    classify_missing_severity, missing_percentage, evaluate_predictions,
+    DirectEvaluator,
 )
 from src.datamodule.trajimpute_dataset import (  # noqa: E402
     TRAJIMPUTE_ROOT, TrajImputeDataset,
@@ -78,6 +79,38 @@ def test_evaluator_grouping_manual():
     assert out["overall"]["n"] == 2
     assert out["aggregation"] == "unweighted mean over focal samples"
     assert set(out["overall"]) == {"minADE2", "minFDE2", "n"}
+    assert classify_missing_severity(0) == "near_complete"
+    assert classify_missing_severity(2) == "near_complete"
+    assert classify_missing_severity(3) == "moderate"
+    assert classify_missing_severity(5) == "severe"
+    assert classify_missing_severity(6) == "severe"
+    assert classify_missing_severity(7) == "severe"
+    assert (
+        out["by_severity"]["ETH-M/Easy/test/severity=near_complete"][
+            "missing_levels"
+        ]
+        == [0]
+    )
+    assert (
+        out["by_severity"]["ETH-M/Easy/test/severity=moderate"][
+            "missing_levels"
+        ]
+        == [4]
+    )
+
+
+def test_missing_severity_is_defined_by_percentage_of_eight_history_frames():
+    assert missing_percentage(2) == pytest.approx(25.0)
+    assert missing_percentage(3) == pytest.approx(37.5)
+    assert missing_percentage(4) == pytest.approx(50.0)
+    assert missing_percentage(5) == pytest.approx(62.5)
+    assert missing_percentage(7) == pytest.approx(87.5)
+    assert classify_missing_severity(2) == "near_complete"
+    assert classify_missing_severity(3) == "moderate"
+    assert classify_missing_severity(4) == "moderate"
+    assert classify_missing_severity(5) == "severe"
+    with pytest.raises(ValueError):
+        missing_percentage(8)
 
 
 def test_evaluator_evidence_dimension_grouping_manual():
@@ -96,6 +129,49 @@ def test_evaluator_evidence_dimension_grouping_manual():
     assert dims["anchor_lag"]["3"]["n"] == 1
     assert dims["forecast_gap"]["4"]["n"] == 1
     assert dims["terminal_missing"]["true"]["n"] == 1
+
+
+def test_severity_bin_weights_exact_missing_levels_equally():
+    evaluator = DirectEvaluator()
+    target = torch.zeros(1, 4, 2)
+    prob = torch.ones(1, 2)
+    for missing_count, offset in ((0, 1.0), (1, 3.0), (2, 5.0)):
+        pred = torch.zeros(1, 2, 4, 2)
+        pred[..., 0] = offset
+        evaluator.update(
+            pred, prob, target, "ETH-M", "TrajGap", "test", missing_count
+        )
+
+    result = evaluator.compute()
+    severity = result["by_severity"][
+        "ETH-M/TrajGap/test/severity=near_complete"
+    ]
+    assert severity["n"] == 3
+    assert severity["minADE2"] == pytest.approx(3.0)
+    assert severity["minFDE2"] == pytest.approx(3.0)
+    assert severity["minFDE2_delta_vs_missing0"] == pytest.approx(2.0)
+    assert severity["minFDE2_relative_vs_missing0_pct"] == pytest.approx(200.0)
+
+
+def test_severe_bin_includes_exact_missing_level_seven():
+    evaluator = DirectEvaluator()
+    target = torch.zeros(1, 4, 2)
+    prob = torch.ones(1, 2)
+    for missing_count, offset in ((5, 5.0), (6, 7.0), (7, 11.0)):
+        pred = torch.zeros(1, 2, 4, 2)
+        pred[..., 0] = offset
+        evaluator.update(
+            pred, prob, target, "ETH-M", "TrajGap", "test", missing_count
+        )
+
+    severity = evaluator.compute()["by_severity"][
+        "ETH-M/TrajGap/test/severity=severe"
+    ]
+    assert severity["missing_levels"] == [5, 6, 7]
+    assert severity["expected_missing_levels"] == [5, 6, 7]
+    assert severity["label"] == "Severe (>50–87.5%)"
+    assert severity["missing_percentage_range"] == ">50–87.5%"
+    assert severity["minFDE2"] == pytest.approx((5.0 + 7.0 + 11.0) / 3.0)
 
 
 # ---------------------------------------------------------------- 17/18. Easy/Hard 分组统计

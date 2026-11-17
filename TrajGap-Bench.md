@@ -19,11 +19,11 @@ TrajGap 数据集基于 TrajImpute 官方数据发布，沿用其场景和 train
 
 ```text
 GAST
-├── 观测状态感知时空编码器
+├── 观测先验感知时空编码器
 │   ├── 逐帧交互建模
-│   └── 状态强度加权的时序聚合（状态强度调制的 Mamba 与历史状态汇总）
+│   └── 观测先验强度加权的时序聚合（Mamba 输入调制与历史状态聚合）
 └── 终点引导解码器
-    ├── 使用末次有效观测状态和实际预测间隔
+    ├── 使用末次有效观测信息和实际预测间隔
     ├── 多模态终点预测与未来轨迹生成
     ├── final-consistent loss
     └── mode diversity regularization
@@ -80,6 +80,8 @@ TrajGap 沿用上游数据的场景划分，并对各 split 中的 focal 行人�
 
 训练集的缺失帧数量覆盖 `0…7`。测试集保留官方的缺失程度扫描：同一潜在轨迹可能对应多个不同缺失掩码。因此，样本数不能直接解释为独立原始轨迹数；统计显著性分析应按原始轨迹聚类或采用 paired bootstrap。
 
+主文将缺失程度压缩为 3 个互斥分层，并以 8 帧历史为分母报告缺失比例：近完整观测（≤25%）、中度缺失（>25–50%）和重度缺失（>50–87.5%）。缺失比例以 12.5 个百分点递增；由于每个样本至少保留一个有效历史帧，最大缺失比例为 87.5%。每个场景内先对分层包含的离散缺失等级等权平均，再对五个场景做 macro average；精确缺失等级仅作为附录诊断索引。相对退化率以完整历史组为基准计算。
+
 ## 3. 评估协议
 
 ### 3.1 训练、验证与测试
@@ -129,7 +131,7 @@ TrajGap-Bench 正式主榜只报告两个指标：
 
 两个指标必须来自同一批 `K=20` 候选轨迹、同一个 checkpoint 和同一个 TrajGap test 划分。不计算综合分数。
 
-可以将缺失帧数量、末端缺失、`anchor_lag` 和 `forecast_gap` 作为辅助诊断，但它们不能替代主指标或定义新的总榜。
+缺失程度主分析使用三档分层；精确缺失帧数、末端缺失、`anchor_lag`、`forecast_gap` 和最长连续缺失长度作为附录或辅助诊断，不替代主指标，也不定义新的总榜。
 
 ### 3.4 汇报方式
 
@@ -147,7 +149,7 @@ TrajGap-Bench 正式主榜只报告两个指标：
 
 ### 4.1 结果说明
 
-完整逐场景、宏/微平均、排序诊断和缺失分层表由 [`docs/results/trajgap_bench_leaderboard.md`](docs/results/trajgap_bench_leaderboard.md) 自动生成并维护。正式结果采用五场景 manifest revision 一致的完整 GAST 轮次，宏平均 `minADE20/minFDE20` 为 **0.3168/0.4831**；MoFlow 为 **0.3496/0.5227**。六个外部对照均完成五场景。其他结果因场景间 revision 不一致，不合并为完整轮次。
+完整逐场景、宏/微平均、三档缺失分层和附录精确等级表由 [`docs/results/trajgap_bench_leaderboard.md`](docs/results/trajgap_bench_leaderboard.md) 自动生成并维护。正式结果采用五场景 manifest revision 一致的完整 GAST 轮次，宏平均 `minADE20/minFDE20` 为 **0.3168/0.4831**；MoFlow 为 **0.3496/0.5227**。六个外部对照均完成五场景。其他结果因场景间 revision 不一致，不合并为完整轮次。
 
 ### 4.2 当前结果
 
@@ -157,9 +159,9 @@ TrajGap-Bench 正式主榜只报告两个指标：
 
 | 项目 | `GAST` |
 |---|---|
-| Encoder | 观测状态感知时空编码器（Mamba） |
+| Encoder | 观测先验感知时空编码器（Mamba） |
 | Interaction modeling | 逐帧交互建模（含交互偏置） |
-| Temporal aggregation | 状态强度加权的时序聚合 |
+| Temporal aggregation | 观测先验强度加权的时序聚合 |
 | Decoder | 终点引导解码器 |
 | Mode ranking | GAST 内置 trajectory-aware classification |
 | Prediction modes | `K=20` |
@@ -219,8 +221,9 @@ scripts/结果分析/evaluate_trajimpute_direct.py \
 2. 测试集保留同一潜在轨迹的多种缺失掩码，这是缺失程度扫描的设计，不应简单去重后再作为主结果。
 3. 当前部分基线仍是历史 screening 结果；最终论文表应统一模型版本、checkpoint 规则、随机种子和评估脚本。
 4. 先插补后预测与 direct prediction 输入信息不同，应分表报告，不能直接混入同一 leaderboard。
-5. GAST 当前优势主要体现在 `minADE20` 与 `minFDE20`；其 mode 排序仍需通过第二种子和额外诊断确认，不能仅凭单次运行作强泛化结论。
-6. 当前正式指标只包括 `minADE20` 与 `minFDE20`，不定义综合分数。
+5. 缺失程度主分析采用三档分层；`missing=0…7` 的精确表仅用于附录和边界诊断，不能将分层结果解释为独立样本统计。
+6. GAST 当前优势主要体现在 `minADE20` 与 `minFDE20`；其 mode 排序仍需通过第二种子和额外诊断确认，不能仅凭单次运行作强泛化结论。
+7. 当前正式指标只包括 `minADE20` 与 `minFDE20`，不定义综合分数。
 
 ## 7. 一句话定位
 
@@ -243,9 +246,9 @@ TrajGap follows the upstream scene and train/validation/test partitions. TrajGap
 
 The complete method in this document is **GAST**:
 
-- state strength derived from validity masks and missing duration;
+- observation-prior strength derived from validity masks and missing duration;
 - frame-wise actor interaction modeling;
-- state-strength-weighted temporal aggregation with Mamba;
+- observation-prior-strength-weighted temporal aggregation with Mamba and historical state aggregation;
 - endpoint-guided trajectory decoding based on the last valid observation;
 - final-consistent loss and mode-diversity regularization.
 
@@ -268,6 +271,8 @@ The dataset retains the upstream scene and train/validation/test partitions. Sam
 
 The test set preserves the official missing-level sweep: one latent trajectory may appear with multiple masks. Counts therefore are not counts of unique source trajectories. Statistical inference should cluster by original trajectory or use paired bootstrap.
 
+The main analysis uses three mutually exclusive severity bins, reported as the percentage of the eight-frame history: near-complete (≤25%), moderate (>25–50%), and severe (>50–87.5%). Missingness changes in 12.5-percentage-point increments; the maximum is 87.5% because at least one history frame must remain observed. Within each scene, the discrete levels in a bin are averaged equally before the five-scene macro average is computed. Exact missing levels are retained only as appendix diagnostics, and relative degradation is measured against the complete-history group.
+
 This is a controlled missing-history stress test. It should not be described as a measured real-world tracker-missingness distribution without external validation.
 
 ## 3. Evaluation protocol
@@ -279,6 +284,7 @@ This is a controlled missing-history stress test. It should not be described as 
 - **Task:** keep the 8→12 setting, direct input, `K=20`, and five scenes consistent.
 - **Primary metrics:** report `minADE20` and `minFDE20`, both lower-is-better; do not combine them into a composite score.
 - **Aggregates:** report per-scene values, five-scene macro average, sample-weighted micro average, and worst-scene when all five scenes are complete.
+- **Missingness diagnostics:** use the three severity bins in the main table; retain exact levels and structural attributes such as terminal missingness and longest missing run for supplementary analysis.
 
 Methods may use an internal latent completion mechanism, but external imputation before forecasting must be reported separately. Incomplete methods must not receive five-scene macro or micro averages.
 

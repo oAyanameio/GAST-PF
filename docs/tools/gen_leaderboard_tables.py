@@ -14,26 +14,46 @@ from pathlib import Path
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCENES = ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
+MISSING_SEVERITY_BINS = (
+    ("near_complete", "近完整观测", (0, 1, 2)),
+    ("moderate", "中度缺失", (3, 4)),
+    ("severe", "重度缺失", (5, 6, 7)),
+)
+MISSING_SEVERITY_PERCENT_LABELS = {
+    "near_complete": "≤25%",
+    "moderate": ">25–50%",
+    "severe": ">50–87.5%",
+}
+MISSING_SEVERITY_LABELS_EN = {
+    "near_complete": "Near-complete",
+    "moderate": "Moderate",
+    "severe": "Severe",
+}
+MISSING_SEVERITY_PERCENT_LABELS_EN = {
+    "near_complete": "≤25%",
+    "moderate": ">25–50%",
+    "severe": ">50–87.5%",
+}
 
 # External baseline paths; GAST results are selected from run metadata.
 METHODS = {
     "GAST": None,
-    "MoFlow": [f"/home/lbh/MoFlow/results_trajgap/{s.split('-')[0].lower()}/trajgap/results.json"
+    "MoFlow": [f"/home/lbh/MoFlow/results_trajimpute_mixed/{s.split('-')[0].lower()}/mixed/results.json"
                for s in SCENES],
     # SocialLSTM 已移除：原实现为单模态输出，K=20 头为仓库侧改造，
     # 与其余多模态方法口径不可比（2026-10 用户裁定）。
     "AgentFormer": [
-        f"/home/lbh/AgentFormer/results/trajgap_agentformer/{k}/eval/TrajGap/{s}_TrajGap_test_AgentFormer_seed2024_ckpt/results.json"
+        f"/home/lbh/AgentFormer/results/trajgap_agentformer/{k}/eval/Mixed/{s}_Mixed_test_AgentFormer_seed2024_ckpt/results.json"
         for s, k in [("ETH-M", "eth"), ("HOTEL-M", "hotel"), ("UNIV-M", "univ"),
                      ("ZARA1-M", "zara1"), ("ZARA2-M", "zara2")]],
     "Re": [
-        f"/home/lbh/Re/outputs/trajgap_resonance_seed2024_gpu1/Resonance_{s}_trajgap-bench_seed2024_uni/eval/TrajGap/{s}_TrajGap_test_Resonance_seed2024_ckpt/results.json"
+        f"/home/lbh/Re/outputs/trajgap_resonance_seed2024_gpu1/Resonance_{s}_mixed-direct_seed2024_uni/eval/Mixed/{s}_Mixed_test_Resonance_seed2024_ckpt/results.json"
         for s in SCENES],
     "MS-TIP": [
-        f"/home/lbh/MS-TIP-TrajGap/results/MS-TIP_{s}_trajgap-bench_seed2024_uni/eval/TrajGap/{s}_TrajGap_test_MS-TIP_seed2024_ckpt/results.json"
+        f"/home/lbh/MS-TIP-TrajGap/results/MS-TIP_{s}_mixed-direct_seed2024_uni/eval/Mixed/{s}_Mixed_test_MS-TIP_seed2024_ckpt/results.json"
         for s in SCENES],
     "Social-STGCNN": [
-        f"/home/lbh/Social-STGCNN/results_trajgap/STGCNN_{s}_trajgap-bench_seed2024_uni/eval/TrajGap/{s}_TrajGap_test_STGCNN_seed2024_ckpt/results.json"
+        f"/home/lbh/Social-STGCNN/results_trajgap/STGCNN_{s}_mixed-direct_seed2024_uni/eval/Mixed/{s}_Mixed_test_STGCNN_seed2024_ckpt/results.json"
         for s in SCENES],
 }
 
@@ -74,7 +94,11 @@ def load(path):
 
 
 def discover_gast_results():
-    """Select the unique confirmatory five-scene GAST result set."""
+    """Select one confirmatory five-scene GAST result set.
+
+    Legacy artifact metadata is accepted for provenance only; generated tables
+    always use the current TrajGap naming.
+    """
     output_root = Path(REPO) / "outputs"
     groups = {}
     for result_path in output_root.rglob("results.json"):
@@ -85,11 +109,26 @@ def discover_gast_results():
 
         meta = payload.get("meta", {})
         scene = meta.get("scene")
+        canonical_protocol = (
+            meta.get("difficulty") == "TrajGap"
+            and meta.get("protocol") == "TrajGap-Bench"
+        )
+        documented_legacy_protocol = (
+            meta.get("difficulty") == "TrajGap"
+            and meta.get("protocol") == "mixed-direct"
+        )
+        legacy_protocol = (
+            meta.get("difficulty") == "Mixed"
+            and meta.get("protocol") == "mixed-direct"
+        )
         if not (
             scene in SCENES
             and meta.get("split") == "test"
-            and meta.get("difficulty") == "TrajGap"
-            and meta.get("protocol") == "TrajGap-Bench"
+            and (
+                canonical_protocol
+                or documented_legacy_protocol
+                or legacy_protocol
+            )
             and meta.get("K") == 20
             and meta.get("seed") == 2024
             and not meta.get("untrained_smoke", False)
@@ -113,7 +152,7 @@ def discover_gast_results():
 
         model_config = manifest.get("model_config", {})
         is_gast = (
-            manifest.get("model_version") == "GAST"
+            manifest.get("model_version") in {"GAST", "GAST-Goal"}
             or model_config.get("encoder_type") == "gast"
         )
         revision = meta.get("git_revision")
@@ -197,6 +236,86 @@ def pair(rec, a="minADE_K", b="minFDE_K"):
     return f"{rec[a]:.4f} / {rec[b]:.4f}"
 
 
+def exact_missing_records(rec):
+    """Return exact missing-count records keyed by missing frame count."""
+    exact = {}
+    for group_key, entry in rec.get("_by_group", {}).items():
+        suffix = group_key.rsplit("/missing=", 1)
+        if len(suffix) != 2:
+            continue
+        exact[int(suffix[1])] = entry
+    return exact
+
+
+def severity_record(rec, severity_key):
+    """Aggregate exact missing counts equally within one severity bin."""
+    levels = next(
+        levels
+        for key, _, levels in MISSING_SEVERITY_BINS
+        if key == severity_key
+    )
+    exact = exact_missing_records(rec)
+    entries = [exact[level] for level in levels if level in exact]
+    if not entries:
+        return None
+    result = {
+        "n": sum(entry.get("n", 0) for entry in entries),
+        "missing_levels": [level for level in levels if level in exact],
+    }
+    for key in ("minADE_K", "minADE20", "minFDE_K", "minFDE20"):
+        values = [entry[key] for entry in entries if entry.get(key) is not None]
+        if values:
+            result[key] = sum(values) / len(values)
+    baseline = exact.get(0)
+    if baseline is not None:
+        for key in ("minADE_K", "minADE20", "minFDE_K", "minFDE20"):
+            if result.get(key) is not None and baseline.get(key):
+                result[f"{key}_relative_vs_missing0_pct"] = (
+                    100.0 * (result[key] - baseline[key]) / baseline[key]
+                )
+    return result
+
+
+def build_severity_data(data, method):
+    """Return severity -> scene -> equal-level aggregate records."""
+    severity_data = {}
+    for severity_key, _, _ in MISSING_SEVERITY_BINS:
+        per_scene = {}
+        for scene, rec in data[method]["per"].items():
+            value = severity_record(rec, severity_key)
+            if value is not None:
+                per_scene[scene] = value
+        severity_data[severity_key] = per_scene
+    return severity_data
+
+
+def severity_macro(data, method, severity_key, metric):
+    per_scene = build_severity_data(data, method)[severity_key]
+    values = [
+        per_scene[scene][metric]
+        for scene in SCENES
+        if scene in per_scene and per_scene[scene].get(metric) is not None
+    ]
+    if len(values) != len(SCENES):
+        return None
+    return sum(values) / len(values)
+
+
+def severity_sample_count(data, method, severity_key):
+    per_scene = build_severity_data(data, method)[severity_key]
+    if not all(scene in per_scene for scene in SCENES):
+        return None
+    return sum(per_scene[scene]["n"] for scene in SCENES)
+
+
+def format_pair(a, b, best_a=None, best_b=None):
+    if a is None or b is None:
+        return "--"
+    a_text = f"**{a:.4f}**" if best_a is not None and abs(a - best_a) < 1e-12 else f"{a:.4f}"
+    b_text = f"**{b:.4f}**" if best_b is not None and abs(b - best_b) < 1e-12 else f"{b:.4f}"
+    return f"{a_text} / {b_text}"
+
+
 def best_in_col(data, key, scene, methods, pct=False):
     """返回该列最优值（用于加粗）。"""
     vals = []
@@ -255,34 +374,111 @@ def emit_md(data):
         L.append(f"| {m} | " + " | ".join(cells) + " |")
     L.append("")
 
-    # ---- 表 3：缺失分层
-    L.append("## 表 3 · 缺失程度分层（宏平均 minFDE20）\n")
-    strat_methods = methods
-    L.append("| missing | " + " | ".join(
-        f"{m} minFDE20" for m in strat_methods) + " |")
-    L.append("|---|" + "---|" * len(strat_methods))
-    strat = {}
-    for m in strat_methods:
-        per = data[m]["per"]
-        smap = {}
-        for s, rec in per.items():
-            for gk, entry in rec["_by_group"].items():
-                miss = int(gk.split("/")[-1].split("=")[1])
-                smap.setdefault(miss, {})[s] = entry
-        strat[m] = smap
+    # ---- 表 3：三级缺失分层
+    L.append("## 表 3 · 缺失程度分层（三级宏平均）\n")
+    L.append(
+        "| 分层 | 缺失比例 | focal 样本数 | " + " | ".join(
+            f"{m}（minADE20 / minFDE20）" for m in methods
+        ) + " |"
+    )
+    L.append("|---|---:|---:|" + "---|" * len(methods))
+    severity_values = {
+        severity_key: {
+            m: {
+                metric: severity_macro(data, m, severity_key, metric)
+                for metric in ("minADE_K", "minFDE_K")
+            }
+            for m in methods
+        }
+        for severity_key, _, _ in MISSING_SEVERITY_BINS
+    }
+    for severity_key, label, levels in MISSING_SEVERITY_BINS:
+        best_ade = min(
+            (
+                values["minADE_K"]
+                for values in severity_values[severity_key].values()
+                if values["minADE_K"] is not None
+            ),
+            default=None,
+        )
+        best_fde = min(
+            (
+                values["minFDE_K"]
+                for values in severity_values[severity_key].values()
+                if values["minFDE_K"] is not None
+            ),
+            default=None,
+        )
+        cells = []
+        for m in methods:
+            values = severity_values[severity_key][m]
+            cells.append(format_pair(
+                values["minADE_K"], values["minFDE_K"],
+                best_ade, best_fde,
+            ))
+        sample_count = severity_sample_count(data, "GAST", severity_key)
+        sample_count_text = f"{sample_count:,}" if sample_count is not None else "--"
+        L.append(
+            f"| {label} | {MISSING_SEVERITY_PERCENT_LABELS[severity_key]} | "
+            f"{sample_count_text} | "
+            + " | ".join(cells)
+            + " |"
+        )
+    L.append("")
+
+    # ---- 表 4：相对完整历史的 FDE 退化
+    L.append("## 表 4 · 相对 missing=0 的 minFDE20 退化（%）\n")
+    L.append("| 分层 | " + " | ".join(methods) + " |")
+    L.append("|---|" + "---|" * len(methods))
+    for severity_key, label, _ in MISSING_SEVERITY_BINS:
+        values = {}
+        for m in methods:
+            per_scene = build_severity_data(data, m)[severity_key]
+            scene_values = [
+                per_scene[scene].get("minFDE_K_relative_vs_missing0_pct")
+                for scene in SCENES
+                if scene in per_scene
+            ]
+            values[m] = (
+                sum(scene_values) / len(scene_values)
+                if len(scene_values) == len(SCENES)
+                else None
+            )
+        cells = [
+            "--" if values[m] is None else f"{values[m]:.2f}"
+            for m in methods
+        ]
+        L.append(f"| {label} | " + " | ".join(cells) + " |")
+    L.append("")
+
+    # ---- 表 5：附录精确缺失等级
+    L.append("## 表 5 · 附录：精确缺失等级的宏平均 minFDE20\n")
+    L.append("| 缺失等级（帧数索引） | " + " | ".join(
+        f"{m} minFDE20" for m in methods
+    ) + " |")
+    L.append("|---|" + "---|" * len(methods))
+    exact_data = {
+        m: {
+            miss: {
+                scene: exact_missing_records(rec).get(miss)
+                for scene, rec in data[m]["per"].items()
+            }
+            for miss in range(8)
+        }
+        for m in methods
+    }
     for miss in range(8):
         cells = []
-        for m in strat_methods:
-            sm = strat[m]
-            if miss not in sm:
-                cells.append("--")
-                continue
-            fv = [
-                sm[miss][s].get("minFDE20", sm[miss][s].get("minFDE_K"))
-                for s in SCENES if s in sm[miss]
+        for m in methods:
+            values = [
+                exact_data[m][miss][scene].get("minFDE_K")
+                for scene in SCENES
+                if exact_data[m][miss].get(scene) is not None
             ]
-            tag = "" if len(fv) == 5 else f" (n={len(fv)})"
-            cells.append(f"{sum(fv)/len(fv):.4f}{tag}")
+            cells.append(
+                "--" if len(values) != len(SCENES)
+                else f"{sum(values) / len(values):.4f}"
+            )
         L.append(f"| {miss} | " + " | ".join(cells) + " |")
     L.append("")
     return "\n".join(L)
@@ -368,6 +564,10 @@ MD_NOTES = """
 - 六个方法均完成 ETH-M、HOTEL-M、UNIV-M、ZARA1-M、ZARA2-M 五场景。
 - 只报告普通 `minADE20`、`minFDE20`；不使用模式分数加权，也不报告 top-1、MR、Brier 或综合分数。
 - 表中指标按各方法 TrajGap test `results.json` 计算；宏平均为五场景等权，micro 为汇总全部测试样本后的算术平均。
+- 三级缺失分层以 8 帧历史为分母，定义为近完整观测（≤25%）、中度缺失（>25–50%）和重度缺失（>50–87.5%）。实际缺失比例按 12.5 个百分点递增，且每个样本至少保留一个有效历史帧。每个场景内先对该档各离散缺失等级的指标等权平均，再对五场景等权平均；不按样本量给等级加权。
+- 相对 `missing=0` 的退化率先在各场景内计算，再对档内精确等级和五场景分别等权平均；负值表示该档指标低于完整历史组。
+- focal 样本数是掩码条件样本总数；相同潜在轨迹可能以多个掩码重复出现，因此不能视作独立原始轨迹数。
+- 精确缺失等级仍以 `missing=0…7` 作为附录索引，用于展示离散边界行为；主表不再使用具体缺失帧数。
 - 外部模型保持其方法属性：MS-TIP 为插补感知联合预测方法，其余依各自实现处理缺失历史；榜单比较的是统一测试集上的结果，不代表内部结构均为纯 direct。
 - 选点口径：GAST / AgentFormer / Re / MS-TIP / Social-STGCNN 均按各自验证集 minFDE20 选最优 checkpoint；MoFlow 沿用其官方实现原生的验证集 minADE（ADE_MIN）选点，未做改动。
 - MS-TIP 五场景最优 checkpoint 均出现在 epoch 5–9（后续验证集 minFDE20 持续变差，为其联合插补目标在 direct 协议下的原生行为，非调参不足）；表中数值取各自验证最优 checkpoint。
@@ -378,7 +578,7 @@ MD_NOTES = """
 | 方法 | 产物路径 |
 |---|---|
 | GAST | 五场景完整结果（manifest revision 一致） |
-| MoFlow | `/home/lbh/MoFlow/results_trajgap/` |
+| MoFlow | `/home/lbh/MoFlow/results_trajimpute_mixed/` |
 | AgentFormer | `/home/lbh/AgentFormer/results/trajgap_agentformer/`（5/5） |
 | Re | `/home/lbh/Re/outputs/trajgap_resonance_seed2024_gpu1/`（5/5） |
 | MS-TIP | `/home/lbh/MS-TIP-TrajGap/results/`（5/5，插补感知） |
@@ -453,22 +653,116 @@ def emit_tex_micro(data):
 
 
 def emit_tex_extra(data):
-    """Emit the missingness-stratified minFDE table."""
+    """Emit three-level main stratification plus exact appendix details."""
     L = []
-    # ---- 缺失分层
     strat_methods = list(METHODS)
-    strat = {}
-    for m in strat_methods:
-        smap = {}
-        for s, rec in data[m]["per"].items():
-            for gk, entry in rec["_by_group"].items():
-                miss = int(gk.split("/")[-1].split("=")[1])
-                smap.setdefault(miss, {})[s] = entry
-        strat[m] = smap
+    L.append("\\begin{table*}[t]")
+    L.append("  \\centering")
+    L.append("  \\caption{Three-level missing-history stratification by missing percentage")
+    L.append("  of the eight-frame history. Each bin is averaged equally over its exact")
+    L.append("  discrete levels, then over scenes.}")
+    L.append("  \\label{tab:tgbench-severity}")
+    L.append("  \\small")
+    L.append("  \\setlength{\\tabcolsep}{2pt}")
+    L.append("  \\resizebox{\\textwidth}{!}{%")
+    L.append("  \\begin{tabular}{l " + "c " * len(strat_methods) + "}")
+    L.append("    \\toprule")
+    L.append("    Severity (missing percentage) & " + " & ".join(
+        f"{m} (minADE$_{{20}}$/minFDE$_{{20}}$)" for m in strat_methods
+    ) + " \\\\")
+    L.append("    \\midrule")
+    severity_values = {
+        severity_key: {
+            m: {
+                metric: severity_macro(data, m, severity_key, metric)
+                for metric in ("minADE_K", "minFDE_K")
+            }
+            for m in strat_methods
+        }
+        for severity_key, _, _ in MISSING_SEVERITY_BINS
+    }
+    for severity_key, label, levels in MISSING_SEVERITY_BINS:
+        best_ade = min(
+            (
+                values["minADE_K"]
+                for values in severity_values[severity_key].values()
+                if values["minADE_K"] is not None
+            ),
+            default=None,
+        )
+        best_fde = min(
+            (
+                values["minFDE_K"]
+                for values in severity_values[severity_key].values()
+                if values["minFDE_K"] is not None
+            ),
+            default=None,
+        )
+        cells = []
+        for m in strat_methods:
+            values = severity_values[severity_key][m]
+            if values["minADE_K"] is None or values["minFDE_K"] is None:
+                cells.append("--")
+                continue
+            ade = (
+                f"\\textbf{{{values['minADE_K']:.4f}}}"
+                if abs(values["minADE_K"] - best_ade) < 1e-12
+                else f"{values['minADE_K']:.4f}"
+            )
+            fde = (
+                f"\\textbf{{{values['minFDE_K']:.4f}}}"
+                if abs(values["minFDE_K"] - best_fde) < 1e-12
+                else f"{values['minFDE_K']:.4f}"
+            )
+            cells.append(f"{ade} / {fde}")
+        L.append(
+            f"    {MISSING_SEVERITY_LABELS_EN[severity_key]} "
+            f"({MISSING_SEVERITY_PERCENT_LABELS_EN[severity_key]}) & "
+                 + " & ".join(cells) + " \\\\")
+    L.append("    \\bottomrule")
+    L.append("  \\end{tabular}%")
+    L.append("  }")
+    L.append("\\end{table*}")
+    L.append("")
+
     L.append("\\begin{table}[t]")
     L.append("  \\centering")
-    L.append("  \\caption{Five-scene macro-average minFDE$_{20}$ by missing history frames.}")
-    L.append("  \\label{tab:tgbench-missing}")
+    L.append("  \\caption{Relative minFDE$_{20}$ degradation versus exact missing=0.}")
+    L.append("  \\label{tab:tgbench-severity-relative}")
+    L.append("  \\small")
+    L.append("  \\setlength{\\tabcolsep}{3pt}")
+    L.append("  \\begin{tabular}{l " + "c " * len(strat_methods) + "}")
+    L.append("    \\toprule")
+    L.append("    Severity & " + " & ".join(strat_methods) + " \\\\")
+    L.append("    \\midrule")
+    for severity_key, label, _ in MISSING_SEVERITY_BINS:
+        cells = []
+        for m in strat_methods:
+            per_scene = build_severity_data(data, m)[severity_key]
+            values = [
+                per_scene[scene].get(
+                    "minFDE_K_relative_vs_missing0_pct"
+                )
+                for scene in SCENES
+                if scene in per_scene
+            ]
+            if len(values) != len(SCENES):
+                cells.append("--")
+            else:
+                cells.append(f"{sum(values) / len(values):.2f}\\%")
+        L.append(
+            f"    {MISSING_SEVERITY_LABELS_EN[severity_key]} & "
+            + " & ".join(cells) + " \\\\"
+        )
+    L.append("    \\bottomrule")
+    L.append("  \\end{tabular}")
+    L.append("\\end{table}")
+    L.append("")
+
+    L.append("\\begin{table}[t]")
+    L.append("  \\centering")
+    L.append("  \\caption{Appendix: exact discrete missing-level macro-average minFDE$_{20}$.}")
+    L.append("  \\label{tab:tgbench-missing-exact}")
     L.append("  \\small")
     L.append("  \\setlength{\\tabcolsep}{2pt}")
     L.append("  \\resizebox{\\textwidth}{!}{%")
@@ -477,16 +771,23 @@ def emit_tex_extra(data):
     L.append("    \\#missing & " + " & ".join(strat_methods) + " \\\\")
     L.append("    \\midrule")
     for miss in range(8):
-        vals = []
+        cells = []
         for m in strat_methods:
-            sm = strat[m]
-            fv = [
-                sm[miss][s].get("minFDE20", sm[miss][s].get("minFDE_K"))
-                for s in SCENES if miss in sm and s in sm[miss]
+            values = [
+                (
+                    exact_missing_records(data[m]["per"][scene]).get(
+                        miss, {}
+                    ).get("minFDE_K")
+                    if scene in data[m]["per"]
+                    else None
+                )
+                for scene in SCENES
             ]
-            vals.append(sum(fv) / len(fv) if fv else None)
-        best = min((v for v in vals if v is not None), default=None)
-        cells = ["--" if v is None else (f"\\textbf{{{v:.4f}}}" if v == best else f"{v:.4f}") for v in vals]
+            values = [value for value in values if value is not None]
+            cells.append(
+                "--" if len(values) != len(SCENES)
+                else f"{sum(values) / len(values):.4f}"
+            )
         L.append(f"    {miss} & " + " & ".join(cells) + " \\\\")
     L.append("    \\bottomrule")
     L.append("  \\end{tabular}%")

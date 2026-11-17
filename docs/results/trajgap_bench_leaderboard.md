@@ -30,9 +30,25 @@
 | MS-TIP | 1.1991 | 1.1461 |
 | Social-STGCNN | 0.9878 | 1.6409 |
 
-## 表 3 · 缺失程度分层（宏平均 minFDE20）
+## 表 3 · 缺失程度分层（三级宏平均）
 
-| missing | GAST minFDE20 | MoFlow minFDE20 | AgentFormer minFDE20 | Re minFDE20 | MS-TIP minFDE20 | Social-STGCNN minFDE20 |
+| 分层 | 缺失比例 | focal 样本数 | GAST（minADE20 / minFDE20） | MoFlow（minADE20 / minFDE20） | AgentFormer（minADE20 / minFDE20） | Re（minADE20 / minFDE20） | MS-TIP（minADE20 / minFDE20） | Social-STGCNN（minADE20 / minFDE20） |
+|---|---:|---:|---|---|---|---|---|---|
+| 近完整观测 | ≤25% | 100,962 | **0.2211** / **0.3659** | 0.2393 / 0.3884 | 0.2746 / 0.4704 | 0.3946 / 0.6896 | 0.9821 / 1.1723 | 0.8812 / 1.5251 |
+| 中度缺失 | >25–50% | 100,962 | **0.2388** / **0.3815** | 0.2777 / 0.4297 | 0.3010 / 0.4934 | 0.5760 / 0.8899 | 1.0565 / 1.2437 | 1.2101 / 2.1223 |
+| 重度缺失 | >50–87.5% | 100,962 | **0.4889** / **0.7005** | 0.5294 / 0.7484 | 0.5948 / 0.8767 | 0.9271 / 1.3319 | 1.5001 / 1.7486 | 1.9169 / 3.1518 |
+
+## 表 4 · 相对 missing=0 的 minFDE20 退化（%）
+
+| 分层 | GAST | MoFlow | AgentFormer | Re | MS-TIP | Social-STGCNN |
+|---|---|---|---|---|---|---|
+| 近完整观测 | 1.35 | 2.47 | 2.50 | 3.23 | 4.12 | 11.04 |
+| 中度缺失 | 5.90 | 14.57 | 8.11 | 41.58 | 10.88 | 60.33 |
+| 重度缺失 | 119.74 | 116.89 | 97.82 | 116.75 | 56.78 | 142.09 |
+
+## 表 5 · 附录：精确缺失等级的宏平均 minFDE20
+
+| 缺失等级（帧数索引） | GAST minFDE20 | MoFlow minFDE20 | AgentFormer minFDE20 | Re minFDE20 | MS-TIP minFDE20 | Social-STGCNN minFDE20 |
 |---|---|---|---|---|---|---|
 | 0 | 0.3590 | 0.3793 | 0.4575 | 0.7113 | 1.1231 | 1.3903 |
 | 1 | 0.3632 | 0.3889 | 0.4811 | 0.6771 | 1.1810 | 1.4912 |
@@ -48,6 +64,10 @@
 - 六个方法均完成 ETH-M、HOTEL-M、UNIV-M、ZARA1-M、ZARA2-M 五场景。
 - 只报告普通 `minADE20`、`minFDE20`；不使用模式分数加权，也不报告 top-1、MR、Brier 或综合分数。
 - 表中指标按各方法 TrajGap test `results.json` 计算；宏平均为五场景等权，micro 为汇总全部测试样本后的算术平均。
+- 三级缺失分层以 8 帧历史为分母，定义为近完整观测（≤25%）、中度缺失（>25–50%）和重度缺失（>50–87.5%）。实际缺失比例按 12.5 个百分点递增，且每个样本至少保留一个有效历史帧。每个场景内先对该档各离散缺失等级的指标等权平均，再对五场景等权平均；不按样本量给等级加权。
+- 相对 `missing=0` 的退化率先在各场景内计算，再对档内精确等级和五场景分别等权平均；负值表示该档指标低于完整历史组。
+- focal 样本数是掩码条件样本总数；相同潜在轨迹可能以多个掩码重复出现，因此不能视作独立原始轨迹数。
+- 精确缺失等级仍以 `missing=0…7` 作为附录索引，用于展示离散边界行为；主表不再使用具体缺失帧数。
 - 外部模型保持其方法属性：MS-TIP 为插补感知联合预测方法，其余依各自实现处理缺失历史；榜单比较的是统一测试集上的结果，不代表内部结构均为纯 direct。
 - 选点口径：GAST / AgentFormer / Re / MS-TIP / Social-STGCNN 均按各自验证集 minFDE20 选最优 checkpoint；MoFlow 沿用其官方实现原生的验证集 minADE（ADE_MIN）选点，未做改动。
 - MS-TIP 五场景最优 checkpoint 均出现在 epoch 5–9（后续验证集 minFDE20 持续变差，为其联合插补目标在 direct 协议下的原生行为，非调参不足）；表中数值取各自验证最优 checkpoint。
@@ -58,7 +78,7 @@
 | 方法 | 产物路径 |
 |---|---|
 | GAST | 五场景完整结果（manifest revision 一致） |
-| MoFlow | `/home/lbh/MoFlow/results_trajgap/` |
+| MoFlow | `/home/lbh/MoFlow/results_trajimpute_mixed/` |
 | AgentFormer | `/home/lbh/AgentFormer/results/trajgap_agentformer/`（5/5） |
 | Re | `/home/lbh/Re/outputs/trajgap_resonance_seed2024_gpu1/`（5/5） |
 | MS-TIP | `/home/lbh/MS-TIP-TrajGap/results/`（5/5，插补感知） |

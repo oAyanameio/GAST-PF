@@ -14,5 +14,5 @@
 
 - checkpoint 文件名含 `=`（如 `epoch=73.ckpt`）时，Hydra override 必须整体加引号：`"checkpoint='outputs/.../epoch=73.ckpt'"`。
 - eval 输出目录已存在 `model.log` 会 FileExistsError，重跑前先删整个 eval 目录。
-- `--variant` 可选 `GAST`、`GAST-no-interaction-bias`、`GAST-no-source-filter`、`GAST-no-state-strength-modulation`、`GAST-content-only-readout`、`GAST-no-goal-guidance`；后五项每次只关闭一个结构开关。
+- `--variant` 可选 `GAST`、`GAST-no-interaction-bias`、`GAST-no-source-filter`、`GAST-no-state-strength-modulation`、`GAST-content-only-history-aggregation`、`GAST-no-goal-guidance`；实验 ID 与当前代码结构开关保持一致。
 - 正式结果只报告普通 `minADE20` 和 `minFDE20`：对 20 条预测轨迹取最小误差，再对样本做等权算术平均，不使用模式分数或额外指标加权。

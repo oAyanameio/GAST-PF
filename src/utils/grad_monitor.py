@@ -24,9 +24,12 @@ import pytorch_lightning as pl
 # 模块组划分：顺序敏感（先匹配更具体的前缀）
 _GROUP_RULES = (
     ("observation_encoder.framewise_interaction", "enc.interaction"),
-    ("observation_encoder.state_strength_decay_logit", "enc.state_strength"),
-    ("observation_encoder.state_strength_aggregation.history_readout", "enc.readout"),
-    ("observation_encoder.state_strength_aggregation.mamba", "enc.mamba"),
+    ("observation_encoder.observation_prior_strength_decay_logit", "enc.observation_prior_strength"),
+    (
+        "observation_encoder.observation_prior_strength_aggregation.history_aggregation",
+        "enc.history_aggregation",
+    ),
+    ("observation_encoder.observation_prior_strength_aggregation.mamba", "enc.mamba"),
     ("observation_encoder", "enc.other"),
     ("goal_guided_decoder", "decoder"),
     ("neighbor_prediction_head", "aux.neighbor_head"),

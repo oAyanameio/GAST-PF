@@ -9,24 +9,27 @@ sys.path.insert(0, str(REPO))
 
 from src.model.layers.observation_state_encoder import (  # noqa: E402
     FramewiseInteractionModel,
-    ObservationStateEncoder,
-    aggregate_history_by_state_strength,
+    ObservationPriorEncoder,
+    aggregate_history_by_observation_prior_strength,
     build_framewise_interaction_features,
-    build_observation_state,
+    build_observation_prior,
 )
 
 
-def test_observation_state_tracks_age_state_strength_and_padding():
+def test_observation_prior_tracks_age_prior_strength_and_padding():
     valid = torch.tensor([[[1, 0, 0], [1, 1, 1]]], dtype=torch.bool)
     padding = torch.tensor([[False, True]])
-    observed, state_strength, age = build_observation_state(
+    observed, prior_strength, age = build_observation_prior(
         valid, tau=0.5, key_padding=padding
     )
     assert observed[0, 0].tolist() == [1.0, 0.0, 0.0]
     assert age[0, 0].tolist() == [0.0, 1.0, 2.0]
-    assert torch.allclose(state_strength[0, 0], torch.tensor([1.0, torch.exp(torch.tensor(-0.5)), torch.exp(torch.tensor(-1.0))]))
+    assert torch.allclose(
+        prior_strength[0, 0],
+        torch.tensor([1.0, torch.exp(torch.tensor(-0.5)), torch.exp(torch.tensor(-1.0))]),
+    )
     assert not observed[0, 1].any()
-    assert not state_strength[0, 1].any()
+    assert not prior_strength[0, 1].any()
 
 
 def test_actor_relation_features_ignore_missing_placeholders():
@@ -42,23 +45,26 @@ def test_actor_relation_features_ignore_missing_placeholders():
     assert torch.equal(first, second)
 
 
-def test_history_readout_uses_terminal_state_when_history_is_complete():
+def test_history_aggregation_uses_terminal_state_when_history_is_complete():
     hidden = torch.randn(2, 3, 4, 8)
-    state_strength = torch.ones(2, 3, 4)
+    prior_strength = torch.ones(2, 3, 4)
     scores = torch.randn(2, 3, 4, 1)
-    output, weights = aggregate_history_by_state_strength(
-        hidden, state_strength, scores
+    output, weights = aggregate_history_by_observation_prior_strength(
+        hidden, prior_strength, scores
     )
     assert torch.equal(output, hidden[..., -1, :])
     assert torch.isfinite(weights).all()
 
 
-def test_content_only_readout_uses_scores_without_state_strength_weights():
+def test_content_only_history_aggregation_uses_scores_without_prior_strength_weights():
     hidden = torch.tensor([[[[0.0], [10.0]]]])
-    state_strength = torch.tensor([[[1.0, 0.01]]])
+    prior_strength = torch.tensor([[[1.0, 0.01]]])
     scores = torch.tensor([[[[0.0], [1.0]]]])
-    output, weights = aggregate_history_by_state_strength(
-        hidden, state_strength, scores, use_state_strength_weighting=False
+    output, weights = aggregate_history_by_observation_prior_strength(
+        hidden,
+        prior_strength,
+        scores,
+        use_observation_prior_strength_weighting=False,
     )
     expected_weights = torch.softmax(scores.squeeze(-1), dim=-1)
     expected = torch.sum(expected_weights.unsqueeze(-1) * hidden, dim=-2)
@@ -68,36 +74,47 @@ def test_content_only_readout_uses_scores_without_state_strength_weights():
 
 
 def test_gast_uses_complete_evidence_stages():
-    gast = ObservationStateEncoder(embed_dim=16, num_heads=4, depth=1)
+    gast = ObservationPriorEncoder(embed_dim=16, num_heads=4, depth=1)
     assert isinstance(gast.framewise_interaction, FramewiseInteractionModel)
     assert hasattr(gast.framewise_interaction, "interaction_bias")
-    assert hasattr(gast.state_strength_aggregation.history_readout, "score")
-    blocks = gast.state_strength_aggregation.mamba.mamba_blocks
+    assert hasattr(
+        gast.observation_prior_strength_aggregation.history_aggregation,
+        "score",
+    )
+    blocks = gast.observation_prior_strength_aggregation.mamba.mamba_blocks
     assert len(blocks) == 1
 
 
 def test_gast_structural_switches_disable_their_target_components():
-    gast = ObservationStateEncoder(
+    gast = ObservationPriorEncoder(
         embed_dim=16,
         num_heads=4,
         depth=1,
         use_interaction_bias=False,
         use_source_filter=False,
-        use_state_strength_modulation=False,
-        use_state_strength_readout=False,
+        use_observation_prior_strength_modulation=False,
+        use_observation_prior_strength_history_aggregation=False,
     )
 
     assert gast.framewise_interaction.use_source_filter is False
     assert gast.framewise_interaction.interaction_bias is None
-    assert gast.state_strength_aggregation.mamba.use_state_strength_modulation is False
-    assert gast.state_strength_aggregation.history_readout.use_state_strength_readout is False
+    assert (
+        gast.observation_prior_strength_aggregation.mamba
+        .use_observation_prior_strength_modulation
+        is False
+    )
+    assert (
+        gast.observation_prior_strength_aggregation.history_aggregation
+        .use_observation_prior_strength_history_aggregation
+        is False
+    )
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="GAST Mamba forward requires CUDA")
-def test_observation_encoder_outputs_are_finite_and_zero_padding_actors():
+def test_observation_prior_encoder_outputs_are_finite_and_zero_padding_actors():
     device = torch.device("cuda")
     torch.manual_seed(4)
-    encoder = ObservationStateEncoder(
+    encoder = ObservationPriorEncoder(
         input_dim=4,
         embed_dim=16,
         num_heads=4,
@@ -133,7 +150,7 @@ def test_training_and_evaluation_expose_matching_structural_ablations():
         "GAST-no-interaction-bias",
         "GAST-no-source-filter",
         "GAST-no-state-strength-modulation",
-        "GAST-content-only-readout",
+        "GAST-content-only-history-aggregation",
         "GAST-no-goal-guidance",
     }
     assert train_variants.keys() == eval_variants.keys()
@@ -145,15 +162,20 @@ def test_training_and_evaluation_expose_matching_structural_ablations():
             for key in (
                 "use_source_filter",
                 "use_interaction_bias",
-                "use_state_strength_modulation",
-                "use_state_strength_readout",
+                "use_observation_prior_strength_modulation",
+                "use_observation_prior_strength_history_aggregation",
                 "use_goal_guidance",
             )
         )
     assert train_variants["GAST-no-interaction-bias"]["use_interaction_bias"] is False
     assert train_variants["GAST-no-source-filter"]["use_source_filter"] is False
-    assert train_variants["GAST-no-state-strength-modulation"]["use_state_strength_modulation"] is False
-    assert train_variants["GAST-content-only-readout"]["use_state_strength_readout"] is False
+    assert train_variants["GAST-no-state-strength-modulation"]["use_observation_prior_strength_modulation"] is False
+    assert (
+        train_variants["GAST-content-only-history-aggregation"][
+            "use_observation_prior_strength_history_aggregation"
+        ]
+        is False
+    )
 
     assert train_variants["GAST-no-goal-guidance"]["use_goal_guidance"] is False
 
@@ -170,8 +192,8 @@ def test_gast_yaml_uses_full_method_by_default():
     for switch in (
         "use_interaction_bias",
         "use_source_filter",
-        "use_state_strength_modulation",
-        "use_state_strength_readout",
+        "use_observation_prior_strength_modulation",
+        "use_observation_prior_strength_history_aggregation",
         "use_goal_guidance",
     ):
         assert model[switch] is True
@@ -216,3 +238,59 @@ def test_current_gast_checkpoint_loads_into_gast(tmp_path):
     missing, unexpected = load_checkpoint(current_model, checkpoint_path)
     assert missing == []
     assert unexpected == []
+
+
+def test_legacy_gast_checkpoint_loads_after_history_aggregation_rename(tmp_path):
+    from scripts.结果分析.evaluate_trajimpute_direct import (
+        build_model,
+        load_checkpoint,
+    )
+
+    source_model = build_model("GAST-content-only-history-aggregation", num_modes=4)
+    legacy_state_dict = {}
+    for key, value in source_model.state_dict().items():
+        key = key.replace(
+            "observation_encoder.observation_prior_strength_decay_logit",
+            "observation_encoder.state_strength_decay_logit",
+        )
+        key = key.replace(
+            "observation_encoder.observation_prior_strength_aggregation.history_aggregation.",
+            "observation_encoder.state_strength_aggregation.history_readout.",
+        )
+        key = key.replace(
+            "observation_encoder.observation_prior_strength_aggregation.",
+            "observation_encoder.state_strength_aggregation.",
+        )
+        legacy_state_dict[f"net.{key}"] = value.clone()
+    checkpoint = {
+        "state_dict": legacy_state_dict,
+        "hyper_parameters": {
+            "model": {
+                "num_modes": 4,
+                "use_state_strength_modulation": True,
+                "use_state_strength_readout": False,
+            }
+        },
+        "meta": {"variant": "GAST-content-only-readout"},
+    }
+    checkpoint_path = tmp_path / "legacy-gast.ckpt"
+    torch.save(checkpoint, checkpoint_path)
+
+    current_model = build_model("GAST-content-only-history-aggregation", num_modes=4)
+    missing, unexpected = load_checkpoint(current_model, checkpoint_path)
+    assert missing == []
+    assert unexpected == []
+    expected_key = "observation_encoder.observation_prior_strength_decay_logit"
+    assert torch.equal(
+        current_model.state_dict()[expected_key],
+        source_model.state_dict()[expected_key],
+    )
+
+    pretrained_model = build_model("GAST-content-only-history-aggregation", num_modes=4)
+    incompatible = pretrained_model.load_from_checkpoint(checkpoint_path)
+    assert incompatible.missing_keys == []
+    assert incompatible.unexpected_keys == []
+    assert torch.equal(
+        pretrained_model.state_dict()[expected_key],
+        source_model.state_dict()[expected_key],
+    )

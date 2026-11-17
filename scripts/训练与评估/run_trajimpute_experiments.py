@@ -46,6 +46,9 @@ CANONICAL_BENCHMARK = "TrajGap-Bench"
 DEFAULT_PROTOCOL = "trajgap-bench"
 DEFAULT_VARIANT = "GAST"
 OPTIMIZER_POLICY = "adamw_complete_module_local_v1"
+_LEGACY_VARIANT_ALIASES = {
+    "GAST-content-only-readout": "GAST-content-only-history-aggregation",
+}
 
 # Each ablation changes one structural switch; the full GAST remains the default.
 _GAST_BASE = {
@@ -56,8 +59,8 @@ _GAST_BASE = {
     "mode_diversity_margin": 0.5,
     "use_interaction_bias": True,
     "use_source_filter": True,
-    "use_state_strength_modulation": True,
-    "use_state_strength_readout": True,
+    "use_observation_prior_strength_modulation": True,
+    "use_observation_prior_strength_history_aggregation": True,
     "use_goal_guidance": True,
 }
 VARIANTS = {
@@ -65,10 +68,10 @@ VARIANTS = {
     "GAST-no-interaction-bias": {**_GAST_BASE, "use_interaction_bias": False},
     "GAST-no-source-filter": {**_GAST_BASE, "use_source_filter": False},
     "GAST-no-state-strength-modulation": {
-        **_GAST_BASE, "use_state_strength_modulation": False
+        **_GAST_BASE, "use_observation_prior_strength_modulation": False
     },
-    "GAST-content-only-readout": {
-        **_GAST_BASE, "use_state_strength_readout": False
+    "GAST-content-only-history-aggregation": {
+        **_GAST_BASE, "use_observation_prior_strength_history_aggregation": False
     },
     "GAST-no-goal-guidance": {**_GAST_BASE, "use_goal_guidance": False},
 }
@@ -114,11 +117,80 @@ def make_resume_contract(manifest):
     }
 
 
+def _canonical_observation_prior_name(name):
+    return (
+        name.replace(
+            ".state_strength_decay_logit",
+            ".observation_prior_strength_decay_logit",
+        )
+        .replace(
+            ".state_strength_aggregation.",
+            ".observation_prior_strength_aggregation.",
+        )
+        .replace(
+            ".observation_prior_strength_aggregation.history_readout.",
+            ".observation_prior_strength_aggregation.history_aggregation.",
+        )
+    )
+
+
+def _normalize_observation_prior_contract(contract):
+    """Normalize only fields renamed from state strength to observation prior."""
+    normalized = dict(contract)
+    if normalized.get("model_version") in _LEGACY_VARIANT_ALIASES:
+        normalized["model_version"] = _LEGACY_VARIANT_ALIASES[
+            normalized["model_version"]
+        ]
+
+    model_config = normalized.get("model_config")
+    if isinstance(model_config, dict):
+        model_config = dict(model_config)
+        for old_key, new_key in (
+            (
+                "use_state_strength_modulation",
+                "use_observation_prior_strength_modulation",
+            ),
+            (
+                "use_state_strength_readout",
+                "use_observation_prior_strength_history_aggregation",
+            ),
+            (
+                "use_observation_prior_strength_readout",
+                "use_observation_prior_strength_history_aggregation",
+            ),
+        ):
+            if old_key in model_config and new_key not in model_config:
+                model_config[new_key] = model_config[old_key]
+            model_config.pop(old_key, None)
+        normalized["model_config"] = model_config
+
+    signature = normalized.get("optimizer_signature")
+    if isinstance(signature, list):
+        normalized["optimizer_signature"] = [
+            {
+                **group,
+                "parameters": [
+                    {
+                        **parameter,
+                        "name": _canonical_observation_prior_name(
+                            parameter["name"]
+                        ),
+                    }
+                    for parameter in group.get("parameters", [])
+                ],
+            }
+            for group in signature
+        ]
+    return normalized
+
+
 def validate_resume_manifest(existing, expected):
     old_contract = existing.get("resume_contract")
     expected_contract = expected.get("resume_contract")
     if not isinstance(old_contract, dict) or not isinstance(expected_contract, dict):
         raise RuntimeError("resume contract mismatch: legacy manifest has no versioned contract")
+    old_contract = _normalize_observation_prior_contract(old_contract)
+    expected_contract = _normalize_observation_prior_contract(expected_contract)
     mismatches = [
         key for key in sorted(set(old_contract) | set(expected_contract))
         if old_contract.get(key) != expected_contract.get(key)
@@ -198,15 +270,41 @@ def validate_resume_checkpoint(checkpoint_path, expected_manifest, expected_sign
         except TypeError:
             handle.seek(0)
             payload = torch.load(handle, map_location="cpu")
-    if payload.get("trajgap_run_contract") != expected_manifest.get("resume_contract"):
+    checkpoint_contract = payload.get("trajgap_run_contract")
+    expected_contract = expected_manifest.get("resume_contract")
+    if (
+        not isinstance(checkpoint_contract, dict)
+        or not isinstance(expected_contract, dict)
+        or _normalize_observation_prior_contract(checkpoint_contract)
+        != _normalize_observation_prior_contract(expected_contract)
+    ):
         raise RuntimeError("resume contract mismatch in checkpoint metadata")
-    if payload.get("trajgap_optimizer_signature") != expected_signature:
+    checkpoint_signature = payload.get("trajgap_optimizer_signature")
+    normalized_signature = [
+        {
+            **group,
+            "parameters": [
+                {
+                    **parameter,
+                    "name": _canonical_observation_prior_name(parameter["name"]),
+                }
+                for parameter in group.get("parameters", [])
+            ],
+        }
+        for group in checkpoint_signature
+    ] if isinstance(checkpoint_signature, list) else None
+    if normalized_signature != expected_signature:
         raise RuntimeError("resume contract mismatch: optimizer parameter names/order/shapes differ")
     state_dict = payload.get("state_dict", {})
+    canonical_state_dict = {}
+    for key, value in state_dict.items():
+        canonical_key = _canonical_observation_prior_name(key)
+        if canonical_key not in canonical_state_dict or canonical_key == key:
+            canonical_state_dict[canonical_key] = value
     for group in expected_signature:
         for parameter in group["parameters"]:
             key = parameter["name"]
-            tensor = state_dict.get(key)
+            tensor = canonical_state_dict.get(key)
             if tensor is None or list(tensor.shape) != parameter["shape"]:
                 raise RuntimeError(f"resume contract mismatch: model parameter shape differs for {key}")
     optimizer_states = payload.get("optimizer_states") or []

@@ -17,8 +17,8 @@ target:
     interaction_operator: 'max'
     use_interaction_bias: true
     use_source_filter: true
-    use_state_strength_modulation: true
-    use_state_strength_readout: true
+    use_observation_prior_strength_modulation: true
+    use_observation_prior_strength_history_aggregation: true
     use_goal_guidance: true
     # Endpoint-guided decoding and trajectory-aware mode ranking are
     # intrinsic parts of GAST, not a separate model variant.

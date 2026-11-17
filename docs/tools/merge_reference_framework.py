@@ -127,12 +127,12 @@ def prepare_encoder(image):
     draw.line((650, 249, 875, 249), fill=ink, width=4)
     draw.polygon([(875, 249), (862, 241), (862, 257)], fill=ink)
 
-    # Add state-strength modulation above the history-state grid.
+    # Add observation-prior-strength modulation above the history-state grid.
     draw.line((1042, 98, 1042, 140), fill=ink, width=4)
     draw.polygon([(1042, 140), (1034, 128), (1050, 128)], fill=ink)
     draw.rounded_rectangle((974, 140, 1111, 198), radius=10,
                            fill=teal, outline=teal_stroke, width=3)
-    draw.text((1042, 169), "State-strength modulation",
+    draw.text((1042, 169), "Prior-strength modulation",
               fill=(255, 255, 255), font=serif_font(14, bold=True), anchor="mm")
     draw.line((1042, 198, 1042, 257), fill=ink, width=4)
     draw.polygon([(1042, 257), (1034, 245), (1050, 245)], fill=ink)
