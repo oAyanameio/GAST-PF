@@ -20,7 +20,11 @@ def build_observation_prior(
     tau: torch.Tensor | float,
     key_padding: torch.Tensor | None = None,
 ):
-    """Construct observation eligibility, age, and prior-strength tensors."""
+    """Construct observation eligibility, interval, and prior-strength tensors.
+
+    The interval counts steps since the latest valid observation. Before the
+    first valid observation, it counts from the window start using ``t + 1``.
+    """
     observed = valid_mask.bool()
     if key_padding is not None:
         observed = observed & ~key_padding.bool().unsqueeze(-1)
@@ -28,18 +32,24 @@ def build_observation_prior(
         observed.shape[-1], device=observed.device, dtype=torch.long
     ).view(*([1] * (observed.ndim - 1)), -1)
     last_observed = torch.where(observed, steps, -1).cummax(dim=-1).values
-    age = torch.where(last_observed >= 0, steps - last_observed, steps + 1)
+    observation_interval_steps = torch.where(
+        last_observed >= 0, steps - last_observed, steps + 1
+    )
     tau_tensor = torch.as_tensor(tau, dtype=torch.float32, device=observed.device)
     observation_prior_strength = torch.where(
         observed,
-        torch.ones_like(age, dtype=torch.float32),
-        torch.exp(-tau_tensor * age.float()),
+        torch.ones_like(observation_interval_steps, dtype=torch.float32),
+        torch.exp(-tau_tensor * observation_interval_steps.float()),
     )
     if key_padding is not None:
         observation_prior_strength = (
             observation_prior_strength * (~key_padding.bool()).unsqueeze(-1)
         )
-    return observed.to(torch.float32), observation_prior_strength, age.to(torch.float32)
+    return (
+        observed.to(torch.float32),
+        observation_prior_strength,
+        observation_interval_steps.to(torch.float32),
+    )
 
 
 def build_framewise_interaction_features(

@@ -5,6 +5,7 @@ GAST-PF 是面向**缺失历史直接未来预测**的研究代码库，包含�
 | 项目 | 说明 |
 |---|---|
 | 方法 | `GAST`（Gap-Aware Spatio-Temporal Pedestrian Forecaster） |
+| 论文题目 | GAST：基于观测先验的时空缺失感知的行人轨迹预测 |
 | 数据集 | `TrajGap`：基于 TrajImpute 官方数据整理的缺失历史行人轨迹数据集 |
 | 评测协议 | `TrajGap-Bench`：面向不插补直接预测的统一任务与评测规则 |
 | 任务 | 8 帧历史（显式缺失掩码）→ 12 帧未来，`K=20` |

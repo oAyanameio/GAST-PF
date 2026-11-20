@@ -16,14 +16,14 @@ from src.model.layers.observation_state_encoder import (  # noqa: E402
 )
 
 
-def test_observation_prior_tracks_age_prior_strength_and_padding():
+def test_observation_prior_tracks_interval_prior_strength_and_padding():
     valid = torch.tensor([[[1, 0, 0], [1, 1, 1]]], dtype=torch.bool)
     padding = torch.tensor([[False, True]])
-    observed, prior_strength, age = build_observation_prior(
+    observed, prior_strength, observation_interval_steps = build_observation_prior(
         valid, tau=0.5, key_padding=padding
     )
     assert observed[0, 0].tolist() == [1.0, 0.0, 0.0]
-    assert age[0, 0].tolist() == [0.0, 1.0, 2.0]
+    assert observation_interval_steps[0, 0].tolist() == [0.0, 1.0, 2.0]
     assert torch.allclose(
         prior_strength[0, 0],
         torch.tensor([1.0, torch.exp(torch.tensor(-0.5)), torch.exp(torch.tensor(-1.0))]),

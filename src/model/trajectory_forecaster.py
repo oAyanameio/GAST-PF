@@ -6,7 +6,7 @@ from .layers.observation_state_encoder import ObservationPriorEncoder
 
 # Actor-centric trajectory forecaster.
 class TrajectoryForecaster(nn.Module):
-    """组装 GAST：观测先验编码器编码历史，终点引导解码器生成未来。"""
+    """组装 GAST：基于观测先验的时空缺失感知的行人轨迹预测模型。"""
 
     def __init__(
         self,

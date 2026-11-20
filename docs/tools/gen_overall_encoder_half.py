@@ -438,19 +438,19 @@ tc("Frame-wise", 970, 382, fit("Frame-wise", CMB, 154), INK)
 tc("Actor", 970, 416, fit("Actor", CMB, 154), INK)
 tc("Interactions", 970, 450, fit("Interactions", CMB, 154), INK)
 
-# 观测先验强度调制：按当前实现画 age -> observation-prior strength -> ⊙。
+# 观测先验强度调制：按当前实现画 observation interval -> prior strength -> ⊙。
 clear((1278, 84, 1540, 222), WHITE)
 clear((1272, 216, 1548, 340), WHITE)
 clear((1332, 412, 1622, 480), WHITE)
-# age/evidence 输入条
-# 由 mask 可观测性支路延伸到 age 输入，保留与 ghost/GSM 共用的证据来源。
+# 观测间隔/evidence 输入条
+# 由 mask 可观测性支路延伸到观测间隔输入，保留与 ghost/GSM 共用的证据来源。
 d.line([(973, 201), (1407, 201)], fill=INK, width=4)
 arrow((1407, 201), (1407, 154), lw=4, size=11)
 d.rounded_rectangle((1312, 107, 1502, 153), radius=7, outline=(46, 154, 168), width=3)
 for x0, x1 in [(1319, 1353), (1357, 1391), (1395, 1429), (1433, 1467), (1471, 1495)]:
     d.rectangle((x0, 114, x1, 146), fill=(242, 247, 252), outline=INK, width=2)
-tc("age", 1407, 130, fit("age", CMR, 45, start=18), INK)
-# Observation-prior strength is exp(-tau * age), with learnable tau; the arrow feeds ⊙.
+tc("interval", 1407, 130, fit("interval", CMR, 120, start=22), INK)
+# Observation-prior strength is exp(-tau * interval), with learnable tau; the arrow feeds ⊙.
 d.rounded_rectangle((1295, 234, 1524, 323), radius=12, fill=(46, 154, 168),
                     outline=INK, width=3)
 tc("Prior strength", 1409, 258, fit("Prior strength", CMB, 200), WHITE)
@@ -482,9 +482,9 @@ d.line([(1858, 382), (1862, 382)], fill=INK, width=4)
 log.append("GAST encoder: frame-wise actor interactions; observation-prior-strength modulation; Mamba; observation-prior-strength-weighted history aggregation")
 
 # ---------- E27 顶部观测先验支路 ----------
-# 参考图风格：把 e(i,t)=(s,a,γ) 统一画在主干最上方，
-# s/a/gamma 分别以橙色虚线注入逐帧交互、观测先验强度调制和历史状态聚合。
-# 先清掉旧的顶部 age 小条及其旧水平连接，避免两套证据支路重复。
+# 参考图风格：把 e(i,t)=(s,δ,γ) 统一画在主干最上方，
+# s/δ/gamma 分别以橙色虚线注入逐帧交互、观测先验强度调制和历史状态聚合。
+# 先清掉旧的顶部观测间隔条及其旧水平连接，避免两套证据支路重复。
 clear((965, 194, 1415, 210), WHITE)
 clear((1278, 84, 1540, 222), WHITE)
 # 顶部栏覆盖原图空白上带，不遮 Binary Mask 主网格（x<480）。
@@ -493,7 +493,7 @@ d.rounded_rectangle((500, 8, 1935, 94), radius=12,
                     fill=(255, 245, 235), outline=ORANGE, width=3)
 tc("Observation prior and strength", 675, 29,
    fit("Observation prior and strength", CMB, 300, start=24), ORANGE)
-tc("e(i,t) = (s, a, γ)", 675, 68, F(STIX, 20), INK)
+tc("e(i,t) = (s, δ, γ)", 675, 68, F(STIX, 20), INK)
 
 # 三个状态分量：只保留定义，不再添加模块下方解释小字。
 def evidence_box(x0, x1, text):
@@ -502,8 +502,8 @@ def evidence_box(x0, x1, text):
     tc(text, (x0 + x1) / 2.0, 51, fit(text, STIX, x1 - x0 - 16, start=20), INK)
 
 evidence_box(900, 1050, "s = m")
-evidence_box(1215, 1603, "a = t − ℓ")
-evidence_box(1680, 1932, "γ = exp(−τa)")
+evidence_box(1215, 1603, "δ = t − ℓ")
+evidence_box(1680, 1932, "γ = exp(−τδ)")
 
 # 橙色虚线注入箭头：虚线杆 + 实心小箭头头，目标落在三个当前模块上。
 def evidence_arrow(p0, p1, dash=10, gap=7, lw=3, size=10):
@@ -520,7 +520,7 @@ def evidence_arrow(p0, p1, dash=10, gap=7, lw=3, size=10):
     head(p1, math.atan2(dy, dx), size, ORANGE)
 
 evidence_arrow((975, 96), (970, 348))    # s -> frame-wise interactions
-evidence_arrow((1409, 96), (1409, 228))  # age -> observation-prior-strength modulation
+evidence_arrow((1409, 96), (1409, 228))  # interval -> observation-prior-strength modulation
 evidence_arrow((1809, 96), (1809, 286))  # strength -> weighted aggregation
 log.append("Observation prior and its strength feed frame-wise interactions, input modulation, and history aggregation")
 

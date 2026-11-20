@@ -168,6 +168,7 @@ checkpoints/
 
 # 本地写作草稿不入库
 小论文大纲.md
+小论文*.docx
 paper/
 docs/论文/
 
