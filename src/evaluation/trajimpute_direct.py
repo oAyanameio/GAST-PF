@@ -16,17 +16,19 @@ MISSING_HISTORY_FRAME_COUNT = 8
 MISSING_SEVERITY_BINS = (
     ("near_complete", "Near-complete", (0, 1, 2)),
     ("moderate", "Moderate", (3, 4)),
-    ("severe", "Severe", (5, 6, 7)),
+    # missing=7 leaves only one observed history frame and is excluded from
+    # the severity summary because no observed motion difference is available.
+    ("severe", "Severe", (5, 6)),
 )
 MISSING_SEVERITY_PERCENT_RANGES = {
     "near_complete": "≤25%",
     "moderate": ">25–50%",
-    "severe": ">50–87.5%",
+    "severe": ">50–75%",
 }
 MISSING_SEVERITY_LABELS = {
     "near_complete": "Near-complete (≤25%)",
     "moderate": "Moderate (>25–50%)",
-    "severe": "Severe (>50–87.5%)",
+    "severe": "Severe (>50–75%)",
 }
 
 
@@ -40,9 +42,11 @@ def missing_percentage(missing_count: int) -> float:
     return 100.0 * missing_count / MISSING_HISTORY_FRAME_COUNT
 
 
-def classify_missing_severity(missing_count: int) -> str:
-    """Classify severity by the percentage of the eight history frames missing."""
+def classify_missing_severity(missing_count: int) -> str | None:
+    """Classify severity; return None for the one-observed-frame extreme."""
     missing_pct = missing_percentage(missing_count)
+    if missing_count == MISSING_HISTORY_FRAME_COUNT - 1:
+        return None
     if missing_pct <= 25.0:
         return "near_complete"
     if missing_pct <= 50.0:
@@ -126,8 +130,9 @@ class DirectEvaluator:
         out["by_severity"] = {}
         severity_keys = sorted(
             {
-                (scene, diff, split, classify_missing_severity(mc))
+                (scene, diff, split, severity)
                 for scene, diff, split, mc in exact_means
+                if (severity := classify_missing_severity(mc)) is not None
             }
         )
         for scene, diff, split, severity in severity_keys:

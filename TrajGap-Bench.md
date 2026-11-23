@@ -80,7 +80,7 @@ TrajGap 沿用上游数据的场景划分，并对各 split 中的 focal 行人�
 
 训练集的缺失帧数量覆盖 `0…7`。测试集保留官方的缺失程度扫描：同一潜在轨迹可能对应多个不同缺失掩码。因此，样本数不能直接解释为独立原始轨迹数；统计显著性分析应按原始轨迹聚类或采用 paired bootstrap。
 
-主文将缺失程度压缩为 3 个互斥分层，并以 8 帧历史为分母报告缺失比例：近完整观测（≤25%）、中度缺失（>25–50%）和重度缺失（>50–87.5%）。缺失比例以 12.5 个百分点递增；由于每个样本至少保留一个有效历史帧，最大缺失比例为 87.5%。每个场景内先对分层包含的离散缺失等级等权平均，再对五个场景做 macro average；精确缺失等级仅作为附录诊断索引。相对退化率以完整历史组为基准计算。
+主文将缺失程度压缩为 3 个互斥分层，并以 8 帧历史为分母报告缺失比例：近完整观测（≤25%）、中度缺失（>25–50%）和重度缺失（>50–75%）。`missing=7`（只剩一帧有效历史）不进入三级分层汇总，因为该样本无法提供真实运动差分；它仍保留在逐等级附录诊断中。缺失比例以 12.5 个百分点递增；数据集仍允许每个样本至少保留一个有效历史帧。每个场景内先对分层包含的离散缺失等级等权平均，再对五个场景做 macro average；精确缺失等级仅作为附录诊断索引。相对退化率以完整历史组为基准计算。
 
 ## 3. 评估协议
 
@@ -271,7 +271,7 @@ The dataset retains the upstream scene and train/validation/test partitions. Sam
 
 The test set preserves the official missing-level sweep: one latent trajectory may appear with multiple masks. Counts therefore are not counts of unique source trajectories. Statistical inference should cluster by original trajectory or use paired bootstrap.
 
-The main analysis uses three mutually exclusive severity bins, reported as the percentage of the eight-frame history: near-complete (≤25%), moderate (>25–50%), and severe (>50–87.5%). Missingness changes in 12.5-percentage-point increments; the maximum is 87.5% because at least one history frame must remain observed. Within each scene, the discrete levels in a bin are averaged equally before the five-scene macro average is computed. Exact missing levels are retained only as appendix diagnostics, and relative degradation is measured against the complete-history group.
+The main analysis uses three mutually exclusive severity bins, reported as the percentage of the eight-frame history: near-complete (≤25%), moderate (>25–50%), and severe (>50–75%). The `missing=7` case, with only one observed history frame, is excluded from the three-bin summary because it provides no observed motion difference; it remains an exact-level appendix diagnostic. Missingness changes in 12.5-percentage-point increments, and the dataset still permits at least one observed history frame. Within each scene, the discrete levels included in a bin are averaged equally before the five-scene macro average is computed. Relative degradation is measured against the complete-history group.
 
 This is a controlled missing-history stress test. It should not be described as a measured real-world tracker-missingness distribution without external validation.
 

@@ -84,7 +84,7 @@ def test_evaluator_grouping_manual():
     assert classify_missing_severity(3) == "moderate"
     assert classify_missing_severity(5) == "severe"
     assert classify_missing_severity(6) == "severe"
-    assert classify_missing_severity(7) == "severe"
+    assert classify_missing_severity(7) is None
     assert (
         out["by_severity"]["ETH-M/Easy/test/severity=near_complete"][
             "missing_levels"
@@ -109,6 +109,7 @@ def test_missing_severity_is_defined_by_percentage_of_eight_history_frames():
     assert classify_missing_severity(3) == "moderate"
     assert classify_missing_severity(4) == "moderate"
     assert classify_missing_severity(5) == "severe"
+    assert classify_missing_severity(7) is None
     with pytest.raises(ValueError):
         missing_percentage(8)
 
@@ -153,7 +154,7 @@ def test_severity_bin_weights_exact_missing_levels_equally():
     assert severity["minFDE2_relative_vs_missing0_pct"] == pytest.approx(200.0)
 
 
-def test_severe_bin_includes_exact_missing_level_seven():
+def test_severe_bin_excludes_single_observed_frame_level():
     evaluator = DirectEvaluator()
     target = torch.zeros(1, 4, 2)
     prob = torch.ones(1, 2)
@@ -167,11 +168,12 @@ def test_severe_bin_includes_exact_missing_level_seven():
     severity = evaluator.compute()["by_severity"][
         "ETH-M/TrajGap/test/severity=severe"
     ]
-    assert severity["missing_levels"] == [5, 6, 7]
-    assert severity["expected_missing_levels"] == [5, 6, 7]
-    assert severity["label"] == "Severe (>50–87.5%)"
-    assert severity["missing_percentage_range"] == ">50–87.5%"
-    assert severity["minFDE2"] == pytest.approx((5.0 + 7.0 + 11.0) / 3.0)
+    assert severity["missing_levels"] == [5, 6]
+    assert severity["expected_missing_levels"] == [5, 6]
+    assert severity["label"] == "Severe (>50–75%)"
+    assert severity["missing_percentage_range"] == ">50–75%"
+    assert severity["minFDE2"] == pytest.approx((5.0 + 7.0) / 2.0)
+    assert "ETH-M/TrajGap/test/missing=7" in evaluator.compute()["by_group"]
 
 
 # ---------------------------------------------------------------- 17/18. Easy/Hard 分组统计

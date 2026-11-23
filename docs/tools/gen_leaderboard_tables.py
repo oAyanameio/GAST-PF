@@ -17,12 +17,12 @@ SCENES = ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
 MISSING_SEVERITY_BINS = (
     ("near_complete", "近完整观测", (0, 1, 2)),
     ("moderate", "中度缺失", (3, 4)),
-    ("severe", "重度缺失", (5, 6, 7)),
+    ("severe", "重度缺失", (5, 6)),
 )
 MISSING_SEVERITY_PERCENT_LABELS = {
     "near_complete": "≤25%",
     "moderate": ">25–50%",
-    "severe": ">50–87.5%",
+    "severe": ">50–75%",
 }
 MISSING_SEVERITY_LABELS_EN = {
     "near_complete": "Near-complete",
@@ -32,7 +32,7 @@ MISSING_SEVERITY_LABELS_EN = {
 MISSING_SEVERITY_PERCENT_LABELS_EN = {
     "near_complete": "≤25%",
     "moderate": ">25–50%",
-    "severe": ">50–87.5%",
+    "severe": ">50–75%",
 }
 
 # External baseline paths; GAST results are selected from run metadata.
@@ -564,10 +564,10 @@ MD_NOTES = """
 - 六个方法均完成 ETH-M、HOTEL-M、UNIV-M、ZARA1-M、ZARA2-M 五场景。
 - 只报告普通 `minADE20`、`minFDE20`；不使用模式分数加权，也不报告 top-1、MR、Brier 或综合分数。
 - 表中指标按各方法 TrajGap test `results.json` 计算；宏平均为五场景等权，micro 为汇总全部测试样本后的算术平均。
-- 三级缺失分层以 8 帧历史为分母，定义为近完整观测（≤25%）、中度缺失（>25–50%）和重度缺失（>50–87.5%）。实际缺失比例按 12.5 个百分点递增，且每个样本至少保留一个有效历史帧。每个场景内先对该档各离散缺失等级的指标等权平均，再对五场景等权平均；不按样本量给等级加权。
+- 三级缺失分层以 8 帧历史为分母，定义为近完整观测（≤25%）、中度缺失（>25–50%）和重度缺失（>50–75%）。`missing=7`（只剩一帧有效历史）不进入三级分层汇总，因为该样本无法提供真实运动差分；它仍保留在逐等级附录诊断中。每个场景内先对该档各离散缺失等级的指标等权平均，再对五场景等权平均；不按样本量给等级加权。
 - 相对 `missing=0` 的退化率先在各场景内计算，再对档内精确等级和五场景分别等权平均；负值表示该档指标低于完整历史组。
 - focal 样本数是掩码条件样本总数；相同潜在轨迹可能以多个掩码重复出现，因此不能视作独立原始轨迹数。
-- 精确缺失等级仍以 `missing=0…7` 作为附录索引，用于展示离散边界行为；主表不再使用具体缺失帧数。
+- 精确缺失等级仍以 `missing=0…7` 作为附录索引，用于展示离散边界行为；其中 `missing=7` 仅作单帧极端情况诊断，不进入三级主表。
 - 外部模型保持其方法属性：MS-TIP 为插补感知联合预测方法，其余依各自实现处理缺失历史；榜单比较的是统一测试集上的结果，不代表内部结构均为纯 direct。
 - 选点口径：GAST / AgentFormer / Re / MS-TIP / Social-STGCNN 均按各自验证集 minFDE20 选最优 checkpoint；MoFlow 沿用其官方实现原生的验证集 minADE（ADE_MIN）选点，未做改动。
 - MS-TIP 五场景最优 checkpoint 均出现在 epoch 5–9（后续验证集 minFDE20 持续变差，为其联合插补目标在 direct 协议下的原生行为，非调参不足）；表中数值取各自验证最优 checkpoint。

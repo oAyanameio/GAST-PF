@@ -153,9 +153,10 @@ def fig_degradation(data, outdir):
     severity_bands = (
         (-6.25, 31.25, "Near-complete\n(≤25%)"),
         (31.25, 56.25, "Moderate\n(>25–50%)"),
-        (56.25, 93.75, "Severe\n(>50–87.5%)"),
+        (56.25, 81.25, "Severe\n(>50–75%)"),
+        (81.25, 93.75, "Single observed frame (excluded)"),
     )
-    colors = ("#EAF2F8", "#E8F6F3", "#FEF5E7")
+    colors = ("#EAF2F8", "#E8F6F3", "#FEF5E7", "#F2F2F2")
     for (left, right, label), color in zip(severity_bands, colors):
         ax.axvspan(left, right, color=color, alpha=0.55, zorder=0)
         ax.text(

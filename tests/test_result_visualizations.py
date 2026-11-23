@@ -108,6 +108,31 @@ def test_missing_severity_averages_exact_levels_equally_before_scene_macro():
     ) == 200.0
 
 
+def test_missing_severity_excludes_single_observed_frame():
+    scene = leaderboard.SCENES[0]
+    record = {
+        "_by_group": {
+            f"{scene}/TrajGap/test/missing=5": {
+                "n": 10, "minADE_K": 1.0, "minFDE_K": 2.0,
+            },
+            f"{scene}/TrajGap/test/missing=6": {
+                "n": 10, "minADE_K": 3.0, "minFDE_K": 4.0,
+            },
+            f"{scene}/TrajGap/test/missing=7": {
+                "n": 10, "minADE_K": 100.0, "minFDE_K": 200.0,
+            },
+        }
+    }
+
+    severe = leaderboard.severity_record(record, "severe")
+
+    assert severe is not None
+    assert severe["missing_levels"] == [5, 6]
+    assert severe["n"] == 20
+    assert severe["minADE_K"] == 2.0
+    assert severe["minFDE_K"] == 3.0
+
+
 def test_new_leaderboard_wording_uses_trajgap_not_legacy_protocol():
     data = {
         method: {"per": {}}
@@ -120,7 +145,7 @@ def test_new_leaderboard_wording_uses_trajgap_not_legacy_protocol():
     assert "| 分层 | 缺失比例 | focal 样本数 |" in rendered
     assert "| 近完整观测 | ≤25% |" in rendered
     assert "| 中度缺失 | >25–50% |" in rendered
-    assert "| 重度缺失 | >50–87.5% |" in rendered
+    assert "| 重度缺失 | >50–75% |" in rendered
     assert "缺失等级（帧数索引）" in rendered
 
 
