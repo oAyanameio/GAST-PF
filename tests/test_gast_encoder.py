@@ -73,7 +73,7 @@ def test_content_only_history_aggregation_uses_scores_without_prior_strength_wei
     assert torch.allclose(output, expected)
 
 
-def test_gast_uses_complete_evidence_stages():
+def test_gast_uses_complete_observation_prior_stages():
     gast = ObservationPriorEncoder(embed_dim=16, num_heads=4, depth=1)
     assert isinstance(gast.framewise_interaction, FramewiseInteractionModel)
     assert hasattr(gast.framewise_interaction, "interaction_bias")

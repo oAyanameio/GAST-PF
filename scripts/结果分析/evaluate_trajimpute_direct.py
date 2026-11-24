@@ -214,7 +214,7 @@ def run_evaluation(model, dataset, K, scene, difficulty, split, variant, seed,
         valid_count = focal_valid.sum(-1)
         anchor_lag = batch["x_anchor_lag_steps"][:, 0]
         forecast_gap = batch["x_forecast_gap_steps"][:, 0]
-        # 逐样本分组（batch 内证据条件可能不同）
+        # 逐样本分组（batch 内观测条件可能不同）
         for i in range(pred.shape[0]):
             evaluator.update(
                 pred[i:i + 1].float().cpu(), prob[i:i + 1].cpu(),

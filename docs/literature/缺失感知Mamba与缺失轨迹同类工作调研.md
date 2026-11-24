@@ -39,7 +39,7 @@
 | A. mask/表征双输入流 | BiTGraph (Chen et al.) | ICLR 2024 | 偏置 GCN，missing pattern 逐层注入（非 Mamba，图版范式） | 范式参照 |
 | B. Δ 离散化条件化 | **MAS-Mamba** (Huang et al.) | IET ITS (2026-07) | mask + elapsed-time 条件化 selective scan 的 Δ；全缺失步 exp(−λΔ) 收缩→状态保持；split-conformal 校准 | 项目早期实验（C-MAS-delta）中 UNIV-M minFDE +2.55%、MR +17%，且 all-valid identity 不成立；仅调整 Δ 不足以阻止缺失帧写入状态 |
 | C. 时间感知结构改造 | **TIDES** (Barreira et al.) | arXiv 2605.09742 (2026-05) | 把 input-dependence 从 Δ 移到对角状态矩阵 A，Δ 恢复物理时间间隔含义→不规则时间戳原生处理 | 与 B 族本质不同（不是给 Δ 加条件项而是重定位选择性）；轨迹上未见过；有 Fading Flash 诊断基准+代码 |
-| C. 时间感知结构改造 | ReTAMamba (Kim & Park) | arXiv 2605.16380 (2026-05) | 不规则临床时序→time-variable token 序列，观测可靠性（缺失度+耗时）估计+多分辨率区间统计描述符 | token 级可靠性聚合思想可与 evidence 特征共用 |
+| C. 时间感知结构改造 | ReTAMamba (Kim & Park) | arXiv 2605.16380 (2026-05) | 不规则临床时序→time-variable token 序列，观测可靠性（缺失度+耗时）估计+多分辨率区间统计描述符 | token 级可靠性聚合思想可与观测状态特征共用 |
 | C. 时间感知（非 Mamba） | VISTA-SSM (Brindle et al.) | arXiv 2410.21527 | LGSSM 参数化混合，变采样率聚类 | 统计建模路线，弱相关 |
 | D. mask 缩放扫描 | **Sports-Traj BTS** (Xu et al.) | ICLR 2025 | 按观测间隔生成逐通道特征缩放系数，再输入 Mamba；属于输入特征调制，不是 selective scan 的 Δ 条件化 | 轨迹生成（补全+预测）相关工作；其机制与 GAST 的观测先验强度调制相关，但不等同于当前时序聚合实现 |
 | E. 扩散插补骨干 | SSSD (Alcaraz & Strodthoff) | 2022 | S4 层作扩散去噪骨干，只对缺失区加噪 | 插补经典 |
@@ -57,11 +57,11 @@
 
 ## 五、对模型缝合的启示（机制菜单，不构成排期）
 
-结合当前 GAST 结构与项目内已判负证据（C-MAS-delta Δ 条件化、C8 ET/anchor、evidence prompt、balanced sampling），按注入位点给出候选与警示：
+结合当前 GAST 结构与项目内已判负实验结果（C-MAS-delta Δ 条件化、C8 ET/anchor、观测状态提示、balanced sampling），按注入位点给出候选与警示：
 
 | 缝合候选 | 来源 | 注入位点 | 状态 |
 |---|---|---|---|
-| Δ 物理化（TIDES 式：选择性移到 A，Δ=真实时间间隔） | TIDES | selective scan 结构改造 | 未测；与已判负的"Δ 加条件项"机制不同族，判负证据不迁移，但工程量大（需 fork 慢路径） |
+| Δ 物理化（TIDES 式：选择性移到 A，Δ=真实时间间隔） | TIDES | selective scan 结构改造 | 未测；与已判负的"Δ 加条件项"机制不同族，既有负向实验结果不直接适用，但工程量大（需 fork 慢路径） |
 | 观测门控写入 / skip-update（缺失帧不写状态） | GRU-D/CRU 语义；C-MAS-delta 判负理由②显式点名未测 | 状态转移门控 | 未测；skill 定位为"最小可证伪路径"的另一半；须配 all-valid 恒等测试（判负理由①教训：禁全局 bias） |
 | token 级可靠性重组（把有效观测 patch 化/重排，跳过缺失步） | t-PatchGNN + ReTAMamba | 输入序列构造 | 未测；优点：完全不动 Mamba 内核，风险最低；缺点：叙事接近特征工程 |
 | mask 双输入流（S4M 式） | S4M | 双流 SSM | 未测；S4→Mamba 移植需自行设计 |

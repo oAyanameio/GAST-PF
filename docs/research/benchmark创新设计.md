@@ -67,7 +67,7 @@ TrajGap/<scene>/test
 |---|---:|---|
 | 近完整观测 | ≤25% | 历史观测较完整 |
 | 中度缺失 | >25–50% | 历史观测部分缺失 |
-| 重度缺失 | >50–75% | 可用历史证据较少（`missing=5,6`） |
+| 重度缺失 | >50–75% | 可用历史观测较少（`missing=5,6`） |
 
 每个场景内先对同一分层中的离散缺失等级等权平均，再对五个场景做 macro average；不让某个等级的样本数量决定分层权重。`missing=7` 不参与上述分层平均，仅作为附录诊断索引，以支持复核单帧极端情况。
 
@@ -149,7 +149,7 @@ scripts/训练与评估/run_trajimpute_experiments.py \
 - 按底层来源标签拆分的独立主榜；
 - Clean 主训练或主测试分支；
 - unseen-pattern 数据扩展；
-- severity-balanced 或 evidence-balanced 主训练；
+- severity-balanced 或 observation-profile-balanced 主训练；
 - 额外 direct/impute 双轨排行榜；
 - 除 `minFDE20`、`minADE20` 外的主榜指标。
 

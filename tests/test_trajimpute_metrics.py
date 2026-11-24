@@ -114,7 +114,7 @@ def test_missing_severity_is_defined_by_percentage_of_eight_history_frames():
         missing_percentage(8)
 
 
-def test_evaluator_evidence_dimension_grouping_manual():
+def test_evaluator_observation_dimension_grouping_manual():
     ev = DirectEvaluator()
     target = torch.zeros(1, 4, 2)
     pred = torch.zeros(1, 2, 4, 2)

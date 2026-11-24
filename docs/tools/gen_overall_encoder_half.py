@@ -442,8 +442,8 @@ tc("Interactions", 970, 450, fit("Interactions", CMB, 154), INK)
 clear((1278, 84, 1540, 222), WHITE)
 clear((1272, 216, 1548, 340), WHITE)
 clear((1332, 412, 1622, 480), WHITE)
-# 观测间隔/evidence 输入条
-# 由 mask 可观测性支路延伸到观测间隔输入，保留与 ghost/GSM 共用的证据来源。
+# 观测间隔输入条
+# 由 mask 可观测性支路延伸到观测间隔输入，保留与 ghost/GSM 共用的观测状态信息。
 d.line([(973, 201), (1407, 201)], fill=INK, width=4)
 arrow((1407, 201), (1407, 154), lw=4, size=11)
 d.rounded_rectangle((1312, 107, 1502, 153), radius=7, outline=(46, 154, 168), width=3)
@@ -456,7 +456,7 @@ d.rounded_rectangle((1295, 234, 1524, 323), radius=12, fill=(46, 154, 168),
 tc("Prior strength", 1409, 258, fit("Prior strength", CMB, 200), WHITE)
 tc("modulation", 1409, 291, fit("modulation", CMB, 200), WHITE)
 arrow((1409, 325), (1409, 435), lw=4, size=13)
-# ⊙ 输出为 evidence-modulated temporal features，进入 Mamba。
+# ⊙ 输出为观测先验强度调制的时序特征，进入 Mamba。
 d.rounded_rectangle((1353, 437, 1505, 460), radius=4, fill=(76, 170, 179), outline=INK, width=2)
 for x0, x1 in [(1358, 1380), (1385, 1408), (1413, 1436), (1441, 1464), (1469, 1500)]:
     d.rectangle((x0, 440, x1, 457), fill=(76, 170, 179), outline=INK, width=1)
@@ -484,7 +484,7 @@ log.append("GAST encoder: frame-wise actor interactions; observation-prior-stren
 # ---------- E27 顶部观测先验支路 ----------
 # 参考图风格：把 e(i,t)=(s,δ,γ) 统一画在主干最上方，
 # s/δ/gamma 分别以橙色虚线注入逐帧交互、观测先验强度调制和历史状态聚合。
-# 先清掉旧的顶部观测间隔条及其旧水平连接，避免两套证据支路重复。
+# 先清掉旧的顶部观测间隔条及其旧水平连接，避免两套观测先验支路重复。
 clear((965, 194, 1415, 210), WHITE)
 clear((1278, 84, 1540, 222), WHITE)
 # 顶部栏覆盖原图空白上带，不遮 Binary Mask 主网格（x<480）。
@@ -496,17 +496,17 @@ tc("Observation prior and strength", 675, 29,
 tc("e(i,t) = (s, δ, γ)", 675, 68, F(STIX, 20), INK)
 
 # 三个状态分量：只保留定义，不再添加模块下方解释小字。
-def evidence_box(x0, x1, text):
+def prior_state_box(x0, x1, text):
     d.rounded_rectangle((x0, 22, x1, 80), radius=7,
                         fill=WHITE, outline=ORANGE, width=2)
     tc(text, (x0 + x1) / 2.0, 51, fit(text, STIX, x1 - x0 - 16, start=20), INK)
 
-evidence_box(900, 1050, "s = m")
-evidence_box(1215, 1603, "δ = t − ℓ")
-evidence_box(1680, 1932, "γ = exp(−τδ)")
+prior_state_box(900, 1050, "s = m")
+prior_state_box(1215, 1603, "δ = t − ℓ")
+prior_state_box(1680, 1932, "γ = exp(−τδ)")
 
 # 橙色虚线注入箭头：虚线杆 + 实心小箭头头，目标落在三个当前模块上。
-def evidence_arrow(p0, p1, dash=10, gap=7, lw=3, size=10):
+def prior_state_arrow(p0, p1, dash=10, gap=7, lw=3, size=10):
     dx, dy = p1[0] - p0[0], p1[1] - p0[1]
     length = max(1.0, math.hypot(dx, dy))
     ux, uy = dx / length, dy / length
@@ -519,9 +519,9 @@ def evidence_arrow(p0, p1, dash=10, gap=7, lw=3, size=10):
         pos += dash + gap
     head(p1, math.atan2(dy, dx), size, ORANGE)
 
-evidence_arrow((975, 96), (970, 348))    # s -> frame-wise interactions
-evidence_arrow((1409, 96), (1409, 228))  # interval -> observation-prior-strength modulation
-evidence_arrow((1809, 96), (1809, 286))  # strength -> weighted aggregation
+prior_state_arrow((975, 96), (970, 348))    # s -> frame-wise interactions
+prior_state_arrow((1409, 96), (1409, 228))  # interval -> observation-prior-strength modulation
+prior_state_arrow((1809, 96), (1809, 286))  # strength -> weighted aggregation
 log.append("Observation prior and its strength feed frame-wise interactions, input modulation, and history aggregation")
 
 im.save(OUT)

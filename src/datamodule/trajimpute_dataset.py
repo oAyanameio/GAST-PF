@@ -47,8 +47,8 @@ def max_missing_run(hist_valid: torch.Tensor) -> int:
     return best
 
 
-def classify_evidence_bin(hist_valid: torch.Tensor) -> str:
-    """按预注册的证据覆盖规则分为 E0/E1/E2/E3。
+def classify_observation_profile_bin(hist_valid: torch.Tensor) -> str:
+    """按预注册的观测模式覆盖规则分为 E0/E1/E2/E3。
 
     只使用历史有效性 mask，不读取位置、未来或 scene/test 标签。
     规则按严重度优先级从 E3 到 E0 判定，保证分箱互斥。
@@ -58,7 +58,9 @@ def classify_evidence_bin(hist_valid: torch.Tensor) -> str:
     valid_count = int(hist_valid.sum().item())
     valid_idx = torch.nonzero(hist_valid).flatten()
     if valid_idx.numel() == 0:
-        raise ValueError("evidence binning requires at least one valid history frame")
+        raise ValueError(
+            "observation-profile binning requires at least one valid history frame"
+        )
     last_valid_idx = int(valid_idx[-1].item())
     anchor_lag = 7 - last_valid_idx
     forecast_gap = 8 - last_valid_idx
@@ -416,7 +418,9 @@ class TrajImputeDataset(Dataset):
         self.max_missing_runs = torch.tensor([
             max_missing_run(row) for row in frame_valid
         ], dtype=torch.long)
-        self.evidence_bins = [classify_evidence_bin(row) for row in frame_valid]
+        self.observation_profile_bins = [
+            classify_observation_profile_bin(row) for row in frame_valid
+        ]
 
         # focal 索引表：(seq_index, start, end, focal_global_row)
         self.samples = []
@@ -426,7 +430,10 @@ class TrajImputeDataset(Dataset):
                     continue
                 self.samples.append((seq_i, s, e, row))
         self.sample_missing_counts = [int(self.missing_counts[row]) for _, _, _, row in self.samples]
-        self.sample_evidence_bins = [self.evidence_bins[row] for _, _, _, row in self.samples]
+        self.sample_observation_profile_bins = [
+            self.observation_profile_bins[row]
+            for _, _, _, row in self.samples
+        ]
         self.sample_max_missing_runs = [int(self.max_missing_runs[row]) for _, _, _, row in self.samples]
         self.sample_valid_counts = [int(self.valid_counts[row]) for _, _, _, row in self.samples]
         self.sample_anchor_lags = [int(self.anchor_lags[row]) for _, _, _, row in self.samples]
@@ -512,9 +519,9 @@ class TrajGapDataset(Dataset):
             int(value) for dataset in self.datasets
             for value in dataset.sample_missing_counts
         ]
-        self.sample_evidence_bins = [
+        self.sample_observation_profile_bins = [
             value for dataset in self.datasets
-            for value in dataset.sample_evidence_bins
+            for value in dataset.sample_observation_profile_bins
         ]
         self.sample_valid_counts = [
             value for dataset in self.datasets
@@ -639,7 +646,7 @@ class TrajImputeDataModule(LightningDataModule):
         self.pin_memory = pin_memory
         self.test = test
         self.zero_missing_only = zero_missing_only
-        allowed = {"natural", "severity_balanced", "evidence_balanced"}
+        allowed = {"natural", "severity_balanced", "observation_profile_balanced"}
         if train_sampling_scheme not in allowed:
             raise ValueError(
                 f"unknown train_sampling_scheme={train_sampling_scheme!r}; "
@@ -684,7 +691,7 @@ class TrajImputeDataModule(LightningDataModule):
             if self.train_sampling_scheme == "severity_balanced":
                 labels.extend(ds.sample_missing_counts)
             else:
-                labels.extend(ds.sample_evidence_bins)
+                labels.extend(ds.sample_observation_profile_bins)
         counts = Counter(labels)
         if len(counts) < 2:
             raise ValueError(
