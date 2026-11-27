@@ -443,7 +443,6 @@ class TrajImputeDataset(Dataset):
         # 走下方原路径构造并存入缓存，后续 epoch 直接复用——缓存值即原路径
         # 返回值（同一代码产出，构造性逐位一致）。fork 型 DataLoader worker
         # 各自缓存分到的样本，跨 epoch（persistent_workers）持续生效。
-        # 等价性门禁：scripts/审计与校验/check_sample_cache_equivalence.py。
         self._sample_cache = {}
         print(
             f"TrajImputeDataset {scene}/{difficulty}/{split}: "
