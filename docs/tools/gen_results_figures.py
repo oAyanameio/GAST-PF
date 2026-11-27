@@ -45,6 +45,19 @@ LINE_COLOR = {
 LINE_STYLE = {
     "GAST": "-", "MoFlow": ":",
 }
+SEVERITY_METHODS = ["GAST", "MoFlow", "AgentFormer", "MS-TIP"]
+SEVERITY_LINE_COLOR = {
+    "GAST": "#0072B2",
+    "MoFlow": "#D55E00",
+    "AgentFormer": "#009E73",
+    "MS-TIP": "#CC79A7",
+}
+SEVERITY_LINE_STYLE = {
+    "GAST": "-",
+    "MoFlow": ":",
+    "AgentFormer": "--",
+    "MS-TIP": "-.",
+}
 DISPLAY = {
     "GAST": "GAST (ours)",
     "GAST ablation (standard decoder)": "GAST w/o endpoint-guided decoding",
@@ -187,7 +200,7 @@ def fig_severity_degradation(data, outdir):
     fig, ax = plt.subplots(figsize=(3.8, 2.7), dpi=300,
                            constrained_layout=True)
     positions = np.arange(len(MISSING_SEVERITY_BINS))
-    for method in MISSING_METHODS:
+    for method in SEVERITY_METHODS:
         values = [
             severity_macro(
                 data, method, severity_key,
@@ -200,13 +213,14 @@ def fig_severity_degradation(data, outdir):
         ax.plot(
             positions,
             values,
-            linestyle=LINE_STYLE[method],
-            color=LINE_COLOR[method],
+            linestyle=SEVERITY_LINE_STYLE[method],
+            color=SEVERITY_LINE_COLOR[method],
             marker="o",
             ms=3.8 if method == "GAST" else 3.2,
             lw=1.6 if method == "GAST" else 1.1,
             label=DISPLAY.get(method, method),
             zorder=5 if method == "GAST" else 3,
+            alpha=1.0 if method == "GAST" else 0.9,
         )
     ax.axhline(0.0, color="gray", lw=0.7, ls="--", alpha=0.7)
     ax.set_xticks(positions)
